@@ -1,0 +1,244 @@
+# =====================================================================
+# AEGIS Pulse — local dev stack
+# =====================================================================
+# All services in this compose file are wired for the laptop / WSL2
+# scenario described in docs/SETUP_FOR_NON_TECHNICAL.md.
+#
+# Networking model
+# ----------------
+# Every service exposes its port on `127.0.0.1:<port>`. We deliberately
+# do NOT expose to `0.0.0.0` even on a private dev machine — this keeps
+# the dev stack invisible to other devices on the LAN.
+#
+# Volumes
+# -------
+# Named volumes prefixed `aegis_` survive `docker compose down`. To
+# wipe data, run `aegis reset` (which calls `down --volumes`).
+#
+# Health checks
+# -------------
+# Every service has a healthcheck so `aegis status` reports something
+# meaningful. Probes are tuned for laptop start-up (start_period high
+# enough to absorb cold-cache I/O, retries generous).
+# =====================================================================
+
+name: aegis-pulse
+
+services:
+
+  # -----------------------------------------------------------------
+  # Postgres + TimescaleDB + pgvector
+  # The timescale/timescaledb-ha image already bundles pgvector.
+  # -----------------------------------------------------------------
+  postgres:
+    image: timescale/timescaledb-ha:pg16
+    container_name: aegis-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-aegis_app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aegis_app_dev_pw}
+      POSTGRES_DB: ${POSTGRES_DB:-aegis}
+      # Enable wal_level=logical so replication slots are usable later.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --locale=C.UTF-8"
+    command:
+      - "postgres"
+      - "-c"
+      - "wal_level=logical"
+      - "-c"
+      - "max_wal_senders=4"
+      - "-c"
+      - "max_replication_slots=4"
+      - "-c"
+      - "shared_preload_libraries=timescaledb"
+      - "-c"
+      - "listen_addresses=*"
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - aegis_postgres_data:/home/postgres/pgdata/data
+      - ./db/migrations:/docker-entrypoint-initdb.d/migrations:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aegis_app} -d ${POSTGRES_DB:-aegis}"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 30s
+    networks:
+      - aegis
+
+  # -----------------------------------------------------------------
+  # Redis (cache + priority queue + Streams)
+  # -----------------------------------------------------------------
+  redis:
+    image: redis:7.4-alpine
+    container_name: aegis-redis
+    restart: unless-stopped
+    command:
+      - "redis-server"
+      - "--appendonly"
+      - "yes"
+      - "--maxmemory"
+      - "1gb"
+      - "--maxmemory-policy"
+      - "allkeys-lru"
+    ports:
+      - "127.0.0.1:6380:6379"
+    volumes:
+      - aegis_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    networks:
+      - aegis
+
+  # -----------------------------------------------------------------
+  # MinIO (S3-compatible audit/raw bucket)
+  # -----------------------------------------------------------------
+  minio:
+    image: minio/minio:latest
+    container_name: aegis-minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-aegis-dev-key}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-aegis-dev-secret-please-change}
+    command: server /data --console-address ":9001"
+    ports:
+      - "127.0.0.1:9002:9000"
+      - "127.0.0.1:9003:9001"
+    volumes:
+      - aegis_minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    networks:
+      - aegis
+
+  # -----------------------------------------------------------------
+  # FlareSolverr — Cloudflare challenge solver
+  # -----------------------------------------------------------------
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    container_name: aegis-flaresolverr
+    restart: unless-stopped
+    environment:
+      LOG_LEVEL: info
+      LOG_HTML: "false"
+      CAPTCHA_SOLVER: none
+      TZ: UTC
+    ports:
+      - "127.0.0.1:8191:8191"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8191/"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - aegis
+
+  # -----------------------------------------------------------------
+  # Prometheus
+  # -----------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: aegis-prometheus
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=15d"
+      - "--web.enable-lifecycle"
+    ports:
+      - "127.0.0.1:9091:9090"
+    volumes:
+      - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - aegis_prometheus_data:/prometheus
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:9090/-/healthy"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+    networks:
+      - aegis
+
+  # -----------------------------------------------------------------
+  # Grafana
+  # -----------------------------------------------------------------
+  grafana:
+    image: grafana/grafana:11.2.2
+    container_name: aegis-grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GF_SECURITY_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD:-aegis_dev_admin_pw}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    ports:
+      - "127.0.0.1:3001:3000"
+    volumes:
+      - aegis_grafana_data:/var/lib/grafana
+      - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:3000/api/health || exit 1"]
+      interval: 15s
+      timeout: 3s
+      retries: 8
+      start_period: 30s
+    networks:
+      - aegis
+
+  # -----------------------------------------------------------------
+  # Jaeger (all-in-one) for traces. Tempo is heavier; Jaeger is fine
+  # for laptop scale.
+  # -----------------------------------------------------------------
+  jaeger:
+    image: jaegertracing/all-in-one:1.62.0
+    container_name: aegis-jaeger
+    restart: unless-stopped
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "127.0.0.1:16687:16686"  # UI
+      - "127.0.0.1:4319:4317"    # OTLP gRPC
+      - "127.0.0.1:4320:4318"    # OTLP HTTP
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:14269/"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - aegis
+
+# ---------------------------------------------------------------------
+# Volumes
+# ---------------------------------------------------------------------
+volumes:
+  aegis_postgres_data:
+    name: aegis_postgres_data
+  aegis_redis_data:
+    name: aegis_redis_data
+  aegis_minio_data:
+    name: aegis_minio_data
+  aegis_prometheus_data:
+    name: aegis_prometheus_data
+  aegis_grafana_data:
+    name: aegis_grafana_data
+
+# ---------------------------------------------------------------------
+# Networks
+# ---------------------------------------------------------------------
+networks:
+  aegis:
+    name: aegis
+    driver: bridge

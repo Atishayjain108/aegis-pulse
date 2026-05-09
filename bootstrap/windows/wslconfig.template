@@ -1,0 +1,71 @@
+# =============================================================================
+# AEGIS PULSE OMEGA v2 — .wslconfig template
+# -----------------------------------------------------------------------------
+# Copy to %UserProfile%\.wslconfig and tune values to match your hardware.
+# Apply changes with:  wsl --shutdown   (from PowerShell, not inside WSL)
+#
+# This is a fallback if you prefer manual setup over running setup.ps1.
+# setup.ps1 generates these values automatically based on your RAM/CPU.
+# =============================================================================
+
+[wsl2]
+
+# --- Resource caps ----------------------------------------------------------
+# WSL2 defaults to consuming up to 50% of host RAM AND never releases it.
+# The result: Windows becomes unusable after a heavy docker compose up.
+# The fix below caps WSL explicitly. Rule of thumb:
+#   16 GB laptop → 12 GB
+#   32 GB laptop → 24 GB
+#   64 GB laptop → 48 GB
+memory = 12GB
+
+# Number of logical processors WSL may use. Leave 2-4 for Windows + Docker UI.
+processors = 6
+
+# Swap file. Keeps WSL alive under peaks instead of OOM-killing Postgres.
+# Lives as a VHDX next to your user profile; sparse, grows only when used.
+swap = 8GB
+swapFile = %USERPROFILE%\.wslswap.vhdx
+
+# --- Networking -------------------------------------------------------------
+# Windows can reach WSL services via http://localhost:PORT only when this
+# is true. Required by the AEGIS dashboard, Grafana, etc.
+localhostForwarding = true
+
+# Nested virtualization lets containers-in-containers run (KVM, Firecracker,
+# some Android emulators for app-store scraping). Harmless if unused.
+nestedVirtualization = true
+
+# --- Kernel -----------------------------------------------------------------
+# Pin to Microsoft's kernel unless you actually build your own.
+# kernel = C:\\Users\\you\\.wsl-kernel\\bzImage
+
+# --- DNS --------------------------------------------------------------------
+# Windows 11 23H2+ only. Routes DNS through the Windows resolver, making
+# corporate VPN / split-horizon DNS work inside WSL without manual fixes.
+# Leave commented on Windows 10.
+# dnsTunneling = true
+
+# --- Diagnostics (off in steady state) --------------------------------------
+# debugConsole = true
+
+[experimental]
+
+# Reclaim unused RAM back to Windows after about 15 minutes idle. Huge QoL
+# win on laptops; this alone is worth setting up .wslconfig. Requires a
+# recent WSL release (>= 1.2.5).
+autoMemoryReclaim = gradual
+
+# WSL's VHDX grows monotonically by default — deleting 50 GB of docker images
+# does not shrink it. Sparse mode lets the filesystem reclaim space.
+sparseVhd = true
+
+# Mirrored networking — Windows 11 22H2+. Makes WSL appear on the same
+# network interface as Windows. Fixes many corporate-firewall issues but
+# breaks some tools that rely on the old NAT behaviour. Enable cautiously.
+# networkingMode = mirrored
+
+# DNS tunneling via Windows' resolver (works with corporate VPN DNS).
+# Conflicts with our hardened /etc/resolv.conf — leave off unless you
+# remove the Linux-side static resolv.conf managed by 01_system.sh.
+# dnsTunneling = true

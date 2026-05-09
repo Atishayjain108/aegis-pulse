@@ -1,0 +1,14 @@
+# AEGIS PULSE OMEGA v2 — enforce LF everywhere; binaries marked explicit.
+* text=auto eol=lf
+*.sh   text eol=lf
+*.py   text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.md   text eol=lf
+*.ps1  text eol=crlf
+*.png  binary
+*.jpg  binary
+*.gz   binary
+*.whl  binary
+*.onnx binary
+*.pt   binary

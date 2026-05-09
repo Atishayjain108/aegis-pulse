@@ -1,0 +1,393 @@
+#!/usr/bin/env bash
+# =============================================================================
+# AEGIS PULSE OMEGA v2 — aegis-doctor
+# -----------------------------------------------------------------------------
+# Comprehensive health check. Prints a table; exits 0 only if every critical
+# check passes. Non-critical checks produce WARN but do not fail the script.
+#
+# Usage:
+#   aegis-doctor            # full run
+#   aegis-doctor --secrets  # also validate required secrets in .env
+#   aegis-doctor --json     # machine-readable output (for CI / support-bundle)
+#
+# Each check is a function returning:
+#   0 = OK   1 = FAIL (critical)   2 = WARN (non-critical)
+# Plus a message printed to stdout.
+# =============================================================================
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
+# Prefer the library that shipped with this checkout.
+if [[ -f "$SCRIPT_DIR/wsl/lib/common.sh" ]]; then
+  # shellcheck source=./wsl/lib/common.sh
+  source "$SCRIPT_DIR/wsl/lib/common.sh"
+else
+  # Minimal fallback if installed out-of-tree.
+  AEGIS_HOME="${AEGIS_HOME:-$HOME/.aegis}"
+  mkdir -p "$AEGIS_HOME"
+  C_RESET=$'\e[0m'; C_RED=$'\e[31m'; C_GREEN=$'\e[32m'
+  C_YELLOW=$'\e[33m'; C_BOLD=$'\e[1m'; C_CYAN=$'\e[36m'
+  cmd_exists() { command -v "$1" >/dev/null 2>&1; }
+fi
+
+MODE_SECRETS=0
+MODE_JSON=0
+for arg in "$@"; do
+  case "$arg" in
+    --secrets) MODE_SECRETS=1 ;;
+    --json)    MODE_JSON=1 ;;
+    -h|--help)
+      sed -n '3,15p' "$0"; exit 0 ;;
+    *) echo "Unknown flag: $arg" >&2; exit 2 ;;
+  esac
+done
+
+# -----------------------------------------------------------------------------
+# Result tracker
+# -----------------------------------------------------------------------------
+declare -a RESULTS=()   # "STATUS|NAME|MESSAGE"
+CRIT_FAIL=0
+WARN_COUNT=0
+
+record() {
+  local status="$1" name="$2" message="$3"
+  RESULTS+=("$status|$name|$message")
+  case "$status" in
+    FAIL) (( CRIT_FAIL++ )) ;;
+    WARN) (( WARN_COUNT++ )) ;;
+  esac
+}
+
+# -----------------------------------------------------------------------------
+# Individual checks
+# -----------------------------------------------------------------------------
+check_wsl_version() {
+  local name="WSL2 runtime"
+  if ! grep -qiE 'microsoft|wsl' /proc/version 2>/dev/null; then
+    record FAIL "$name" "Not running under WSL"
+    return
+  fi
+  local kernel
+  kernel=$(uname -r | awk -F- '{print $1}')
+  # Minimum kernel 5.15 per prompt.
+  local major minor
+  major=$(echo "$kernel" | cut -d. -f1)
+  minor=$(echo "$kernel" | cut -d. -f2)
+  if (( major > 5 )) || { (( major == 5 )) && (( minor >= 15 )); }; then
+    record OK "$name" "kernel $kernel"
+  else
+    record FAIL "$name" "kernel $kernel < 5.15 minimum"
+  fi
+}
+
+check_ubuntu_release() {
+  local name="Ubuntu release"
+  if [[ ! -r /etc/os-release ]]; then
+    record FAIL "$name" "/etc/os-release missing"
+    return
+  fi
+  # shellcheck disable=SC1091
+  local id ver pretty
+  id=$(. /etc/os-release; echo "$ID")
+  ver=$(. /etc/os-release; echo "$VERSION_ID")
+  pretty=$(. /etc/os-release; echo "$PRETTY_NAME")
+  if [[ "$id" == "ubuntu" && "$ver" == "24.04" ]]; then
+    record OK "$name" "$pretty"
+  elif [[ "$id" == "ubuntu" ]]; then
+    record WARN "$name" "$pretty (expected 24.04 — supported but untested)"
+  else
+    record FAIL "$name" "$pretty — only Ubuntu is supported"
+  fi
+}
+
+check_systemd() {
+  local name="systemd"
+  if pidof systemd >/dev/null 2>&1; then
+    record OK "$name" "running (pid $(pidof systemd | awk '{print $1}'))"
+  else
+    record WARN "$name" "not active — add [boot]\\nsystemd=true to /etc/wsl.conf and 'wsl --shutdown'"
+  fi
+}
+
+check_docker() {
+  local name="Docker daemon"
+  if ! cmd_exists docker; then
+    record FAIL "$name" "docker CLI missing — enable WSL integration in Docker Desktop"
+    return
+  fi
+  if docker version --format '{{.Server.Version}}' >/dev/null 2>&1; then
+    record OK "$name" "server $(docker version --format '{{.Server.Version}}')"
+  else
+    record FAIL "$name" "docker CLI present but daemon unreachable"
+  fi
+}
+
+check_python() {
+  local name="Python 3.12.x global"
+  if ! cmd_exists python; then
+    record FAIL "$name" "python not on PATH"
+    return
+  fi
+  local v
+  v=$(python --version 2>&1 | awk '{print $2}')
+  if [[ "$v" =~ ^3\.12\. ]]; then
+    record OK "$name" "$v"
+  else
+    record FAIL "$name" "got $v — pyenv global should be 3.12.x"
+  fi
+}
+
+check_uv() {
+  local name="uv (package manager)"
+  if cmd_exists uv; then
+    record OK "$name" "$(uv --version 2>&1 | awk '{print $2}')"
+  else
+    record FAIL "$name" "uv not on PATH (expected $HOME/.local/bin/uv)"
+  fi
+}
+
+check_ports_free() {
+  local name="Required ports free"
+  local ports=(5432 6379 8000 9000 9090 3000 11434)
+  local taken=()
+  for p in "${ports[@]}"; do
+    # ss prints listening sockets; -H suppresses header; -t tcp, -n numeric.
+    if ss -Htln "( sport = :$p )" 2>/dev/null | grep -q ":$p"; then
+      taken+=("$p")
+    fi
+  done
+  if (( ${#taken[@]} == 0 )); then
+    record OK "$name" "${ports[*]}"
+  else
+    record WARN "$name" "in-use: ${taken[*]} (may conflict with Docker services)"
+  fi
+}
+
+check_dns() {
+  local name="DNS resolution"
+  if getent hosts pypi.org >/dev/null 2>&1 && getent hosts github.com >/dev/null 2>&1; then
+    record OK "$name" "pypi.org + github.com resolve"
+  else
+    record FAIL "$name" "cannot resolve pypi.org/github.com — see docs/errors/AEGIS-BOOT-0013.md"
+  fi
+}
+
+check_time_sync() {
+  local name="Clock offset (NTP)"
+  if ! cmd_exists chronyc; then
+    record WARN "$name" "chrony not installed — WSL clock will drift after host sleep"
+    return
+  fi
+  # "Last offset" in seconds, absolute value compared against 2.0s threshold.
+  local offset
+  offset=$(chronyc tracking 2>/dev/null | awk -F': ' '/Last offset/ {print $2}' | awk '{print $1}')
+  if [[ -z "$offset" ]]; then
+    record WARN "$name" "chronyc tracking returned no data"
+    return
+  fi
+  local abs
+  abs=$(python -c "print(abs(float('$offset')))" 2>/dev/null || echo "99")
+  # awk comparison for portability.
+  if awk "BEGIN{exit !($abs < 2.0)}"; then
+    record OK "$name" "offset ${offset}s"
+  else
+    record WARN "$name" "offset ${offset}s > 2s — run 'sudo chronyc -a makestep'"
+  fi
+}
+
+check_disk_space() {
+  local name="Free disk (WSL root)"
+  local free_gb
+  free_gb=$(df -BG --output=avail / | tail -1 | tr -dc '0-9')
+  if (( free_gb >= 60 )); then
+    record OK "$name" "${free_gb} GB free"
+  elif (( free_gb >= 30 )); then
+    record WARN "$name" "${free_gb} GB free (recommended ≥ 60 GB)"
+  else
+    record FAIL "$name" "only ${free_gb} GB free — Docker images will fail"
+  fi
+}
+
+check_git_config() {
+  local name="Git identity"
+  local n e
+  n=$(git config --global user.name  2>/dev/null || echo "")
+  e=$(git config --global user.email 2>/dev/null || echo "")
+  if [[ -n "$n" && -n "$e" ]]; then
+    record OK "$name" "$n <$e>"
+  else
+    record WARN "$name" "user.name / user.email not set"
+  fi
+}
+
+check_ssh_key() {
+  local name="SSH key"
+  if [[ -f "$HOME/.ssh/id_ed25519.pub" ]]; then
+    record OK "$name" "ed25519 present"
+  else
+    record WARN "$name" "no ~/.ssh/id_ed25519 — run 05_repo.sh or ssh-keygen"
+  fi
+}
+
+check_repo_location() {
+  local name="Repo filesystem"
+  local repo
+  repo=$(cd -- "$SCRIPT_DIR/.." &>/dev/null && pwd)
+  if [[ "$repo" == /mnt/c/* || "$repo" == /mnt/d/* || "$repo" == /mnt/e/* ]]; then
+    record WARN "$name" "repo on $repo — move to ~/code/... for 10× speed"
+  else
+    record OK "$name" "$repo"
+  fi
+}
+
+check_gpu() {
+  local name="GPU (optional)"
+  if cmd_exists nvidia-smi && nvidia-smi -L >/dev/null 2>&1; then
+    local gpu
+    gpu=$(nvidia-smi -L | head -1 | cut -d: -f2- | xargs)
+    record OK "$name" "$gpu"
+  else
+    record WARN "$name" "no GPU detected — CPU-only mode (functional but slower)"
+  fi
+}
+
+check_playwright() {
+  local name="Playwright browsers"
+  if [[ -d "$HOME/.cache/ms-playwright" ]] && \
+     compgen -G "$HOME/.cache/ms-playwright/chromium-*" >/dev/null; then
+    record OK "$name" "chromium bundle cached"
+  else
+    record WARN "$name" "no browsers cached — run bootstrap/wsl/04_services.sh"
+  fi
+}
+
+check_inotify() {
+  local name="inotify watch limit"
+  local limit
+  limit=$(cat /proc/sys/fs/inotify/max_user_watches 2>/dev/null || echo 0)
+  if (( limit >= 524288 )); then
+    record OK "$name" "$limit"
+  elif (( limit >= 8192 )); then
+    record WARN "$name" "$limit — Phase 01 sysctl tuning not applied"
+  else
+    record FAIL "$name" "$limit — VS Code + Docker will thrash"
+  fi
+}
+
+check_ulimit_fd() {
+  local name="Open-files ulimit"
+  local soft
+  soft=$(ulimit -n)
+  if (( soft >= 65536 )); then
+    record OK "$name" "$soft"
+  else
+    record WARN "$name" "$soft — low for async scraper. Re-login after running 01_system.sh"
+  fi
+}
+
+check_secrets() {
+  local name="Required secrets (.env)"
+  local repo="$(cd -- "$SCRIPT_DIR/.." &>/dev/null && pwd)"
+  local env_file="$repo/.env"
+  if [[ ! -f "$env_file" ]]; then
+    record WARN "$name" "no .env — copy .env.example"
+    return
+  fi
+  # Required = any line marked '# REQUIRED' in .env.example that is empty or
+  # commented-out in .env. This gracefully tolerates optional secrets.
+  local example="$repo/.env.example"
+  [[ -f "$example" ]] || { record WARN "$name" "no .env.example to compare against"; return; }
+
+  local missing=()
+  while IFS= read -r key; do
+    [[ -z "$key" ]] && continue
+    local line
+    line=$(grep -E "^${key}=" "$env_file" 2>/dev/null | tail -1)
+    if [[ -z "$line" || "$line" =~ ^${key}=\ *$ || "$line" =~ ^${key}=\"\"?$ ]]; then
+      missing+=("$key")
+    fi
+  done < <(awk '/# REQUIRED/ {for(i=1;i<=NF;i++) if($i ~ /^[A-Z_][A-Z0-9_]+=/){split($i,a,"="); print a[1]; break}}' "$example")
+
+  if (( ${#missing[@]} == 0 )); then
+    record OK "$name" "all required secrets present"
+  else
+    record WARN "$name" "missing: ${missing[*]}"
+  fi
+}
+
+# -----------------------------------------------------------------------------
+# Run checks
+# -----------------------------------------------------------------------------
+check_wsl_version
+check_ubuntu_release
+check_systemd
+check_docker
+check_python
+check_uv
+check_ports_free
+check_dns
+check_time_sync
+check_disk_space
+check_git_config
+check_ssh_key
+check_repo_location
+check_gpu
+check_playwright
+check_inotify
+check_ulimit_fd
+(( MODE_SECRETS )) && check_secrets
+
+# -----------------------------------------------------------------------------
+# Output
+# -----------------------------------------------------------------------------
+render_json() {
+  printf '{\n  "version": "2.0",\n  "timestamp": "%s",\n  "critical_failures": %d,\n  "warnings": %d,\n  "checks": [\n' \
+    "$(date -u +%FT%TZ)" "$CRIT_FAIL" "$WARN_COUNT"
+  local first=1 status name msg
+  for r in "${RESULTS[@]}"; do
+    IFS='|' read -r status name msg <<< "$r"
+    [[ $first -eq 1 ]] && first=0 || printf ',\n'
+    printf '    {"status": "%s", "name": "%s", "message": "%s"}' \
+      "$status" "${name//\"/\\\"}" "${msg//\"/\\\"}"
+  done
+  printf '\n  ]\n}\n'
+}
+
+render_table() {
+  local status name msg colour
+  printf '\n%s%s  AEGIS-DOCTOR DIAGNOSTIC REPORT%s\n' "$C_CYAN" "$C_BOLD" "$C_RESET"
+  printf '%s%s' "$C_CYAN" "$C_BOLD"
+  printf '%.0s─' {1..74}; printf '%s\n' "$C_RESET"
+  printf '  %-8s  %-26s  %s\n' "STATUS" "CHECK" "DETAIL"
+  printf '%s%s' "$C_CYAN" "$C_BOLD"
+  printf '%.0s─' {1..74}; printf '%s\n' "$C_RESET"
+  for r in "${RESULTS[@]}"; do
+    IFS='|' read -r status name msg <<< "$r"
+    case "$status" in
+      OK)   colour="$C_GREEN"  ;;
+      WARN) colour="$C_YELLOW" ;;
+      FAIL) colour="$C_RED"    ;;
+      *)    colour="$C_RESET"  ;;
+    esac
+    printf '  %s%-8s%s  %-26s  %s\n' "$colour" "[$status]" "$C_RESET" "$name" "$msg"
+  done
+  printf '%s%s' "$C_CYAN" "$C_BOLD"
+  printf '%.0s─' {1..74}; printf '%s\n' "$C_RESET"
+  if (( CRIT_FAIL == 0 )); then
+    printf '  %s✓ %d checks passed%s' "$C_GREEN" "${#RESULTS[@]}" "$C_RESET"
+    (( WARN_COUNT > 0 )) && printf '  %s(%d warnings)%s' "$C_YELLOW" "$WARN_COUNT" "$C_RESET"
+    printf '\n'
+  else
+    printf '  %s✗ %d critical failure(s)%s' "$C_RED" "$CRIT_FAIL" "$C_RESET"
+    (( WARN_COUNT > 0 )) && printf '  %s(%d warnings)%s' "$C_YELLOW" "$WARN_COUNT" "$C_RESET"
+    printf '\n  See %s for timestamped log.\n' "$AEGIS_LOG_FILE"
+  fi
+  printf '\n'
+}
+
+if (( MODE_JSON )); then
+  render_json
+else
+  render_table
+fi
+
+exit $(( CRIT_FAIL > 0 ? 1 : 0 ))
