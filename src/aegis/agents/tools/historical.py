@@ -7,6 +7,7 @@ similarity scores.
 
 Author: AEGIS Pulse core team
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any

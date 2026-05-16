@@ -33,6 +33,7 @@ trade than be wrong.
 
 Author: AEGIS Pulse core team
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
@@ -119,9 +120,7 @@ class RedTeamAgent(AgentNode):
         confidence = 0.6 + 0.4 * min(1.0, candidate.signal_count / 50.0)
         confidence = max(0.0, min(1.0, confidence))
 
-        reasoning = (
-            f"falsifiers={n_falsifiers}: {', '.join(falsifiers) if falsifiers else 'none'}"
-        )
+        reasoning = f"falsifiers={n_falsifiers}: {', '.join(falsifiers) if falsifiers else 'none'}"
 
         details: dict[str, Any] = {
             "red_team_passed": passed,
@@ -176,7 +175,5 @@ class RedTeamAgent(AgentNode):
     def _extra_state(self, decision: AgentDecision) -> dict[str, Any]:
         return {
             "red_team_passed": bool(decision.details.get("red_team_passed", False)),
-            "red_team_falsifiers": list(
-                decision.details.get("red_team_falsifiers", []) or []
-            ),
+            "red_team_falsifiers": list(decision.details.get("red_team_falsifiers", []) or []),
         }

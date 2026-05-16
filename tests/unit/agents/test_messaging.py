@@ -7,6 +7,7 @@ critical correctness properties of the messaging layer (signature
 integrity + freshness via TTL) are pure functions and fully
 testable.
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
@@ -61,9 +62,7 @@ class TestSignVerifyRoundtrip:
     def test_payload_modification_fails_verify(self) -> None:
         msg = _msg(payload={"score": 0.5, "agent": "scout"})
         signed = sign(msg)
-        tampered = signed.model_copy(
-            update={"payload": {"score": 0.5, "agent": "evil"}}
-        )
+        tampered = signed.model_copy(update={"payload": {"score": 0.5, "agent": "evil"}})
         assert verify(tampered) is False
 
     def test_explicit_key_overrides_env(self) -> None:

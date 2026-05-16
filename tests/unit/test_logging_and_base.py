@@ -175,7 +175,9 @@ def _make_signal(external_id: str, platform: Platform = Platform.HACKER_NEWS) ->
 class _MockAdapter(SourceAdapter[str]):
     """Minimal test adapter. Yields string IDs, parses them into ProductSignals."""
 
-    def __init__(self, items: list[str], *, config: AdapterConfig | None = None, fail_parse: bool = False) -> None:
+    def __init__(
+        self, items: list[str], *, config: AdapterConfig | None = None, fail_parse: bool = False
+    ) -> None:
         cfg = config or AdapterConfig(name="mock")
         super().__init__(cfg)
         self._items = items
@@ -296,6 +298,7 @@ def test_metrics_import_ok():
         ingest_signals_total,
         scrape_proxy_ban_total,
     )
+
     assert ingest_signals_total is not None
     assert ingest_errors_total is not None
     assert ingest_latency_seconds is not None

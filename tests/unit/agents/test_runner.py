@@ -15,6 +15,7 @@ Key paths covered:
   * Asyncio timeout                → halt_reason == "timeout"
   * Heuristic-only path (no LLM)   produces a complete decision trail
 """
+
 from __future__ import annotations
 
 import pytest
@@ -194,18 +195,14 @@ class TestRunnerErrorHandling:
     async def test_timeout_returns_safe_result(self, trend_factory) -> None:
         # 0-second timeout → guaranteed timeout regardless of speed.
         candidate = trend_factory(trend_id="timeout-1")
-        result = await runner.run_trend(
-            candidate, use_llm=False, timeout_s=0.0001
-        )
+        result = await runner.run_trend(candidate, use_llm=False, timeout_s=0.0001)
         assert isinstance(result, GraphResult)
         assert result.halt_reason == "timeout"
         # Even on timeout, we get a valid result object.
         assert result.final_verdict is AgentVerdict.HOLD
         assert result.final_priority is Priority.P3_HOUSEKEEPING
 
-    async def test_exception_during_compile_caught(
-        self, trend_factory, monkeypatch
-    ) -> None:
+    async def test_exception_during_compile_caught(self, trend_factory, monkeypatch) -> None:
         # Force `_get_graph` to raise to exercise the compile-failure
         # branch. This proves the runner never bubbles up exceptions
         # from graph construction.
@@ -264,6 +261,6 @@ class TestRunnerNoLLMPath:
             assert d.confidence >= 0.0
             assert d.score >= 0.0
             # Without LLM, no decision should carry a `llm` key in details.
-            assert "llm" not in d.details, (
-                f"agent {d.agent} appears to have called LLM despite use_llm=False"
-            )
+            assert (
+                "llm" not in d.details
+            ), f"agent {d.agent} appears to have called LLM despite use_llm=False"

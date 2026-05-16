@@ -79,9 +79,7 @@ class InstagramAdapter(SourceAdapter[Any]):
 
     def __init__(self, config: InstagramConfig | AdapterConfig, **kwargs: Any) -> None:
         super().__init__(config, **kwargs)
-        self._ig_config = (
-            config if isinstance(config, InstagramConfig) else InstagramConfig()
-        )
+        self._ig_config = config if isinstance(config, InstagramConfig) else InstagramConfig()
         self._loader: Any = None
 
     @property
@@ -102,8 +100,7 @@ class InstagramAdapter(SourceAdapter[Any]):
             import instaloader  # type: ignore[import-untyped]
         except ImportError as e:
             raise RuntimeError(
-                "InstagramAdapter requires instaloader. "
-                "Run: uv sync --extra scrape"
+                "InstagramAdapter requires instaloader. " "Run: uv sync --extra scrape"
             ) from e
 
         def _build() -> Any:
@@ -183,7 +180,7 @@ class InstagramAdapter(SourceAdapter[Any]):
             owner = getattr(raw, "owner_profile", None)
             author: Author | None = None
             if owner is not None:
-                try:
+                with contextlib.suppress(Exception):
                     uid = str(getattr(owner, "userid", "") or "")
                     handle = str(getattr(owner, "username", "") or "")
                     followers = getattr(owner, "followers", None)
@@ -193,8 +190,6 @@ class InstagramAdapter(SourceAdapter[Any]):
                         follower_count=int(followers) if followers is not None else None,
                         profile_url=f"{_IG_USER_BASE}{handle}/",  # type: ignore[arg-type]
                     )
-                except Exception:
-                    pass
 
             url = f"{_IG_POST_BASE}{shortcode}/"
             tagged: list[str] = []

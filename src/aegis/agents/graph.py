@@ -66,6 +66,7 @@ terminates with a `GraphResult`.
 
 Author: AEGIS Pulse core team
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
@@ -203,17 +204,13 @@ def build_graph(
     scout = ScoutAgent(router=llm_router, use_llm=use_llm)
     geo = GeoArbitrageAgent(router=llm_router, use_llm=use_llm)
     narrative = NarrativeAgent(router=llm_router, use_llm=use_llm)
-    historian = HistorianAgent(
-        store=historian_store, router=llm_router, use_llm=use_llm
-    )
+    historian = HistorianAgent(store=historian_store, router=llm_router, use_llm=use_llm)
     sourcer = SourcerAgent(router=llm_router, use_llm=use_llm)
     auditor = AuditorAgent(router=llm_router, use_llm=use_llm)
     sentinel = SentinelAgent(router=llm_router, use_llm=use_llm)
     compliance = ComplianceAgent(router=llm_router, use_llm=use_llm)
     red_team = RedTeamAgent(router=llm_router, use_llm=use_llm)
-    hedge = HedgeAgent(
-        shared_memory=shared_memory, router=llm_router, use_llm=use_llm
-    )
+    hedge = HedgeAgent(shared_memory=shared_memory, router=llm_router, use_llm=use_llm)
 
     builder = StateGraph(GraphState)
 

@@ -10,6 +10,7 @@ router will trip the circuit breaker and fall through to Groq.
 
 Author: AEGIS Pulse core team
 """
+
 from __future__ import annotations
 
 import os
@@ -37,7 +38,9 @@ class OllamaProvider(LLMProvider):
         model: str | None = None,
         client: httpx.AsyncClient | None = None,
     ) -> None:
-        self.base_url = (base_url or os.environ.get("OLLAMA_BASE_URL") or _DEFAULT_BASE_URL).rstrip("/")
+        self.base_url = (base_url or os.environ.get("OLLAMA_BASE_URL") or _DEFAULT_BASE_URL).rstrip(
+            "/"
+        )
         self.model = model or os.environ.get("OLLAMA_MODEL") or _DEFAULT_MODEL
         self._owns_client = client is None
         self._client = client or httpx.AsyncClient(

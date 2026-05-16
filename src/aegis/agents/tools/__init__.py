@@ -14,6 +14,7 @@ A tool MUST:
     tools).
   * Be unit-testable by patching only its dependencies.
 """
+
 from .base import ToolError, ToolResult, tool_call
 
 __all__ = ["ToolError", "ToolResult", "tool_call"]

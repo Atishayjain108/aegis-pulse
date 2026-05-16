@@ -68,9 +68,7 @@ class PinterestAdapter(SourceAdapter[dict[str, Any]]):
 
     def __init__(self, config: PinterestConfig | AdapterConfig, **kwargs: Any) -> None:
         super().__init__(config, **kwargs)
-        self._pt_config = (
-            config if isinstance(config, PinterestConfig) else PinterestConfig()
-        )
+        self._pt_config = config if isinstance(config, PinterestConfig) else PinterestConfig()
         self._client: httpx.AsyncClient | None = None
 
     @property
@@ -191,14 +189,10 @@ class PinterestAdapter(SourceAdapter[dict[str, Any]]):
             posted_at: datetime | None = None
             if created_at_str:
                 try:
-                    posted_at = datetime.strptime(
-                        created_at_str, "%a, %d %b %Y %H:%M:%S %z"
-                    )
+                    posted_at = datetime.strptime(created_at_str, "%a, %d %b %Y %H:%M:%S %z")
                 except ValueError:
                     with contextlib.suppress(ValueError):
-                        posted_at = datetime.fromisoformat(
-                            created_at_str.replace("Z", "+00:00")
-                        )
+                        posted_at = datetime.fromisoformat(created_at_str.replace("Z", "+00:00"))
 
             url = f"{_PIN_BASE}{pin_id}/"
 
@@ -232,8 +226,10 @@ class PinterestAdapter(SourceAdapter[dict[str, Any]]):
                 )
 
             is_video = bool(raw.get("videos"))
-            modality = ContentModality.VIDEO if is_video else (
-                ContentModality.MULTIMODAL if media else ContentModality.IMAGE
+            modality = (
+                ContentModality.VIDEO
+                if is_video
+                else (ContentModality.MULTIMODAL if media else ContentModality.IMAGE)
             )
 
             h = compute_content_hash(

@@ -34,6 +34,7 @@ adds itself to `blocked_by`.
 
 Author: AEGIS Pulse core team
 """
+
 from __future__ import annotations
 
 import re
@@ -135,7 +136,9 @@ class NarrativeAgent(AgentNode):
         else:
             verdict = AgentVerdict.BLOCK
 
-        confidence = 0.4 + 0.5 * min(1.0, candidate.signal_count / 30.0) + 0.1 * cross_platform_bonus
+        confidence = (
+            0.4 + 0.5 * min(1.0, candidate.signal_count / 30.0) + 0.1 * cross_platform_bonus
+        )
         confidence = max(0.0, min(1.0, confidence))
 
         reasoning = (

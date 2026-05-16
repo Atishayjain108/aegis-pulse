@@ -8,6 +8,7 @@ without adding information.
 
 Author: AEGIS Pulse core team
 """
+
 from __future__ import annotations
 
 import functools
@@ -61,7 +62,9 @@ class ToolResult:
         )
 
 
-def tool_call(name: str) -> Callable[[Callable[P, Awaitable[ToolResult]]], Callable[P, Awaitable[ToolResult]]]:
+def tool_call(
+    name: str,
+) -> Callable[[Callable[P, Awaitable[ToolResult]]], Callable[P, Awaitable[ToolResult]]]:
     """Decorator that wraps a tool with timing + structured logging.
 
     The wrapped tool MUST already return `ToolResult`. The decorator

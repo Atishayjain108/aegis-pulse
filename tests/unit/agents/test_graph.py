@@ -6,6 +6,7 @@ These tests exercise the conditional-edge predicates in isolation
 makes the correct decision given a hand-crafted state — which is
 where almost all the routing bugs would live.
 """
+
 from __future__ import annotations
 
 from aegis.agents.graph import (

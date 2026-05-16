@@ -222,7 +222,9 @@ class ProxyPool:
         self._sticky: dict[str, UUID] = {}
         # Coordination
         self._lock: asyncio.Lock = asyncio.Lock()
-        self._rng: random.Random = random.Random(rng_seed) if rng_seed is not None else random.Random()
+        self._rng: random.Random = (
+            random.Random(rng_seed) if rng_seed is not None else random.Random()
+        )
 
     # ------------------------------------------------------------------
     # Population management
@@ -306,8 +308,13 @@ class ProxyPool:
                 if pinned_id is not None:
                     spec = self._specs.get(pinned_id)
                     state = self._states.get(pinned_id)
-                    if spec is not None and state is not None and not state.is_banned_for(
-                        target_host, now_monotonic=time.monotonic(),
+                    if (
+                        spec is not None
+                        and state is not None
+                        and not state.is_banned_for(
+                            target_host,
+                            now_monotonic=time.monotonic(),
+                        )
                     ):
                         state.last_used_at = time.monotonic()
                         return spec
@@ -358,7 +365,9 @@ class ProxyPool:
             state = self._states[proxy_id]
             if state.is_banned_for(target_host, now_monotonic=now):
                 continue
-            if country_codes is not None and (spec.country_code is None or spec.country_code not in country_codes):
+            if country_codes is not None and (
+                spec.country_code is None or spec.country_code not in country_codes
+            ):
                 continue
             if kind_in is not None and spec.kind not in kind_in:
                 continue
@@ -401,9 +410,7 @@ class ProxyPool:
             else:
                 state.ema_success = alpha * success_value + (1 - alpha) * state.ema_success
                 if latency_ms is not None:
-                    state.ema_latency_ms = (
-                        alpha * latency_ms + (1 - alpha) * state.ema_latency_ms
-                    )
+                    state.ema_latency_ms = alpha * latency_ms + (1 - alpha) * state.ema_latency_ms
             state.samples += 1
 
             if outcome is ProxyOutcome.BANNED:
@@ -436,19 +443,14 @@ class ProxyPool:
             specs = list(self._specs.values())
             states = [self._states[s.proxy_id] for s in specs]
             trusted = sum(1 for s in states if s.trusted)
-            avg_success = (
-                sum(s.ema_success for s in states if s.samples > 0)
-                / max(1, sum(1 for s in states if s.samples > 0))
+            avg_success = sum(s.ema_success for s in states if s.samples > 0) / max(
+                1, sum(1 for s in states if s.samples > 0)
             )
-            avg_latency = (
-                sum(s.ema_latency_ms for s in states if s.samples > 0)
-                / max(1, sum(1 for s in states if s.samples > 0))
+            avg_latency = sum(s.ema_latency_ms for s in states if s.samples > 0) / max(
+                1, sum(1 for s in states if s.samples > 0)
             )
             ban_count = sum(
-                1
-                for st in states
-                for ban_until in st.banned_until.values()
-                if ban_until > now
+                1 for st in states for ban_until in st.banned_until.values() if ban_until > now
             )
             return PoolStats(
                 total=len(specs),

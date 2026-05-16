@@ -9,6 +9,7 @@ URL:  https://openrouter.ai/api/v1/chat/completions
 
 Author: AEGIS Pulse core team
 """
+
 from __future__ import annotations
 
 import os
@@ -50,7 +51,8 @@ class OpenRouterProvider(LLMProvider):
             "Authorization": f"Bearer {self._api_key}",
             "User-Agent": "aegis-pulse/2.0 (+openrouter)",
             "Content-Type": "application/json",
-            "HTTP-Referer": referer or os.environ.get("OPENROUTER_REFERER", "https://aegis-pulse.local"),
+            "HTTP-Referer": referer
+            or os.environ.get("OPENROUTER_REFERER", "https://aegis-pulse.local"),
             "X-Title": title or os.environ.get("OPENROUTER_TITLE", "AEGIS Pulse"),
         }
 

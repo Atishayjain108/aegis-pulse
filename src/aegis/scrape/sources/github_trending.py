@@ -159,11 +159,12 @@ class GitHubTrendingAdapter(SourceAdapter[dict[str, Any]]):
             # Strip characters not allowed by the tag pattern (^[a-z0-9_\-\.]+$)
             # e.g. "c++" → "c", "c#" → "c"
             tags = frozenset(
-                clean for t in tags_raw
+                clean
+                for t in tags_raw
                 if (clean := re.sub(r"[^a-z0-9_\-.]", "", t.replace(" ", "_"))[:128])
             )
 
-            signal_title = (f"{full_name}: {description}"[:512] if description else full_name)
+            signal_title = f"{full_name}: {description}"[:512] if description else full_name
 
             h = compute_content_hash(
                 platform=Platform.GITHUB_TRENDING,
@@ -255,7 +256,7 @@ def _parse_repo_block(block: str) -> dict[str, Any] | None:
         stars = _parse_int(stars_match.group(1)) if stars_match else 0
 
         # Stars today
-        today_match = re.search(r'([\d,]+)\s+stars\s+today', block)
+        today_match = re.search(r"([\d,]+)\s+stars\s+today", block)
         stars_today = _parse_int(today_match.group(1)) if today_match else 0
 
         # Forks

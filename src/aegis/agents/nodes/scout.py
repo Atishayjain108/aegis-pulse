@@ -23,8 +23,10 @@ downstream agents can read it without traversing the decisions list.
 
 Author: AEGIS Pulse core team
 """
+
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any
 
 from ..llm import prompts
@@ -34,6 +36,8 @@ from .base import AgentNode
 
 if TYPE_CHECKING:
     from ..state import GraphState
+
+_log = logging.getLogger(__name__)
 
 _PROCEED_THRESHOLD = 0.70
 _HOLD_THRESHOLD = 0.45
@@ -124,6 +128,85 @@ class ScoutAgent(AgentNode):
                 "astroturf_penalty": astroturf_penalty,
                 "coordination_penalty": coord_penalty,
             },
+        )
+
+    async def _augment_with_phase3(
+        self,
+        candidate: TrendCandidate,
+        state: GraphState,
+        heuristic: AgentDecision,
+    ) -> AgentDecision | None:
+        """Enrich the heuristic decision with Phase 3 temporal/relational inference.
+
+        Phase 3's p_breakout replaces the heuristic score (it's a better
+        calibrated breakout signal). Confidence is a weighted blend. The
+        verdict is always kept from the heuristic floor.
+        """
+        try:
+            from aegis.agents_phase3_glue.bridge import enrich_scout_decision
+
+            enriched = await enrich_scout_decision(
+                {
+                    "trend_id": candidate.trend_id,
+                    "tenant_id": state.get("tenant_id", "default"),
+                    "signals": state.get("signals"),
+                    "feature_window": state.get("feature_window"),
+                },
+                primary_horizon=24,
+            )
+        except Exception as exc:
+            _log.warning("scout.phase3_skipped reason=%s", type(exc).__name__)
+            return None
+
+        p3 = enriched.get("phase3_decision")
+        if p3 is None:
+            return None
+
+        # Skip blending if Phase 3 itself failed (inference error, no signals).
+        halt_reasons: list[str] = p3.get("halt_reasons", [])
+        if any(r.startswith("phase3_inference_failed") for r in halt_reasons):
+            return None
+
+        return self._blend_phase3(heuristic, p3)
+
+    def _blend_phase3(
+        self,
+        heuristic: AgentDecision,
+        p3: dict[str, Any],
+    ) -> AgentDecision:
+        """Merge Phase 3 result into the heuristic decision.
+
+        Contract:
+        - Verdict stays from heuristic (doctrine: Phase 3 cannot flip verdicts).
+        - Score ← Phase 3 p_breakout (better calibrated breakout estimate).
+        - Confidence ← weighted blend (40% heuristic, 60% Phase 3).
+        - Reasoning ← heuristic + Phase 3 summary appended.
+        - Details ← heuristic details + "phase3" sidecar.
+        """
+        p3_score = float(p3.get("score", heuristic.score))
+        p3_conf = float(p3.get("confidence", heuristic.confidence))
+        blended_conf = max(0.0, min(1.0, 0.4 * heuristic.confidence + 0.6 * p3_conf))
+
+        p3_reasoning = str(p3.get("reasoning", ""))[:600]
+        new_reasoning = f"{heuristic.reasoning}\n[Phase3] {p3_reasoning}".strip()[:4000]
+
+        new_details = {
+            **heuristic.details,
+            "phase3": {
+                "verdict": p3.get("verdict"),
+                "score": p3_score,
+                "model_id": p3.get("model_id"),
+                "correlation_id": p3.get("correlation_id"),
+                "halt_reasons": p3.get("halt_reasons", []),
+            },
+        }
+        return heuristic.model_copy(
+            update={
+                "score": p3_score,
+                "confidence": blended_conf,
+                "reasoning": new_reasoning,
+                "details": new_details,
+            }
         )
 
     async def _augment_with_llm(

@@ -13,6 +13,7 @@ construction and the router permanently skips it.
 
 Author: AEGIS Pulse core team
 """
+
 from __future__ import annotations
 
 import os

@@ -205,9 +205,7 @@ class Settings(BaseSettings):
     # Postgres
     # ------------------------------------------------------------------
     pg_dsn: SecretStr = Field(
-        default=SecretStr(
-            "postgresql://aegis_app:aegis_app@localhost:5432/aegis"
-        ),
+        default=SecretStr("postgresql://aegis_app:aegis_app@localhost:5432/aegis"),
         description="Application DSN. Overridden via AEGIS_PG_DSN.",
     )
     pg_pool_min_size: int = Field(default=DB_POOL_MIN_SIZE, ge=0, le=128)
@@ -251,9 +249,7 @@ class Settings(BaseSettings):
         canonical = v.upper().strip()
         allowed = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
         if canonical not in allowed:
-            raise ValueError(
-                f"log_level must be one of {sorted(allowed)}; got {v!r}"
-            )
+            raise ValueError(f"log_level must be one of {sorted(allowed)}; got {v!r}")
         return canonical
 
     @field_validator("pg_pool_max_size")

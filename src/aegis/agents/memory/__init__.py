@@ -18,6 +18,7 @@ Three layers, deliberately separated by access pattern and lifetime:
     dicts only) to MinIO on a 10-minute cadence. Used for crash
     recovery and post-hoc replay.
 """
+
 from .chroma_store import ChromaMemoryStore
 from .shared_memory import SharedWorkingMemory
 from .snapshots import SnapshotManager

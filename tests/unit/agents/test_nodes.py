@@ -1,4 +1,5 @@
 """Tests for all 10 agents — heuristic-only path (no LLM)."""
+
 from __future__ import annotations
 
 from aegis.agents.nodes import (
@@ -83,9 +84,7 @@ class TestScoutAgent:
 class TestSourcerAgent:
     async def test_easy_category_proceeds(self, trend_factory) -> None:
         agent = SourcerAgent(use_llm=False)
-        candidate = trend_factory(
-            title="Funny enamel pin", summary="Cute enamel pins for jackets"
-        )
+        candidate = trend_factory(title="Funny enamel pin", summary="Cute enamel pins for jackets")
         state = initial_state(candidate)
         state["scout_score"] = 0.8  # type: ignore[typeddict-item]
         partial = await agent(state)
@@ -100,9 +99,7 @@ class TestSourcerAgent:
 
     async def test_blocked_category(self, trend_factory) -> None:
         agent = SourcerAgent(use_llm=False)
-        candidate = trend_factory(
-            title="CBD gummies for sleep", summary="full-spectrum cannabis"
-        )
+        candidate = trend_factory(title="CBD gummies for sleep", summary="full-spectrum cannabis")
         state = initial_state(candidate)
         state["scout_score"] = 0.8  # type: ignore[typeddict-item]
         partial = await agent(state)
@@ -212,9 +209,7 @@ class TestSentinelAgent:
 
     async def test_block_does_not_add_to_blocked_by(self, trend_factory) -> None:
         agent = SentinelAgent(use_llm=False)
-        candidate = trend_factory(
-            velocity_1h=50.0, velocity_6h=120.0, velocity_24h=180.0
-        )
+        candidate = trend_factory(velocity_1h=50.0, velocity_6h=120.0, velocity_24h=180.0)
         partial = await agent(initial_state(candidate))
         # SENTINEL.BLOCK ≠ pipeline halt — never adds to blocked_by.
         assert "blocked_by" not in partial
@@ -223,9 +218,7 @@ class TestSentinelAgent:
 class TestComplianceAgent:
     async def test_clean_proceeds(self, trend_factory) -> None:
         agent = ComplianceAgent(use_llm=False)
-        candidate = trend_factory(
-            title="Bamboo travel mug", summary="Reusable bamboo travel mug"
-        )
+        candidate = trend_factory(title="Bamboo travel mug", summary="Reusable bamboo travel mug")
         partial = await agent(initial_state(candidate))
         d = partial["decisions"][0]
         assert d.verdict is AgentVerdict.PROCEED

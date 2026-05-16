@@ -195,7 +195,6 @@ async def test_adapter_blocking_parse():
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_adapter_setup_failure_propagates():
-
     from aegis.scrape.base import AdapterConfig, ScrapeContext, SourceAdapter
 
     class _FailSetupAdapter(SourceAdapter[str]):
@@ -220,7 +219,6 @@ async def test_adapter_setup_failure_propagates():
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_adapter_teardown_failure_does_not_mask():
-
     from aegis.scrape.base import AdapterConfig, ScrapeContext, SourceAdapter
 
     class _FailTeardownAdapter(SourceAdapter[str]):
@@ -358,8 +356,6 @@ def test_youtube_int_or_none():
     assert _int_or_none(None) is None
     assert _int_or_none("1000000") == 1_000_000
     assert _int_or_none("abc") is None
-
-
 
 
 @pytest.mark.unit

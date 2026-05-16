@@ -8,6 +8,7 @@ These fixtures handle Phase 2 singletons that must be reset between tests:
 We do NOT modify sys.path here — the package is installed in development
 mode via `uv sync`, so `aegis.*` is importable from the installed tree.
 """
+
 from __future__ import annotations
 
 import asyncio

@@ -14,10 +14,20 @@ This is the top-level package. Sub-packages:
   - ``agents.memory`` — ChromaDB semantic memory + shared working memory
   - ``agents.messaging`` — Redis Streams inter-agent bus + HMAC signing
   - ``agents.tools`` — deterministic tools (velocity, monte_carlo, …)
+- ``predict`` — Phase 3 Predictive Apex (heuristic ML core)
+  - ``predict.features`` — feature builder, velocity, creator graph
+  - ``predict.models`` — heuristic floor + optional neural backbones
+  - ``predict.inference`` — InferenceRunner (single entry point)
+  - ``predict.causal`` — deterministic attribution + counterfactuals
+  - ``predict.rl`` — fractional-Kelly execution policy
+  - ``predict.backtest`` — walk-forward evaluator
+  - ``predict.registry`` — ModelStore + PromotionGate
+  - ``predict.serving`` — FastAPI /predict surface
+- ``agents_phase3_glue`` — Phase 2 ↔ Phase 3 bridge (no LangGraph import)
 
 Author: AEGIS Pulse Team
 """
 
 from __future__ import annotations
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"

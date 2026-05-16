@@ -7,13 +7,14 @@ It scrapes signals from social platforms, stores them in TimescaleDB, and runs a
 
 **Phase 0** — Data ingestion (scrape adapters, HTTP pipeline, deduplication)  
 **Phase 1** — Postgres/TimescaleDB persistence, Redis cache, MinIO object store  
-**Phase 2** — Multi-agent intelligence (LangGraph DAG, LLM routing, ChromaDB memory)
+**Phase 2** — Multi-agent intelligence (LangGraph DAG, LLM routing, ChromaDB memory)  
+**Phase 3** — Predictive Apex (hybrid ML core: heuristic floor + optional neural augmentation; FastAPI serving; fractional-Kelly RL policy)
 
 ## Package layout
 
 ```
 src/aegis/
-  __init__.py          — package root, version 0.2.0
+  __init__.py          — package root, version 0.3.0
   config.py            — pydantic-settings Settings singleton
   cli/                 — Typer CLI (aegis scrape, aegis analyze, aegis signals tail, …)
   scrape/              — Phase 0: scrape adapters
@@ -26,20 +27,43 @@ src/aegis/
     graph.py           — LangGraph DAG builder (10 nodes + edges)
     runner.py          — run_trend() entrypoint; compiled-graph cache
     supervisor.py      — finalize node: aggregate decisions → final verdict
-    nodes/             — 10 agent nodes (scout, geo_arbitrage, narrative, …)
+    nodes/             — 10 agent nodes; scout + sentinel wired to Phase 3 bridge
     llm/               — LLM router (Ollama→Groq→OpenRouter→Gemini fallback)
     memory/            — ChromaDB semantic store + Redis shared memory + MinIO snapshots
     messaging/         — Redis Streams inter-agent bus + HMAC-SHA256 signing
     tools/             — velocity_classify, compliance_check, monte_carlo, historical_lookup, signal_query
     prompts/           — 10 Jinja2 prompt templates (one per agent node)
+  predict/             — Phase 3: Predictive Apex (heuristic-first, neural augmentation)
+    __init__.py        — FEATURE_DIM=20, DEFAULT_HORIZONS=(1,6,24,72), FEATURE_NAMES
+    schemas.py         — FeatureWindow, Prediction, PredictionBundle, PredictionRecord (Pydantic v2 frozen)
+    constants.py       — INFERENCE_HARD_TIMEOUT_S, PREDICT_BATCH_MAX, latency budgets
+    errors.py          — typed error codes AEGIS-PREDICT-0001..0015
+    resilience.py      — functional async wrapper: resilient_call(op, name, timeout_s)
+    features/          — builder (Phase 1 signals → FeatureWindow), velocity, creator graph
+    models/            — heuristic floor + PatchTST/Autoformer/TimesNet/HGT (optional torch)
+    causal/            — DeterministicAttributor + 5 counterfactual scenarios
+    rl/                — HeuristicPolicy (fractional-Kelly + stop-loss) + gymnasium ArbitrageEnv
+    backtest/          — WalkForwardBacktester (purged k-fold + adversarial noise)
+    registry/          — ModelStore (sha256 atomic writes) + PromotionGate (shadow-first)
+    training/          — Trainer + SignalDataset (Parquet/Arrow) + ONNX INT8 export
+    inference/         — InferenceRunner: the single Phase 3 entry point
+    serving/           — FastAPI: /predict /predict/batch /healthz /readyz /metrics
+    cli/               — Typer: run, serve, bench, eval
+  agents_phase3_glue/  — Phase 2 ↔ Phase 3 bridge (no LangGraph import)
+    bridge.py          — InferenceResult → AgentDecision dict mapping
 tests/
-  unit/                — 467 unit tests (all pass, coverage ≥ 79%)
+  unit/                — 663 unit tests (all pass, coverage ≥ 81%)
   unit/agents/         — 179 Phase 2 agent tests
+  unit/predict/        — 163 Phase 3 predict tests
+  integration/predict/ — 4 Phase 3 end-to-end tests (all pass)
 db/
-  migrations/          — SQL migrations (0001_init.sql: full schema)
+  migrations/          — SQL migrations (0001_init.sql + 0002_predictions.sql)
+docker/
+  Dockerfile.predict   — multi-stage, tini PID 1, non-root, optional ML build arg
 alembic/               — Alembic migration scaffolding
 config/                — Prometheus + Grafana configs
-docker-compose.yml     — 7-service dev stack
+docker-compose.yml     — 8-service dev stack (+ predict on :8100)
+docs/phase3/           — Phase 3 architecture, models, operations, integration docs
 ```
 
 ## Running the project
@@ -64,22 +88,27 @@ uv run aegis signals tail --limit 20
 uv run aegis analyze --limit 20
 
 # Run tests
-uv run pytest tests/unit/ -q
+uv run python -m pytest tests/unit/ -q -p no:hypothesis
 
-# Run with coverage
-uv run pytest tests/unit/ --cov=aegis --cov-fail-under=78
+# Run with coverage (addopts in pyproject.toml already injects --cov=aegis; do NOT pass it again)
+uv run python -m pytest tests/unit/ -p no:hypothesis
+
+# Run Phase 3 integration tests
+uv run python -m pytest tests/integration/predict/ -v -p no:hypothesis
 ```
 
-## Phase status — verified 2026-05-08
+## Phase status — verified 2026-05-15
 
 | Phase | Status | Notes |
 |-------|--------|-------|
 | Phase 0 — Scrape | ✅ Green | 4 working adapters; 754 signals in DB across 4 platforms |
-| Phase 1 — Persistence | ✅ Green | TimescaleDB, Redis, MinIO all healthy; all 7 docker services up |
-| Phase 2 — Agents | ✅ Green | 10-node LangGraph DAG runs end-to-end; 467 tests pass; coverage 79.54% |
-| Orchestration | ✅ Green | `aegis analyze` CLI, heuristic path, supervisor finalize all functional |
+| Phase 1 — Persistence | ✅ Green | TimescaleDB, Redis, MinIO all healthy; all 8 docker services up |
+| Phase 2 — Agents | ✅ Green | 10-node LangGraph DAG; SCOUT + SENTINEL wired to Phase 3 bridge |
+| Phase 3 — Predict | ✅ Green | Heuristic-first ML core; 663 tests pass; 4/4 integration tests pass; coverage 84.19% |
+| Orchestration | ✅ Green | `aegis analyze` + `aegis-predict` CLIs; FastAPI predict on :8100 |
+| Code quality | ✅ Green | 0 ruff violations (64 auto-fixed 2026-05-15); 141 files formatted |
 
-**Ready to proceed to Phase 3.** All phases green as of 2026-05-08.
+**All phases integrated and verified.** Final sign-off complete 2026-05-15. Ready for Phase 4.
 
 ---
 
@@ -133,6 +162,10 @@ Redis: `redis://localhost:6380/0`
 - **`TrendCandidate` fields**: `trend_id`, `title`, `signal_count`, `unique_authors`, `platforms: list[str]`, `velocity_1h/6h/24h`, `sentiment`, `commercial_intent`, `novelty`, `coordination_risk`. No `platform` (singular), no `engagement_velocity`, `geo_spread`, `source_credibility` — those were old field names.
 - **`GraphResult` fields**: use `final_verdict`, `final_score`, `final_confidence`, `final_priority`, `halt_reason`, `decisions`, `blocked_by`. Not `verdict`/`score`/`confidence` (those are on `AgentDecision`).
 - **Optional extras**: `langgraph`, `chromadb`/`sentence-transformers`, `boto3` are optional. Install with `uv sync --all-extras`.
+- **Phase 3 heuristic-first doctrine**: `aegis.predict` always produces a verdict from deterministic features. Neural models (PatchTST, Autoformer, TimesNet, HGT) can only REDUCE confidence by factor [0.5, 1.0] — they cannot flip a verdict. Guarantees zero-API-key test pass, <12ms p99 latency floor, full audit reproducibility.
+- **Phase 3 ↔ Phase 2 bridge**: `aegis.agents_phase3_glue.bridge` maps `InferenceResult → AgentDecision` without importing LangGraph. SCOUT uses `p_breakout` at 24h horizon; SENTINEL uses `p_decline` at 6h. Bridge gracefully no-ops when `signals` are absent from `GraphState` (e.g. unit tests).
+- **`predict.resilience` vs `core.resilience`**: Two distinct APIs. `predict.resilience` is functional (`await resilient_call(op, name, timeout_s)`) for ML inference ops. `core.resilience` is decorator-based (`@resilient_call(policy)`) for scraper I/O. They coexist intentionally — different ergonomics, different registries.
+- **Phase 3 DB tables**: `predictions`, `prediction_audit`, `model_manifest`, `backtest_results` — all in migration `0002_predictions.sql`. All have RLS (same `app.current_tenant` pattern as Phase 1). `predictions` is a TimescaleDB hypertable on `finished_at`.
 - **Amazon tier = T3_search**: Amazon adapter scrapes bestseller rankings (no prices), so tier is TIER_3_SEARCH not TIER_2_COMMERCE. If a future adapter adds prices, update `_PLATFORM_TIER` in `schemas/enums.py`.
 
 ## Test environment

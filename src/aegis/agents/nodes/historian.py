@@ -19,6 +19,7 @@ The pipeline continues without it.
 
 Author: AEGIS Pulse core team
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
@@ -76,9 +77,10 @@ class HistorianAgent(AgentNode):
         store_ok = self._store is not None
 
         if store_ok:
-            query_text = " | ".join(
-                t for t in (candidate.title, candidate.summary[:300]) if t
-            ) or candidate.trend_id
+            query_text = (
+                " | ".join(t for t in (candidate.title, candidate.summary[:300]) if t)
+                or candidate.trend_id
+            )
 
             try:
                 result = await find_analogues(
@@ -107,8 +109,7 @@ class HistorianAgent(AgentNode):
             confidence = 0.2  # operating blind without the store
 
         reasoning = (
-            f"analogues={len(analogues)}/{considered or 0} "
-            f"mean_similarity={mean_sim:.2f}"
+            f"analogues={len(analogues)}/{considered or 0} " f"mean_similarity={mean_sim:.2f}"
         )
 
         details: dict[str, Any] = {

@@ -25,6 +25,7 @@ Heuristic verdicts:
 
 Author: AEGIS Pulse core team
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -48,7 +49,11 @@ if TYPE_CHECKING:
 _CATEGORY_RULES: tuple[tuple[str, str, str], ...] = (
     # (regex, category, feasibility)
     # Hard / blocked
-    (r"\b(?:medical\s+device|defibrillator|thermometer|blood\s+pressure)\b", "medical_device", "blocked"),
+    (
+        r"\b(?:medical\s+device|defibrillator|thermometer|blood\s+pressure)\b",
+        "medical_device",
+        "blocked",
+    ),
     (r"\b(?:firearm|ammunition|silencer|gun\s+part|holster)\b", "firearms", "blocked"),
     (r"\b(?:cbd|thc|delta[-\s]?[89]|cannabis|marijuana)\b", "cannabis", "blocked"),
     (r"\b(?:prescription|rx)\b", "rx_pharma", "blocked"),
@@ -60,7 +65,11 @@ _CATEGORY_RULES: tuple[tuple[str, str, str], ...] = (
     (r"\b(?:drone|quadcopter)\b", "drone", "hard"),
     (r"\b(?:children'?s?\s+toy|baby|infant|toddler)\b", "children", "hard"),
     # Standard
-    (r"\b(?:earbud|headphone|speaker|bluetooth\s+(?:speaker|earbud))\b", "consumer_electronics", "standard"),
+    (
+        r"\b(?:earbud|headphone|speaker|bluetooth\s+(?:speaker|earbud))\b",
+        "consumer_electronics",
+        "standard",
+    ),
     (r"\b(?:phone\s+case|phone\s+stand|tablet\s+stand)\b", "phone_accessory", "standard"),
     (r"\b(?:bag|backpack|tote|duffel|luggage)\b", "bags", "standard"),
     (r"\b(?:shoe|sneaker|sandal|boot|slipper)\b", "footwear", "standard"),

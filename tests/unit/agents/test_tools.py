@@ -1,4 +1,5 @@
 """Tests for the deterministic tools."""
+
 from __future__ import annotations
 
 from aegis.agents.tools.compliance_check import check
@@ -26,15 +27,11 @@ class TestVelocityClassify:
         assert result.data["class"] != "breakout"
 
     async def test_breakout_with_sustain(self) -> None:
-        result = await classify(
-            velocity_1h=600.0, velocity_6h=2400.0, velocity_24h=8000.0
-        )
+        result = await classify(velocity_1h=600.0, velocity_6h=2400.0, velocity_24h=8000.0)
         assert result.data["class"] == "breakout"
 
     async def test_score_in_unit_interval(self) -> None:
-        result = await classify(
-            velocity_1h=10000.0, velocity_6h=50000.0, velocity_24h=150000.0
-        )
+        result = await classify(velocity_1h=10000.0, velocity_6h=50000.0, velocity_24h=150000.0)
         assert 0.0 <= result.data["breakout_score"] <= 1.0
 
     async def test_acceleration_clamped(self) -> None:
@@ -97,9 +94,7 @@ class TestComplianceCheck:
 
     async def test_apple_negative_lookahead(self) -> None:
         # "Apple pie" must NOT trigger trademark.
-        result = await check(
-            title="Best apple pie recipe", summary="Make great apple pie at home"
-        )
+        result = await check(title="Best apple pie recipe", summary="Make great apple pie at home")
         assert result.data["verdict"] != "block"
 
     async def test_apple_brand_does_block(self) -> None:
@@ -123,9 +118,7 @@ class TestComplianceCheck:
         assert any("dd:" in f for f in result.data["flags"])
 
     async def test_counterfeit_risk_flags(self) -> None:
-        result = await check(
-            title="Genuine Rolex watch", summary="brand new", detected_price=15.0
-        )
+        result = await check(title="Genuine Rolex watch", summary="brand new", detected_price=15.0)
         assert result.data["counterfeit_risk"] is True
 
     async def test_counterfeit_risk_not_flagged_at_high_price(self) -> None:

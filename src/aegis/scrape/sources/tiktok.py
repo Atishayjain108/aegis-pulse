@@ -75,9 +75,7 @@ class TikTokAdapter(SourceAdapter[dict[str, Any]]):
 
     def __init__(self, config: TikTokConfig | AdapterConfig, **kwargs: Any) -> None:
         super().__init__(config, **kwargs)
-        self._tt_config = (
-            config if isinstance(config, TikTokConfig) else TikTokConfig()
-        )
+        self._tt_config = config if isinstance(config, TikTokConfig) else TikTokConfig()
         self._client: httpx.AsyncClient | None = None
 
     @property

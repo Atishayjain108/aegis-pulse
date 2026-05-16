@@ -1,4 +1,5 @@
 """Tests for the supervisor aggregation logic."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
@@ -20,8 +21,9 @@ from aegis.agents.supervisor import (
 )
 
 
-def _decision(agent: str, verdict: AgentVerdict, score: float = 0.7,
-              confidence: float = 0.8) -> AgentDecision:
+def _decision(
+    agent: str, verdict: AgentVerdict, score: float = 0.7, confidence: float = 0.8
+) -> AgentDecision:
     return AgentDecision(
         agent=agent,
         trend_id="t1",

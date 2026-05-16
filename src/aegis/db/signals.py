@@ -140,34 +140,47 @@ async def fetch_recent_signals(
     tenant_id: UUID,
     limit: int,
     platform: str | None = None,
+    since: Any | None = None,
 ) -> list[dict[str, Any]]:
-    """Return the N most recent signals for a tenant, newest first."""
-    if platform:
-        rows = await pool.fetch(
-            """
-            SELECT signal_id, platform, external_id, title, url, ts,
-                   scraped_at AS captured_at, intent
-            FROM signals
-            WHERE platform::text = $2
-            ORDER BY ts DESC
-            LIMIT $1
-            """,
-            limit,
-            platform,
-            tenant_id=tenant_id,
-        )
-    else:
-        rows = await pool.fetch(
-            """
-            SELECT signal_id, platform, external_id, title, url, ts,
-                   scraped_at AS captured_at, intent
-            FROM signals
-            ORDER BY ts DESC
-            LIMIT $1
-            """,
-            limit,
-            tenant_id=tenant_id,
-        )
+    """Return the N most recent signals for a tenant, newest first.
+
+    Args:
+        pool: shared asyncpg pool.
+        tenant_id: RLS-scoping tenant.
+        limit: max rows to return.
+        platform: optional platform filter (string, matched against platform::text).
+        since: optional lower-bound timestamp (rows with ts >= since only).
+    """
+    # Build WHERE clauses dynamically so we avoid scanning the full table
+    # when a time-window constraint is provided (the ts index is used).
+    conditions: list[str] = []
+    params: list[Any] = [limit]
+
+    if since is not None:
+        params.append(since)
+        conditions.append(f"ts >= ${len(params)}")
+
+    if platform is not None:
+        params.append(platform)
+        conditions.append(f"platform::text = ${len(params)}")
+
+    where_clause = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+
+    rows = await pool.fetch(
+        f"""
+        SELECT
+            signal_id, platform, external_id, title, url, ts,
+            scraped_at AS captured_at,
+            intent, author_id, raw_text,
+            views, likes, comments, shares, saves
+        FROM signals
+        {where_clause}
+        ORDER BY ts DESC
+        LIMIT $1
+        """,
+        *params,
+        tenant_id=tenant_id,
+    )
     return [dict(row) for row in rows]
 
 

@@ -22,8 +22,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "aegis-pulse"
-version = "0.2.0"
-description = "Autonomous market arbitrage intelligence engine — Phase 1 foundation + Phase 2 multi-agent intelligence"
+version = "0.3.0"
+description = "Autonomous market arbitrage intelligence engine — Phase 1 scrape · Phase 2 multi-agent · Phase 3 predictive apex"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"   # hard constraint: see PYTHON_3.12_COMPATIBILITY_GUARDRAILS
 license = { text = "Proprietary" }
@@ -36,11 +36,11 @@ authors = [{ name = "AEGIS Pulse Team" }]
 # ----------------------------------------------------------------------------
 dependencies = [
   # --- Core type system / validation ---
-  "pydantic==2.9.2",                 # rationale: v2 API + PEP 695 generics; pinned before v3 breaking changes
-  "pydantic-settings==2.5.2",        # rationale: env-var/secret loading with pydantic v2 typing
+  "pydantic>=2.10,<3",               # rationale: v2 API + PEP 695 generics; >=2.10 required by Phase 3 predict
+  "pydantic-settings>=2.5,<3",       # rationale: env-var/secret loading with pydantic v2 typing
   "typing-extensions==4.12.2",       # rationale: backports for TypeIs/ReadOnly on 3.12
   # --- Async HTTP / networking ---
-  "httpx[http2]==0.27.2",            # rationale: HTTP/2 support + timeouts-everywhere API
+  "httpx[http2]>=0.27,<0.30",        # rationale: HTTP/2 support + timeouts-everywhere API; >=0.28 used by Phase 3 serving bench
   "aiohttp==3.10.10",                # rationale: needed by several upstream libs (praw-async, apify)
   "aiodns==3.2.0",                   # rationale: async DNS; required for aiohttp high-concurrency
   # --- Database / storage ---
@@ -51,7 +51,8 @@ dependencies = [
   "redis[hiredis]==5.1.1",           # rationale: async client + C parser; streams + sorted sets
   "minio==7.2.9",                    # rationale: S3-compatible client for raw signal audit trail
   # --- Observability ---
-  "structlog==24.4.0",               # rationale: structured logs; zero-cost when consumer is JSON
+  "structlog>=24.4,<26",             # rationale: structured logs; >=25.1 required by Phase 3 predict; <26 avoids next major
+  "anyio>=4.6,<5",                   # rationale: asyncio plumbing for Phase 3 resilience wrapper
   "opentelemetry-api==1.27.0",
   "opentelemetry-sdk==1.27.0",       # rationale: matched SDK<->API; trace propagation
   "opentelemetry-instrumentation-asyncpg==0.48b0",    # rationale: auto-trace DB queries
@@ -109,7 +110,7 @@ ml = [
   "numpy==1.26.4",                   # rationale: <2.0 for torch/onnx wheel compatibility (prompt-specified)
   "pandas==2.2.3",                   # rationale: feature engineering + backtests; 2.2+ adopts pyarrow
   "pyarrow==17.0.0",                 # rationale: Parquet + Arrow; deterministic schema for audit trail
-  "onnxruntime==1.19.2",             # rationale: CPU-viable inference; INT8 quantization (prompt-required)
+  "onnxruntime>=1.19,<1.22",         # rationale: CPU-viable inference; upper bound kept for abi stability; >=1.20 needed by Phase 3
   # onnxruntime-gpu removed — requires CUDA drivers; conflicts with CPU wheel on no-GPU hardware
   "scikit-learn==1.5.2",             # rationale: classical baselines + Platt scaling + isotonic calibration
   "networkx==3.3",                   # rationale: graph features before full GNN in Phase 3
@@ -139,6 +140,42 @@ snapshots = [
   "boto3>=1.34",                     # rationale: S3-compatible uploads to MinIO; optional, non-blocking on failure
 ]
 
+# Phase 3 — Predictive Apex (heuristic-only core + optional ML augmentation)
+predict = [
+  "fastapi>=0.115,<0.120",           # rationale: Phase 3 HTTP serving surface; Pydantic v2 native
+  "uvicorn[standard]>=0.34,<0.40",   # rationale: ASGI server for Phase 3 predict service
+  "prometheus-client>=0.21,<0.30",   # rationale: /metrics endpoint for Phase 3 FastAPI
+]
+
+# Phase 3 — optional ML augmentation (torch-based predictors; heavy)
+predict-ml = [
+  "torch>=2.5,<2.6",                 # rationale: PatchTST/Autoformer/TimesNet temporal backbones
+  "onnx>=1.17,<1.20",                # rationale: model export format for registry
+  "onnxruntime>=1.19,<1.22",         # rationale: CPU-viable INT8 inference; aligned with ml extra bound
+]
+
+# Phase 3 — graph relational backbone (heavier; optional)
+predict-graph = [
+  "torch-geometric>=2.6,<2.7",       # rationale: HGT relational predictor
+]
+
+# Phase 3 — RL execution policy training (heavier; optional)
+predict-rl = [
+  "gymnasium>=0.29,<2",              # rationale: ArbitrageEnv for PPO training
+]
+
+# Phase 3 — causal attribution (heavier; optional)
+predict-causal = [
+  "dowhy>=0.12,<0.14",               # rationale: DoWhy backdoor estimator
+  "econml>=0.15,<0.16",              # rationale: EconML double-ML causal
+]
+
+# Phase 3 — backtest analytics
+predict-analysis = [
+  "duckdb>=1.1,<2",                  # rationale: zero-config OLAP over Parquet for backtest explorer
+  "polars>=1.20,<2",                 # rationale: fast DataFrames for backtest result analysis
+]
+
 # Dev tooling — linters, type-checkers, tests
 dev = [
   "ruff==0.6.9",                     # rationale: replaces black+isort+flake8 — one tool, stricter
@@ -162,7 +199,8 @@ dev = [
 ]
 
 [project.scripts]
-aegis = "aegis.cli:main"             # rationale: main CLI entry point; implemented incrementally
+aegis = "aegis.cli:main"             # rationale: main CLI entry point
+aegis-predict = "aegis.predict.cli.commands:_typer_app_or_die"  # rationale: Phase 3 standalone predict CLI
 
 # ============================================================================
 # uv — deterministic Python package manager (Astral)
@@ -261,6 +299,8 @@ ignore = [
   "ASYNC109", # async function with timeout param — valid API design; callers control timeout
   "B017",     # pytest.raises(Exception) — acceptable in tests covering Pydantic validation
   "B023",     # function closure over loop variable — function always called in same iteration
+  "B008",     # function call in default arg — Typer CLI idiom requires typer.Option() in defaults
+  "S104",     # binding to all interfaces — intentional for containerised FastAPI serving
 ]
 # Enforce keyword-only bool params (prompt rule).
 flake8-boolean-trap = { extend-allowed-calls = [] }
@@ -268,6 +308,10 @@ flake8-boolean-trap = { extend-allowed-calls = [] }
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["ANN", "S101", "PLR2004", "T20"]       # tests are less strict
 "src/aegis/cli/**" = ["T20"]                          # CLI may print
+# Neural model forward() methods use torch.Tensor which is unavailable without the optional dep;
+# FastAPI lifespan/middleware functions use types from the optional fastapi package.
+"src/aegis/predict/models/**" = ["ANN001", "ANN202"]
+"src/aegis/predict/serving/app.py" = ["ANN001", "ANN202"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
@@ -315,6 +359,18 @@ module = [
   "sentence_transformers.*",
   "boto3.*",
   "botocore.*",
+  # Phase 3 optional ML deps
+  "torch.*",
+  "torch_geometric.*",
+  "onnx.*",
+  "onnxruntime.*",
+  "dowhy.*",
+  "econml.*",
+  "gymnasium.*",
+  "ray.*",
+  "mlflow.*",
+  "fastapi.*",
+  "uvicorn.*",
 ]
 ignore_missing_imports = true
 
@@ -375,6 +431,15 @@ omit = [
   "*/agents/memory/snapshots.py",
   "*/agents/messaging/streams.py",
   "*/agents/llm/providers/*.py",
+  # Phase 3 — optional ML heavy paths; covered by integration tests only
+  "*/predict/training/*",
+  "*/predict/serving/*",
+  "*/predict/cli/*",
+  "*/predict/rl/env.py",
+  "*/predict/models/patchtst.py",
+  "*/predict/models/autoformer.py",
+  "*/predict/models/timesnet.py",
+  "*/predict/models/hgt.py",
 ]
 
 [tool.coverage.report]
@@ -401,3 +466,10 @@ typeCheckingMode = "strict"
 reportMissingImports = "error"
 reportUnknownMemberType = "warning"       # mypy will catch the rest
 reportMissingTypeStubs = "warning"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.3",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=5.0.0",
+]

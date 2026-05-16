@@ -32,6 +32,7 @@ Usage::
 
     from aegis.core.resilience import resilient_call, ResiliencePolicy
 
+
     @resilient_call(
         ResiliencePolicy(
             name="reddit.api",
@@ -109,7 +110,11 @@ class ResilientError(Exception):
     """
 
     def __init__(
-        self, *, message: str, category: ErrorCategory, policy_name: str,
+        self,
+        *,
+        message: str,
+        category: ErrorCategory,
+        policy_name: str,
     ) -> None:
         super().__init__(message)
         self.category: ErrorCategory = category
@@ -376,6 +381,7 @@ def resilient_call(
     The decorator preserves the wrapped function's signature via
     ``functools.wraps`` and is fully type-preserving on Python 3.12.
     """
+
     def decorator(func: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]:
         breaker = get_breaker(
             policy.name,
@@ -392,6 +398,7 @@ def resilient_call(
             _observe: Callable[..., None] | None
             try:
                 from aegis.core.metrics import resilient_call_observe as _observe_imported
+
                 _observe = _observe_imported
             except ImportError:
                 _observe = None
@@ -486,7 +493,9 @@ def resilient_call(
                     break
 
                 delay = _decorrelated_jitter(delay, policy.base_delay, policy.max_delay)
-                log.info("attempt.retry_sleep", next_attempt=attempt + 1, sleep_seconds=round(delay, 2))
+                log.info(
+                    "attempt.retry_sleep", next_attempt=attempt + 1, sleep_seconds=round(delay, 2)
+                )
                 await asyncio.sleep(delay)
 
             # All attempts exhausted.

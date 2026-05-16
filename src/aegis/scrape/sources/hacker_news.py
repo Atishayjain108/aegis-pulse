@@ -106,9 +106,7 @@ class HackerNewsAdapter(SourceAdapter[dict[str, Any]]):
 
         cfg = self._hn_config
         endpoint = (
-            f"{_ALGOLIA_BASE}/search_by_date"
-            if cfg.search_by_date
-            else f"{_ALGOLIA_BASE}/search"
+            f"{_ALGOLIA_BASE}/search_by_date" if cfg.search_by_date else f"{_ALGOLIA_BASE}/search"
         )
 
         page = 0
@@ -169,9 +167,7 @@ class HackerNewsAdapter(SourceAdapter[dict[str, Any]]):
             posted_at: datetime | None = None
             if created_at_str:
                 with contextlib.suppress(ValueError):
-                    posted_at = datetime.fromisoformat(
-                        created_at_str.replace("Z", "+00:00")
-                    )
+                    posted_at = datetime.fromisoformat(created_at_str.replace("Z", "+00:00"))
 
             hn_url = f"{_HN_ITEM_BASE}?id={obj_id}"
 

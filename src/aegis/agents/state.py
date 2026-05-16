@@ -12,6 +12,7 @@ the last write wins (race condition).
 
 Author: AEGIS Pulse core team
 """
+
 from __future__ import annotations
 
 import operator  # required at runtime — used as a reducer in Annotated[int, operator.add]
@@ -23,9 +24,7 @@ from typing import Annotated, Any, TypedDict
 from .schemas import AgentDecision, AgentVerdict, Priority, TrendCandidate
 
 
-def _merge_decisions(
-    left: list[AgentDecision], right: list[AgentDecision]
-) -> list[AgentDecision]:
+def _merge_decisions(left: list[AgentDecision], right: list[AgentDecision]) -> list[AgentDecision]:
     """Concatenate decision lists, dedupe by (agent, correlation_id).
 
     LangGraph parallel branches each return a list with one decision.
@@ -119,6 +118,14 @@ class GraphState(TypedDict, total=False):
     halt_reason: str
 
     # ------------------------------------------------------------------
+    # Phase 3 enrichment inputs (optional — supplied by CLI/API callers)
+    # ------------------------------------------------------------------
+    # Raw signal dicts from Phase 1 DB. When present, SCOUT and SENTINEL
+    # pass them to the Phase 3 bridge so the temporal/relational models
+    # can build real feature windows instead of returning empty heuristics.
+    signals: list[dict[str, Any]]
+
+    # ------------------------------------------------------------------
     # Operational
     # ------------------------------------------------------------------
     metadata: Annotated[dict[str, Any], _merge_dicts]
@@ -129,9 +136,10 @@ def initial_state(
     candidate: TrendCandidate,
     *,
     tenant_id: str = "default",
+    signals: list[dict[str, Any]] | None = None,
 ) -> GraphState:
     """Build a fresh state dict for a new graph invocation."""
-    return GraphState(
+    state = GraphState(
         candidate=candidate,
         correlation_id=candidate.correlation_id,
         trend_id=candidate.trend_id,
@@ -141,3 +149,6 @@ def initial_state(
         metadata={},
         error_count=0,
     )
+    if signals:
+        state["signals"] = signals
+    return state

@@ -12,6 +12,7 @@ are easy to tune.
 
 Author: AEGIS Pulse core team
 """
+
 from __future__ import annotations
 
 from .base import ToolResult, tool_call

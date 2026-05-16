@@ -1,0 +1,102 @@
+# =====================================================================
+# AEGIS Pulse — Phase 3 Predict Serving
+#
+# Multi-stage build:
+#   * stage 1 (builder): install deps into a venv
+#   * stage 2 (runtime): copy venv into a slim image, drop dev tooling
+#
+# Image size target: < 250 MB without optional ML deps (heuristic-only path)
+#                    < 1.4 GB with torch + onnxruntime
+#
+# The runtime image runs as non-root (uid 10001) and uses tini as PID 1
+# for signal forwarding (FastAPI's lifespan teardown depends on SIGTERM).
+# =====================================================================
+
+ARG PYTHON_VERSION=3.12.7
+ARG INSTALL_OPTIONAL_ML=0   # set to 1 to bake in torch + onnxruntime
+
+# ---------- stage 1: builder ----------
+FROM python:${PYTHON_VERSION}-slim-bookworm AS builder
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        curl \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Pin uv for deterministic resolves (matches Phase 0 bootstrap).
+RUN pip install uv==0.5.7
+
+WORKDIR /app
+COPY pyproject.toml /app/pyproject.toml
+COPY src /app/src
+
+# Install runtime deps (heuristic-only by default).
+RUN uv pip install --python /opt/venv/bin/python --no-cache-dir \
+    "fastapi==0.115.6" \
+    "uvicorn[standard]==0.34.0" \
+    "pydantic==2.10.5" \
+    "structlog==25.1.0" \
+    "httpx==0.28.1" \
+    "prometheus-client==0.21.1" \
+    "/app"
+
+ARG INSTALL_OPTIONAL_ML
+RUN if [ "$INSTALL_OPTIONAL_ML" = "1" ] ; then \
+        uv pip install --python /opt/venv/bin/python --no-cache-dir \
+            "torch==2.5.1+cpu" \
+            --index-url https://download.pytorch.org/whl/cpu \
+            && uv pip install --python /opt/venv/bin/python --no-cache-dir \
+                "onnx==1.17.0" "onnxruntime==1.20.1" ; \
+    fi
+
+# ---------- stage 2: runtime ----------
+FROM python:${PYTHON_VERSION}-slim-bookworm AS runtime
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH="/opt/venv/bin:$PATH" \
+    AEGIS_ENV=production \
+    AEGIS_PHASE=3
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        tini \
+        ca-certificates \
+        curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --system --gid 10001 aegis \
+    && useradd --system --uid 10001 --gid aegis --create-home --home-dir /home/aegis aegis
+
+COPY --from=builder /opt/venv /opt/venv
+COPY --from=builder /app/src /app/src
+
+WORKDIR /app
+ENV PYTHONPATH=/app/src
+
+USER aegis
+
+EXPOSE 8000
+
+# Graceful shutdown: uvicorn handles SIGTERM if tini is PID 1.
+ENTRYPOINT ["tini", "--"]
+
+# Liveness probe target.
+HEALTHCHECK --interval=10s --timeout=2s --start-period=20s --retries=3 \
+    CMD curl -fsS http://localhost:8000/healthz || exit 1
+
+CMD ["uvicorn", "aegis.predict.serving.app:create_app", \
+     "--factory", \
+     "--host", "0.0.0.0", \
+     "--port", "8000", \
+     "--workers", "1", \
+     "--loop", "uvloop", \
+     "--http", "httptools", \
+     "--no-access-log"]

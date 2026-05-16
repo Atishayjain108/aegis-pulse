@@ -169,6 +169,7 @@ def test_build_adapter_reddit_missing_credentials_raises(monkeypatch):
 
     # Reload settings so the monkeypatched env takes effect
     import aegis.config as _cfg
+
     _cfg._settings_instance = None  # type: ignore[attr-defined]
 
     with pytest.raises(click.UsageError, match="AEGIS_REDDIT_CLIENT_ID"):
@@ -187,6 +188,7 @@ def test_build_adapter_youtube_missing_key_raises(monkeypatch):
     monkeypatch.delenv("AEGIS_YOUTUBE_API_KEY", raising=False)
 
     import aegis.config as _cfg
+
     _cfg._settings_instance = None  # type: ignore[attr-defined]
 
     with pytest.raises(click.UsageError, match="AEGIS_YOUTUBE_API_KEY"):

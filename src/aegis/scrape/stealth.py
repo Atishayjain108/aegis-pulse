@@ -63,25 +63,29 @@ _UA_POOL: Final[tuple[tuple[str, str, str, str], ...]] = (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
         '"Not A(Brand";v="8", "Chromium";v="132", "Google Chrome";v="132"',
-        "Windows", '"15.0.0"',
+        "Windows",
+        '"15.0.0"',
     ),
     (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
         '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
-        "macOS", '"14.7.0"',
+        "macOS",
+        '"14.7.0"',
     ),
     (
         "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
         '"Chromium";v="130", "Google Chrome";v="130", "Not?A_Brand";v="99"',
-        "Linux", '""',
+        "Linux",
+        '""',
     ),
     (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
         '"Chromium";v="130", "Google Chrome";v="130", "Not?A_Brand";v="99"',
-        "Windows", '"10.0.0"',
+        "Windows",
+        '"10.0.0"',
     ),
 )
 
@@ -91,20 +95,28 @@ _UA_POOL_MOBILE: Final[tuple[tuple[str, str, str, str], ...]] = (
         "Mozilla/5.0 (Linux; Android 14; SM-S921B) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/132.0.0.0 Mobile Safari/537.36",
         '"Not A(Brand";v="8", "Chromium";v="132", "Google Chrome";v="132"',
-        "Android", '"14.0.0"',
+        "Android",
+        '"14.0.0"',
     ),
     (
         "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) "
         "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
         '""',  # Safari does not send sec-ch-ua
-        "iOS", '"17.5.0"',
+        "iOS",
+        '"17.5.0"',
     ),
 )
 
 # Real WebGL renderer strings observed across consumer hardware.
 _WEBGL_PROFILES: Final[tuple[tuple[str, str], ...]] = (
-    ("Google Inc. (Intel)", "ANGLE (Intel, Intel(R) UHD Graphics 630 Direct3D11 vs_5_0 ps_5_0, D3D11)"),
-    ("Google Inc. (NVIDIA)", "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)"),
+    (
+        "Google Inc. (Intel)",
+        "ANGLE (Intel, Intel(R) UHD Graphics 630 Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    ),
+    (
+        "Google Inc. (NVIDIA)",
+        "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    ),
     ("Google Inc. (AMD)", "ANGLE (AMD, AMD Radeon RX 6700 XT Direct3D11 vs_5_0 ps_5_0, D3D11)"),
     ("Google Inc. (Apple)", "ANGLE (Apple, Apple M1 Pro, OpenGL 4.1)"),
     ("Mesa", "Mesa Intel(R) UHD Graphics (CML GT2)"),
@@ -112,12 +124,12 @@ _WEBGL_PROFILES: Final[tuple[tuple[str, str], ...]] = (
 
 # Common screen sizes — real laptops + desktops.
 _SCREEN_PROFILES: Final[tuple[tuple[int, int, int], ...]] = (
-    (1920, 1080, 24),     # Full HD desktop
-    (1920, 1200, 24),     # 16:10 laptop
-    (2560, 1440, 24),     # 1440p
-    (1440, 900, 24),      # MBP 14" effective
-    (1366, 768, 24),      # cheaper laptops
-    (3840, 2160, 30),     # 4K — less common; included for diversity
+    (1920, 1080, 24),  # Full HD desktop
+    (1920, 1200, 24),  # 16:10 laptop
+    (2560, 1440, 24),  # 1440p
+    (1440, 900, 24),  # MBP 14" effective
+    (1366, 768, 24),  # cheaper laptops
+    (3840, 2160, 30),  # 4K — less common; included for diversity
 )
 
 # Hardware concurrency values (from real Chrome). Avoid values like 1, 2, 64
@@ -130,11 +142,19 @@ _DEVICE_MEMORY: Final[tuple[float, ...]] = (4, 4, 8, 8, 8)
 
 # Common timezones — list pulled from real visitor analytics.
 _TIMEZONES: Final[tuple[str, ...]] = (
-    "America/New_York", "America/Chicago", "America/Denver",
-    "America/Los_Angeles", "America/Toronto",
-    "Europe/London", "Europe/Berlin", "Europe/Paris",
-    "Europe/Madrid", "Europe/Amsterdam",
-    "Asia/Kolkata", "Asia/Tokyo", "Asia/Singapore",
+    "America/New_York",
+    "America/Chicago",
+    "America/Denver",
+    "America/Los_Angeles",
+    "America/Toronto",
+    "Europe/London",
+    "Europe/Berlin",
+    "Europe/Paris",
+    "Europe/Madrid",
+    "Europe/Amsterdam",
+    "Asia/Kolkata",
+    "Asia/Tokyo",
+    "Asia/Singapore",
     "Australia/Sydney",
 )
 
@@ -227,7 +247,10 @@ class StealthProfile:
         webgl_vendor, webgl_renderer = r.choice(_WEBGL_PROFILES)
         # Coherence rule: macOS + non-Apple GPU is suspicious. Re-pick if mismatched.
         if "Macintosh" in ua and "Apple" not in webgl_vendor:
-            webgl_vendor, webgl_renderer = "Google Inc. (Apple)", "ANGLE (Apple, Apple M1 Pro, OpenGL 4.1)"
+            webgl_vendor, webgl_renderer = (
+                "Google Inc. (Apple)",
+                "ANGLE (Apple, Apple M1 Pro, OpenGL 4.1)",
+            )
 
         accept_lang = r.choice(_ACCEPT_LANGUAGES)
         # Locale = first sub-tag of accept_lang (e.g. "en-US,en;q=0.9" → "en-US")
@@ -597,8 +620,7 @@ async def apply_to_playwright_context(
     set_extra_http_headers = getattr(context, "set_extra_http_headers", None)
     if not callable(add_init_script):
         raise TypeError(
-            "context does not look like a Playwright BrowserContext "
-            "(missing add_init_script)",
+            "context does not look like a Playwright BrowserContext " "(missing add_init_script)",
         )
     await add_init_script(script=build_stealth_script(profile))
     if callable(set_extra_http_headers):

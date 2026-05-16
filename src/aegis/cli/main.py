@@ -47,6 +47,7 @@ from aegis.config import settings
 # Helpers
 # ---------------------------------------------------------------------
 
+
 def _repo_root() -> Path:
     """Best-effort discovery of the repo root (where docker-compose lives)."""
     here = Path(__file__).resolve()
@@ -69,9 +70,7 @@ def _run(
     if env:
         proc_env.update(env)
     click.echo(f"$ {' '.join(cmd)}", err=True)
-    result = subprocess.run(
-        cmd, cwd=str(cwd) if cwd else None, env=proc_env, check=False
-    )
+    result = subprocess.run(cmd, cwd=str(cwd) if cwd else None, env=proc_env, check=False)
     if check and result.returncode != 0:
         click.echo(
             f"AEGIS-CLI-0001: command exited with {result.returncode}",
@@ -110,6 +109,7 @@ def _docker_compose() -> list[str]:
 # Top-level group
 # ---------------------------------------------------------------------
 
+
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
 @click.version_option(__version__, prog_name="aegis")
 def main() -> None:
@@ -119,6 +119,7 @@ def main() -> None:
 # ---------------------------------------------------------------------
 # Stack lifecycle
 # ---------------------------------------------------------------------
+
 
 @main.command()
 @click.option(
@@ -158,8 +159,7 @@ def down(volumes: bool) -> None:
     cmd = [*_docker_compose(), "down"]
     if volumes:
         if not click.confirm(
-            "This will DELETE all local Postgres, Redis, and MinIO data. "
-            "Continue?",
+            "This will DELETE all local Postgres, Redis, and MinIO data. " "Continue?",
             default=False,
         ):
             click.echo("Aborted.", err=True)
@@ -172,9 +172,7 @@ def down(volumes: bool) -> None:
 def status() -> None:
     """Show the health status of every service."""
     cmd = [*_docker_compose(), "ps", "--format", "json"]
-    result = subprocess.run(
-        cmd, cwd=_repo_root(), capture_output=True, text=True, check=False
-    )
+    result = subprocess.run(cmd, cwd=_repo_root(), capture_output=True, text=True, check=False)
     if result.returncode != 0:
         click.echo(
             f"AEGIS-CLI-0003: docker compose ps failed: {result.stderr}",
@@ -222,6 +220,7 @@ def status() -> None:
 # Logs / tails
 # ---------------------------------------------------------------------
 
+
 @main.command()
 @click.argument("service", required=False)
 def tail(service: str | None) -> None:
@@ -235,6 +234,7 @@ def tail(service: str | None) -> None:
 # ---------------------------------------------------------------------
 # Database migrations
 # ---------------------------------------------------------------------
+
 
 @main.command()
 def migrate() -> None:
@@ -250,27 +250,25 @@ def migrate() -> None:
 # and the canonical AdapterConfig name. New adapters land here.
 _ADAPTER_REGISTRY: dict[str, tuple[str, str]] = {
     # --- API-based (credentials required) ---
-    "reddit":          ("aegis.scrape.sources.reddit",          "RedditAdapter"),
-    "youtube":         ("aegis.scrape.sources.youtube",         "YouTubeAdapter"),
-    "instagram":       ("aegis.scrape.sources.instagram",       "InstagramAdapter"),
+    "reddit": ("aegis.scrape.sources.reddit", "RedditAdapter"),
+    "youtube": ("aegis.scrape.sources.youtube", "YouTubeAdapter"),
+    "instagram": ("aegis.scrape.sources.instagram", "InstagramAdapter"),
     # --- No API key required ---
-    "tiktok":          ("aegis.scrape.sources.tiktok",          "TikTokAdapter"),
-    "pinterest":       ("aegis.scrape.sources.pinterest",       "PinterestAdapter"),
-    "amazon":          ("aegis.scrape.sources.amazon",          "AmazonAdapter"),
-    "google-trends":   ("aegis.scrape.sources.google_trends",   "GoogleTrendsAdapter"),
-    "hacker-news":     ("aegis.scrape.sources.hacker_news",     "HackerNewsAdapter"),
-    "nitter":          ("aegis.scrape.sources.nitter",          "NitterAdapter"),
+    "tiktok": ("aegis.scrape.sources.tiktok", "TikTokAdapter"),
+    "pinterest": ("aegis.scrape.sources.pinterest", "PinterestAdapter"),
+    "amazon": ("aegis.scrape.sources.amazon", "AmazonAdapter"),
+    "google-trends": ("aegis.scrape.sources.google_trends", "GoogleTrendsAdapter"),
+    "hacker-news": ("aegis.scrape.sources.hacker_news", "HackerNewsAdapter"),
+    "nitter": ("aegis.scrape.sources.nitter", "NitterAdapter"),
     "github-trending": ("aegis.scrape.sources.github_trending", "GitHubTrendingAdapter"),
-    "reddit-rss":      ("aegis.scrape.sources.reddit_rss",      "RedditRSSAdapter"),
+    "reddit-rss": ("aegis.scrape.sources.reddit_rss", "RedditRSSAdapter"),
 }
 
 
 def _load_adapter_class(name: str) -> Any:
     if name not in _ADAPTER_REGISTRY:
         valid = ", ".join(sorted(_ADAPTER_REGISTRY))
-        raise click.UsageError(
-            f"Unknown source {name!r}. Valid: {valid}"
-        )
+        raise click.UsageError(f"Unknown source {name!r}. Valid: {valid}")
     module_path, class_name = _ADAPTER_REGISTRY[name]
     import importlib
 
@@ -279,9 +277,7 @@ def _load_adapter_class(name: str) -> Any:
 
 
 @main.command()
-@click.option(
-    "--source", required=True, help="Adapter name (e.g. reddit, tiktok)."
-)
+@click.option("--source", required=True, help="Adapter name (e.g. reddit, tiktok).")
 @click.option(
     "--limit",
     type=int,
@@ -354,6 +350,7 @@ def _build_adapter(source: str, adapter_cls: Any, *, limit: int) -> Any:
 
     if source == "reddit":
         from aegis.scrape.sources.reddit import RedditConfig
+
         r = cfg.reddit
         if r.client_id is None or r.client_secret is None:
             raise click.UsageError(
@@ -373,6 +370,7 @@ def _build_adapter(source: str, adapter_cls: Any, *, limit: int) -> Any:
 
     if source == "youtube":
         from aegis.scrape.sources.youtube import YouTubeConfig
+
         yt = cfg.youtube
         if yt.api_key is None:
             raise click.UsageError(
@@ -388,45 +386,55 @@ def _build_adapter(source: str, adapter_cls: Any, *, limit: int) -> Any:
 
     if source == "hacker-news":
         from aegis.scrape.sources.hacker_news import HackerNewsConfig
+
         return adapter_cls(HackerNewsConfig())
 
     if source == "google-trends":
         from aegis.scrape.sources.google_trends import GoogleTrendsConfig
+
         return adapter_cls(GoogleTrendsConfig())
 
     if source == "tiktok":
         from aegis.scrape.sources.tiktok import TikTokConfig
+
         return adapter_cls(TikTokConfig())
 
     if source == "instagram":
         from aegis.scrape.sources.instagram import InstagramConfig
+
         return adapter_cls(
             InstagramConfig(allow_red_tos=True)  # user opted in via CLI
         )
 
     if source == "pinterest":
         from aegis.scrape.sources.pinterest import PinterestConfig
+
         return adapter_cls(PinterestConfig())
 
     if source == "amazon":
         from aegis.scrape.sources.amazon import AmazonConfig
+
         return adapter_cls(AmazonConfig())
 
     if source == "nitter":
         from aegis.scrape.sources.nitter import NitterConfig
+
         return adapter_cls(NitterConfig())
 
     if source == "github-trending":
         from aegis.scrape.sources.github_trending import GitHubTrendingConfig
+
         return adapter_cls(GitHubTrendingConfig())
 
     if source == "reddit-rss":
         from aegis.scrape.sources.reddit_rss import RedditRSSConfig
+
         # subreddit is forwarded dynamically via run_params → fetch_raw
         return adapter_cls(RedditRSSConfig())
 
     # Fallback for future adapters
     from aegis.scrape.base import AdapterConfig
+
     return adapter_cls(AdapterConfig(name=source, max_signals=limit))
 
 
@@ -485,21 +493,19 @@ async def _scrape_async(
 
             if dry_run:
                 click.echo(
-                    json.dumps({
-                        "platform": signal.platform.value,
-                        "external_id": signal.external_id,
-                        "title": (signal.title or "")[:80],
-                        "url": str(signal.url) if signal.url else None,
-                    })
+                    json.dumps(
+                        {
+                            "platform": signal.platform.value,
+                            "external_id": signal.external_id,
+                            "title": (signal.title or "")[:80],
+                            "url": str(signal.url) if signal.url else None,
+                        }
+                    )
                 )
             elif len(batch) >= 50 and pool is not None:
-                inserted = await insert_signals(
-                    pool, batch, tenant_id=tenant_uuid
-                )
+                inserted = await insert_signals(pool, batch, tenant_id=tenant_uuid)
                 if not quiet:
-                    click.echo(
-                        f"… inserted {inserted} (total emitted: {emitted})", err=True
-                    )
+                    click.echo(f"… inserted {inserted} (total emitted: {emitted})", err=True)
                 batch.clear()
 
             if emitted >= limit:
@@ -523,6 +529,7 @@ async def _scrape_async(
 # ---------------------------------------------------------------------
 # Signals subgroup
 # ---------------------------------------------------------------------
+
 
 @main.group()
 def signals() -> None:
@@ -575,6 +582,7 @@ async def _signals_tail(*, limit: int, platform: str | None) -> None:
 # ---------------------------------------------------------------------
 # Reports
 # ---------------------------------------------------------------------
+
 
 @main.group()
 def report() -> None:
@@ -659,6 +667,7 @@ async def _report_daily(*, date: str | None = None) -> None:
 # Phase 2 — Analyze (run agent pipeline)
 # ---------------------------------------------------------------------
 
+
 @main.command()
 @click.option(
     "--limit",
@@ -724,6 +733,109 @@ def analyze(
     )
 
 
+def _candidate_from_rows(
+    rows: list[dict[str, Any]],
+    *,
+    trend_id: str,
+    title: str | None = None,
+) -> Any:
+    """Build a TrendCandidate with real velocities computed from signal timestamps.
+
+    Computes log-momentum velocities (v1h, v6h, v24h) by bucketing signals
+    into 1-hour slots and using the same formula as the Phase 3 feature
+    builder — so the candidate metrics align with what Phase 3 would see.
+    """
+    import math
+    from collections import Counter
+    from datetime import datetime
+
+    from aegis.agents.schemas import TrendCandidate
+
+    now = datetime.now(tz=UTC)
+
+    # Count signals per hourly bucket (0 = current hour, 1 = 1h ago, …).
+    bucket_counts: dict[int, int] = {}
+    sentiments: list[float] = []
+    commercial_intents: list[float] = []
+    novelties: list[float] = []
+    author_ids: set[str] = set()
+    platform_counter: Counter = Counter()
+
+    for r in rows:
+        ts = r.get("captured_at")
+        if ts is not None:
+            if hasattr(ts, "tzinfo") and ts.tzinfo is None:
+                ts = ts.replace(tzinfo=UTC)
+            hours_back = max(0, int((now - ts).total_seconds() // 3600))
+            bucket_counts[hours_back] = bucket_counts.get(hours_back, 0) + 1
+
+        if (sv := r.get("sentiment")) is not None:
+            sentiments.append(float(sv))
+        if (ci := r.get("commercial_intent")) is not None:
+            commercial_intents.append(float(ci))
+        if (nv := r.get("novelty")) is not None:
+            novelties.append(float(nv))
+        if aid := r.get("author_id"):
+            author_ids.add(str(aid))
+        if plat := r.get("platform"):
+            platform_counter[str(plat)] += 1
+
+    # Build ordered counts list (24 buckets, oldest first).
+    window = 24
+    counts = [float(bucket_counts.get(window - 1 - i, 0)) for i in range(window)]
+
+    def _log1p_window_sum(c: list[float], h: int) -> float:
+        return math.log1p(max(0.0, sum(c[max(0, len(c) - h) :])))
+
+    cur_1h = _log1p_window_sum(counts, 1)
+    prior_1h = _log1p_window_sum(counts[:-1], 1) if len(counts) > 1 else 0.0
+    cur_6h = _log1p_window_sum(counts, 6)
+    prior_6h = _log1p_window_sum(counts[:-6], 6) if len(counts) > 6 else 0.0
+    cur_24h = _log1p_window_sum(counts, 24)
+    prior_24h = _log1p_window_sum(counts[:-24], 24) if len(counts) > 24 else 0.0
+
+    v1h = cur_1h - prior_1h
+    v6h = cur_6h - prior_6h
+    v24h = cur_24h - prior_24h
+
+    sentiment_mean = sum(sentiments) / len(sentiments) if sentiments else 0.3
+    ci_mean = sum(commercial_intents) / len(commercial_intents) if commercial_intents else 0.4
+    nov_mean = sum(novelties) / len(novelties) if novelties else 0.5
+
+    # Coordination risk: signals-per-author ratio proxy.
+    n_authors = max(1, len(author_ids) or len(rows) // 2)
+    ratio = len(rows) / n_authors
+    coord_risk = min(1.0, max(0.0, (ratio - 1.0) / 9.0))
+
+    platforms_found = list(platform_counter.keys()) or ["unknown"]
+    auto_title = title or (
+        f"{platforms_found[0].capitalize()} signal cluster — {len(rows)} signals"
+        if len(platforms_found) == 1
+        else f"Multi-platform signal cluster — {len(rows)} signals"
+    )
+    signal_ids = [str(r["signal_id"]) for r in rows if r.get("signal_id")][:10]
+    titles_sample = [r.get("title") or "" for r in rows[:5]]
+    rep_text = " | ".join(t[:60] for t in titles_sample if t)[:400] or "Signal cluster"
+
+    return TrendCandidate(
+        trend_id=trend_id,
+        title=auto_title,
+        summary=f"Auto-generated candidate from {len(rows)} recent DB signals.",
+        velocity_1h=v1h,
+        velocity_6h=v6h,
+        velocity_24h=v24h,
+        sentiment=max(-1.0, min(1.0, sentiment_mean)),
+        commercial_intent=max(0.0, min(1.0, ci_mean)),
+        novelty=max(0.0, min(1.0, nov_mean)),
+        coordination_risk=coord_risk,
+        signal_count=len(rows),
+        unique_authors=n_authors,
+        platforms=platforms_found,
+        sample_signal_ids=signal_ids,
+        representative_text=rep_text,
+    )
+
+
 async def _analyze_async(
     *,
     limit: int,
@@ -736,7 +848,6 @@ async def _analyze_async(
     import uuid as _uuid
 
     from aegis.agents.runner import run_trend
-    from aegis.agents.schemas import TrendCandidate
     from aegis.core.logging import configure_logging
     from aegis.db.pool import PgPool
     from aegis.db.signals import fetch_recent_signals
@@ -759,40 +870,17 @@ async def _analyze_async(
         click.echo("No signals found in DB. Run `aegis scrape` first.", err=True)
         return
 
-    signal_ids = [str(r["signal_id"]) for r in rows if r.get("signal_id")][:10]
-    titles = [r.get("title") or "" for r in rows[:5]]
-    rep_text = " | ".join(t[:60] for t in titles if t)[:400] or "Signal cluster"
-    platforms_found = list({str(r["platform"]) for r in rows})
-    auto_title = title or (
-        f"{platforms_found[0].capitalize()} signal cluster — {len(rows)} signals"
-        if len(platforms_found) == 1
-        else f"Multi-platform signal cluster — {len(rows)} signals"
-    )
-
-    candidate = TrendCandidate(
-        trend_id=auto_trend_id,
-        title=auto_title,
-        summary=f"Auto-generated candidate from {len(rows)} recent DB signals.",
-        velocity_1h=float(min(len(rows) * 5, 100)),
-        velocity_6h=float(min(len(rows) * 18, 400)),
-        velocity_24h=float(min(len(rows) * 50, 1200)),
-        sentiment=0.3,
-        commercial_intent=0.4,
-        novelty=0.5,
-        coordination_risk=0.05,
-        signal_count=len(rows),
-        unique_authors=min(len(rows), max(1, len(rows) // 2)),
-        platforms=platforms_found,
-        sample_signal_ids=signal_ids,
-        representative_text=rep_text,
-    )
+    rows_as_dicts = [dict(r) for r in rows]
+    candidate = _candidate_from_rows(rows_as_dicts, trend_id=auto_trend_id, title=title)
 
     click.echo(
-        f"Running Phase 2 pipeline on {len(rows)} signals "
-        f"({'heuristic' if not use_llm else 'LLM-assisted'})…",
+        f"Running Phase 2+3 pipeline on {len(rows)} signals "
+        f"({'heuristic' if not use_llm else 'LLM-assisted'}) "
+        f"v1h={candidate.velocity_1h:.2f} v6h={candidate.velocity_6h:.2f} "
+        f"v24h={candidate.velocity_24h:.2f}…",
         err=True,
     )
-    result = await run_trend(candidate, use_llm=use_llm)
+    result = await run_trend(candidate, signals=rows_as_dicts, use_llm=use_llm)
 
     if json_out:
         click.echo(result.model_dump_json(indent=2))
@@ -813,7 +901,9 @@ async def _analyze_async(
         "  Verdict   : "
         + click.style(result.final_verdict.value.upper(), fg=verdict_color, bold=True)
     )
-    click.echo(f"  Score     : {result.final_score:.3f}   Confidence: {result.final_confidence:.3f}")
+    click.echo(
+        f"  Score     : {result.final_score:.3f}   Confidence: {result.final_confidence:.3f}"
+    )
     click.echo(f"  Priority  : {result.final_priority.name}")
     click.echo(f"  Halt      : {result.halt_reason}")
     click.echo(f"  Agents    : {len(result.decisions)} ran   Duration: {result.duration_ms:.0f}ms")
@@ -833,6 +923,7 @@ async def _analyze_async(
 # ---------------------------------------------------------------------
 # Daily workflow
 # ---------------------------------------------------------------------
+
 
 @main.command()
 @click.option(
@@ -866,7 +957,6 @@ async def _daily_async(*, subreddit: str, limit: int) -> None:
     import uuid as _uuid
 
     from aegis.agents.runner import run_trend
-    from aegis.agents.schemas import TrendCandidate
     from aegis.core.logging import configure_logging
     from aegis.db.pool import PgPool
     from aegis.db.signals import fetch_recent_signals
@@ -887,10 +977,10 @@ async def _daily_async(*, subreddit: str, limit: int) -> None:
 
     per_source = max(20, limit // 4)
     sources = [
-        ("reddit-rss",      {"subreddit": subreddit},        f"Reddit (r/{subreddit})"),
-        ("hacker-news",     {},                               "Hacker News"),
-        ("github-trending", {},                               "GitHub Trending"),
-        ("amazon",          {},                               "Amazon Bestsellers"),
+        ("reddit-rss", {"subreddit": subreddit}, f"Reddit (r/{subreddit})"),
+        ("hacker-news", {}, "Hacker News"),
+        ("github-trending", {}, "GitHub Trending"),
+        ("amazon", {}, "Amazon Bestsellers"),
     ]
 
     total_collected = 0
@@ -932,7 +1022,7 @@ async def _daily_async(*, subreddit: str, limit: int) -> None:
     except Exception:
         db_total = 0
     finally:
-        try:
+        try:  # noqa: SIM105
             await pool.close()
         except Exception:
             pass
@@ -949,38 +1039,19 @@ async def _daily_async(*, subreddit: str, limit: int) -> None:
     click.echo("-" * 57)
     click.echo()
 
-    signal_ids = [str(r["signal_id"]) for r in rows if r.get("signal_id")][:10]
-    titles = [r.get("title") or "" for r in rows[:5]]
-    rep_text = " | ".join(t[:60] for t in titles if t)[:400] or "Signal cluster"
-    platforms_found = list({str(r["platform"]) for r in rows})
-    auto_title = (
-        f"{platforms_found[0].capitalize()} signal cluster — {len(rows)} signals"
-        if len(platforms_found) == 1
-        else f"Multi-platform cluster — {len(rows)} signals"
-    )
+    rows_as_dicts = [dict(r) for r in rows]
+    daily_trend_id = f"daily-{datetime.now(tz=UTC).strftime('%Y%m%d-%H%M')}"
+    candidate = _candidate_from_rows(rows_as_dicts, trend_id=daily_trend_id)
 
-    candidate = TrendCandidate(
-        trend_id=f"daily-{datetime.now(tz=UTC).strftime('%Y%m%d-%H%M')}",
-        title=auto_title,
-        summary=f"Daily run: {len(rows)} recent signals across {len(platforms_found)} platform(s).",
-        velocity_1h=float(min(len(rows) * 5, 100)),
-        velocity_6h=float(min(len(rows) * 18, 400)),
-        velocity_24h=float(min(len(rows) * 50, 1200)),
-        sentiment=0.3,
-        commercial_intent=0.4,
-        novelty=0.5,
-        coordination_risk=0.05,
-        signal_count=len(rows),
-        unique_authors=min(len(rows), max(1, len(rows) // 2)),
-        platforms=platforms_found,
-        sample_signal_ids=signal_ids,
-        representative_text=rep_text,
-    )
-
-    result = await run_trend(candidate, use_llm=True)
+    result = await run_trend(candidate, signals=rows_as_dicts, use_llm=True)
 
     # ── Verdict display ────────────────────────────────────
-    _VERDICT_COLORS = {"proceed": "green", "hold": "yellow", "block": "red", "escalate": "bright_red"}
+    _VERDICT_COLORS = {
+        "proceed": "green",
+        "hold": "yellow",
+        "block": "red",
+        "escalate": "bright_red",
+    }
     _VERDICT_MEANING = {
         "proceed": (
             "Strong signal detected!\n"
@@ -1003,35 +1074,38 @@ async def _daily_async(*, subreddit: str, limit: int) -> None:
         ),
     }
     _PRIORITY_LABEL = {
-        "P1": "Act within hours",
-        "P2": "Act within 24 hours",
+        "P0": "BREAKOUT — act immediately",
+        "P1": "Exit signal — act within hours",
+        "P2": "Opportunity — act within 24 hours",
         "P3": "Monitor — no immediate action needed",
-        "P4": "Low priority — check again tomorrow",
     }
     _AGENT_PLAIN = {
-        "scout":         "How fast is this trend growing?",
+        "scout": "How fast is this trend growing?",
         "geo_arbitrage": "Are there regional pricing gaps?",
-        "narrative":     "Does the story hold together?",
-        "historian":     "Have we seen similar patterns before?",
-        "sourcer":       "How reliable are the sources?",
-        "auditor":       "Is the data fresh and complete?",
-        "sentinel":      "Any fake/coordinated activity?",
-        "compliance":    "Any legal/ToS risks?",
-        "red_team":      "Devil's advocate — what could go wrong?",
-        "hedge":         "Risk-adjusted expected value",
+        "narrative": "Does the story hold together?",
+        "historian": "Have we seen similar patterns before?",
+        "sourcer": "How reliable are the sources?",
+        "auditor": "Is the data fresh and complete?",
+        "sentinel": "Any fake/coordinated activity?",
+        "compliance": "Any legal/ToS risks?",
+        "red_team": "Devil's advocate — what could go wrong?",
+        "hedge": "Risk-adjusted expected value",
     }
 
     verdict_str = result.final_verdict.value
     color = _VERDICT_COLORS.get(verdict_str, "white")
-    priority_key = f"P{result.final_priority.value}" if hasattr(result.final_priority, "value") else str(result.final_priority)[:2]
+    priority_key = (
+        f"P{result.final_priority.value}"
+        if hasattr(result.final_priority, "value")
+        else str(result.final_priority)[:2]
+    )
 
     click.echo("=" * 57)
+    click.echo("  VERDICT   ── " + click.style(verdict_str.upper(), fg=color, bold=True))
     click.echo(
-        "  VERDICT   ── "
-        + click.style(verdict_str.upper(), fg=color, bold=True)
+        f"  SCORE     ── {result.final_score:.2f} / 1.0"
+        f"   (Confidence: {result.final_confidence:.0%})"
     )
-    click.echo(f"  SCORE     ── {result.final_score:.2f} / 1.0"
-               f"   (Confidence: {result.final_confidence:.0%})")
     click.echo(f"  PRIORITY  ── {_PRIORITY_LABEL.get(priority_key, priority_key)}")
     click.echo("=" * 57)
     click.echo()
@@ -1053,12 +1127,14 @@ async def _daily_async(*, subreddit: str, limit: int) -> None:
     click.echo()
 
     if result.final_score < 0.5:
-        click.echo(click.style(
-            "  Tip: add a free Groq API key to improve analysis quality.\n"
-            "       Sign up at https://console.groq.com → copy key → add to .env:\n"
-            "       GROQ_API_KEY=gsk_...",
-            fg="cyan",
-        ))
+        click.echo(
+            click.style(
+                "  Tip: add a free Groq API key to improve analysis quality.\n"
+                "       Sign up at https://console.groq.com → copy key → add to .env:\n"
+                "       GROQ_API_KEY=gsk_...",
+                fg="cyan",
+            )
+        )
     click.echo()
 
 
@@ -1066,12 +1142,12 @@ async def _daily_async(*, subreddit: str, limit: int) -> None:
 # Reset / Doctor / Support bundle
 # ---------------------------------------------------------------------
 
+
 @main.command()
 def reset() -> None:
     """DANGER: stop the stack and wipe all local data volumes."""
     if not click.confirm(
-        "This will permanently delete all local Postgres, Redis, and MinIO "
-        "data. Continue?",
+        "This will permanently delete all local Postgres, Redis, and MinIO " "data. Continue?",
         default=False,
     ):
         click.echo("Aborted.", err=True)
@@ -1101,8 +1177,7 @@ def doctor(secrets: bool) -> None:
     doctor_path = _repo_root() / "bootstrap" / "aegis-doctor"
     if not doctor_path.exists():
         click.echo(
-            "AEGIS-CLI-0004: bootstrap/aegis-doctor not found; "
-            "run from the repo root.",
+            "AEGIS-CLI-0004: bootstrap/aegis-doctor not found; " "run from the repo root.",
             err=True,
         )
         sys.exit(1)
@@ -1121,8 +1196,7 @@ def _check_secrets() -> None:
         missing.append("AEGIS_REDIS_URL")
     if missing:
         click.echo(
-            "AEGIS-CLI-0005: missing required secrets: "
-            + ", ".join(missing),
+            "AEGIS-CLI-0005: missing required secrets: " + ", ".join(missing),
             err=True,
         )
         sys.exit(1)
@@ -1192,9 +1266,7 @@ def support_bundle(out: str | None) -> None:
         (tmpdir / "env.json").write_text(json.dumps(env_dump, indent=2))
 
         # 4. version + python info
-        (tmpdir / "version.txt").write_text(
-            f"aegis-pulse {__version__}\npython {sys.version}\n"
-        )
+        (tmpdir / "version.txt").write_text(f"aegis-pulse {__version__}\npython {sys.version}\n")
 
         # 5. zip everything up
         with zipfile.ZipFile(out_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:

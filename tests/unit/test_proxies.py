@@ -264,9 +264,7 @@ async def test_proxy_pool_acquire_kind_filter():
     await p.add(dc_spec)
     await p.add(res_spec)
 
-    result = await p.acquire(
-        target_host="example.com", kind_in=frozenset({ProxyKind.RESIDENTIAL})
-    )
+    result = await p.acquire(target_host="example.com", kind_in=frozenset({ProxyKind.RESIDENTIAL}))
     assert result.kind == ProxyKind.RESIDENTIAL
 
 

@@ -22,6 +22,7 @@ layer above this in the supervisor service.
 
 Author: AEGIS Pulse core team
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -93,6 +94,7 @@ async def run_trend(
     candidate: TrendCandidate,
     *,
     tenant_id: str = "default",
+    signals: list[dict] | None = None,
     llm_router: LLMRouter | None = None,
     historian_store: ChromaMemoryStore | None = None,
     shared_memory: SharedWorkingMemory | None = None,
@@ -107,7 +109,7 @@ async def run_trend(
     queue without try/except.
     """
     started_at = datetime.now(tz=UTC)
-    state: GraphState = initial_state(candidate, tenant_id=tenant_id)
+    state: GraphState = initial_state(candidate, tenant_id=tenant_id, signals=signals)
 
     try:
         compiled = await _get_graph(
@@ -118,9 +120,7 @@ async def run_trend(
         )
     except Exception as exc:
         _log.exception("runner.graph_compile_failed", trend_id=candidate.trend_id)
-        return _build_exception_result(
-            state, started_at, error=str(exc), halt="exception"
-        )
+        return _build_exception_result(state, started_at, error=str(exc), halt="exception")
 
     try:
         final_state = await asyncio.wait_for(
@@ -128,9 +128,7 @@ async def run_trend(
             timeout=float(timeout_s),
         )
     except TimeoutError:
-        _log.warning(
-            "runner.timeout", trend_id=candidate.trend_id, timeout_s=timeout_s
-        )
+        _log.warning("runner.timeout", trend_id=candidate.trend_id, timeout_s=timeout_s)
         return _build_exception_result(
             state,
             started_at,
@@ -139,9 +137,7 @@ async def run_trend(
         )
     except Exception as exc:
         _log.exception("runner.graph_failed", trend_id=candidate.trend_id)
-        return _build_exception_result(
-            state, started_at, error=str(exc), halt="exception"
-        )
+        return _build_exception_result(state, started_at, error=str(exc), halt="exception")
 
     # `ainvoke` returns the merged final state dict.
     if not isinstance(final_state, dict):
@@ -205,9 +201,7 @@ def _build_exception_result(
     duration_ms = max(0.0, (finished_at - started_at).total_seconds() * 1000.0)
 
     candidate = state.get("candidate")
-    trend_id = (
-        candidate.trend_id if candidate is not None else state.get("trend_id", "unknown")
-    )
+    trend_id = candidate.trend_id if candidate is not None else state.get("trend_id", "unknown")
     correlation_id = (
         candidate.correlation_id
         if candidate is not None

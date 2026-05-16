@@ -12,6 +12,7 @@ trade.
 
 Author: AEGIS Pulse core team
 """
+
 from __future__ import annotations
 
 import random

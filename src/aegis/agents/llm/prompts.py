@@ -13,6 +13,7 @@ Templates have two top-level variables conventionally:
 
 Author: AEGIS Pulse core team
 """
+
 from __future__ import annotations
 
 import hashlib

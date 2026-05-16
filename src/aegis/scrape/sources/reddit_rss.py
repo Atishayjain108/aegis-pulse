@@ -57,7 +57,7 @@ class RedditRSSConfig(AdapterConfig):
     """Reddit JSON API adapter config — no API credentials needed."""
 
     name: str = "reddit-rss"
-    per_source_rps: float = 0.33   # 1 req per 3 seconds
+    per_source_rps: float = 0.33  # 1 req per 3 seconds
     timeout_seconds: float = 20.0
     max_retries: int = 3
     use_cloudflare_bypass: bool = False
@@ -74,10 +74,12 @@ class RedditRSSAdapter(SourceAdapter[dict[str, Any]]):
 
     Run with::
 
-        adapter = RedditRSSAdapter(RedditRSSConfig(
-            subreddits=("BuyItForLife", "frugalmalefashion"),
-            listing="hot",
-        ))
+        adapter = RedditRSSAdapter(
+            RedditRSSConfig(
+                subreddits=("BuyItForLife", "frugalmalefashion"),
+                listing="hot",
+            )
+        )
         async for signal in adapter.run(limit=20):
             ...
     """

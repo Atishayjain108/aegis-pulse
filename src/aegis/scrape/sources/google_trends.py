@@ -13,6 +13,7 @@ Rate-limit: Google blocks aggressive scrapers; we stay at 0.2 req/s.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -74,9 +75,7 @@ class GoogleTrendsAdapter(SourceAdapter[dict[str, Any]]):
 
     def __init__(self, config: GoogleTrendsConfig | AdapterConfig, **kwargs: Any) -> None:
         super().__init__(config, **kwargs)
-        self._gt_config = (
-            config if isinstance(config, GoogleTrendsConfig) else GoogleTrendsConfig()
-        )
+        self._gt_config = config if isinstance(config, GoogleTrendsConfig) else GoogleTrendsConfig()
         self._pytrends: Any = None
 
     @property
@@ -88,8 +87,7 @@ class GoogleTrendsAdapter(SourceAdapter[dict[str, Any]]):
             from pytrends.request import TrendReq  # type: ignore[import-untyped]
         except ImportError as e:
             raise RuntimeError(
-                "GoogleTrendsAdapter requires pytrends — "
-                "install with `uv sync --extra scrape`"
+                "GoogleTrendsAdapter requires pytrends — " "install with `uv sync --extra scrape`"
             ) from e
 
         def _build() -> Any:
@@ -113,9 +111,7 @@ class GoogleTrendsAdapter(SourceAdapter[dict[str, Any]]):
         **_: Any,
     ) -> AsyncIterator[dict[str, Any]]:
         if self._pytrends is None:
-            raise RuntimeError(
-                "GoogleTrendsAdapter.setup() must run before fetch_raw()"
-            )
+            raise RuntimeError("GoogleTrendsAdapter.setup() must run before fetch_raw()")
 
         kw_list: list[str] = list(queries or [])
         if query and query not in kw_list:
@@ -198,17 +194,13 @@ class GoogleTrendsAdapter(SourceAdapter[dict[str, Any]]):
 
             posted_at: datetime | None = None
             if date_raw is not None:
-                try:
+                with contextlib.suppress(Exception):
                     if hasattr(date_raw, "to_pydatetime"):
                         posted_at = date_raw.to_pydatetime().replace(tzinfo=UTC)
                     elif isinstance(date_raw, datetime):
                         posted_at = date_raw.replace(tzinfo=UTC)
                     elif isinstance(date_raw, str):
-                        posted_at = datetime.fromisoformat(date_raw).replace(
-                            tzinfo=UTC
-                        )
-                except Exception:
-                    pass
+                        posted_at = datetime.fromisoformat(date_raw).replace(tzinfo=UTC)
 
             date_str = posted_at.date().isoformat() if posted_at else "unknown"
             external_id = f"gtrends_{keyword}_{geo}_{date_str}"

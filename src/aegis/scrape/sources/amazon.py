@@ -99,9 +99,7 @@ class AmazonAdapter(SourceAdapter[dict[str, Any]]):
 
     def __init__(self, config: AmazonConfig | AdapterConfig, **kwargs: Any) -> None:
         super().__init__(config, **kwargs)
-        self._amzn_config = (
-            config if isinstance(config, AmazonConfig) else AmazonConfig()
-        )
+        self._amzn_config = config if isinstance(config, AmazonConfig) else AmazonConfig()
         self._client: httpx.AsyncClient | None = None
 
     @property
@@ -241,9 +239,7 @@ class AmazonAdapter(SourceAdapter[dict[str, Any]]):
             return None
 
 
-def _parse_bestsellers_page(
-    html: str, *, category: str, base_url: str
-) -> list[dict[str, Any]]:
+def _parse_bestsellers_page(html: str, *, category: str, base_url: str) -> list[dict[str, Any]]:
     """Extract bestseller items from an Amazon category page."""
     items: list[dict[str, Any]] = []
     try:
@@ -256,13 +252,15 @@ def _parse_bestsellers_page(
             slug_match = re.match(r"/(.+?)/dp/", url_path)
             title = slug_match.group(1).replace("-", " ").strip() if slug_match else ""
 
-            items.append({
-                "asin": asin,
-                "rank": rank,
-                "title": title,
-                "url": clean_url,
-                "category": category,
-            })
+            items.append(
+                {
+                    "asin": asin,
+                    "rank": rank,
+                    "title": title,
+                    "url": clean_url,
+                    "category": category,
+                }
+            )
     except Exception as e:
         log.warning("amazon.parse_page.failed", category=category, error=str(e))
     return items

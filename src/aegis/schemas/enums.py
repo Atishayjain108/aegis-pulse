@@ -179,11 +179,11 @@ class ConfidenceBand(StrEnum):
     the signal object; this is for dashboards / alerts where ranges are easier
     to reason about than "0.73"."""
 
-    VERY_LOW = "very_low"        # [0.0, 0.2)
-    LOW = "low"                  # [0.2, 0.4)
-    MEDIUM = "medium"            # [0.4, 0.6)
-    HIGH = "high"                # [0.6, 0.8)
-    VERY_HIGH = "very_high"      # [0.8, 1.0]
+    VERY_LOW = "very_low"  # [0.0, 0.2)
+    LOW = "low"  # [0.2, 0.4)
+    MEDIUM = "medium"  # [0.4, 0.6)
+    HIGH = "high"  # [0.6, 0.8)
+    VERY_HIGH = "very_high"  # [0.8, 1.0]
 
 
 def confidence_band(value: float) -> ConfidenceBand:

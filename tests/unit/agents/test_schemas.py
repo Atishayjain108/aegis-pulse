@@ -1,4 +1,5 @@
 """Schema validation tests."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
@@ -146,9 +147,7 @@ class TestTrendCandidate:
         assert c.platforms == []
 
     def test_platforms_dedup_case_insensitive(self) -> None:
-        c = TrendCandidate(
-            trend_id="t1", title="Test", platforms=["Reddit", "reddit", "TikTok"]
-        )
+        c = TrendCandidate(trend_id="t1", title="Test", platforms=["Reddit", "reddit", "TikTok"])
         assert len(c.platforms) == 2
         # Order preserved, first occurrence wins.
         assert c.platforms[0].lower() == "reddit"

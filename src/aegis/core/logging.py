@@ -50,12 +50,26 @@ if TYPE_CHECKING:
 # Config
 # =============================================================================
 
-LOG_SCRUB_KEYS: Final[frozenset[str]] = frozenset({
-    # Anything matching these top-level event keys is replaced with "***".
-    "password", "passwd", "secret", "token", "api_key", "apikey",
-    "authorization", "auth", "cookie", "set_cookie", "x_api_key",
-    "private_key", "access_token", "refresh_token", "session",
-})
+LOG_SCRUB_KEYS: Final[frozenset[str]] = frozenset(
+    {
+        # Anything matching these top-level event keys is replaced with "***".
+        "password",
+        "passwd",
+        "secret",
+        "token",
+        "api_key",
+        "apikey",
+        "authorization",
+        "auth",
+        "cookie",
+        "set_cookie",
+        "x_api_key",
+        "private_key",
+        "access_token",
+        "refresh_token",
+        "session",
+    }
+)
 
 _LOG_SCRUB_VALUE: Final[str] = "***"
 
@@ -63,7 +77,8 @@ _LOG_SCRUB_VALUE: Final[str] = "***"
 # are scrubbed heuristically even if the key name is innocent. Regexes are
 # intentionally narrow: too aggressive would eat real UUIDs and trace IDs.
 _BEARER_RE: Final[re.Pattern[str]] = re.compile(
-    r"(?i)\bbearer\s+[A-Za-z0-9_\-.]+", re.ASCII,
+    r"(?i)\bbearer\s+[A-Za-z0-9_\-.]+",
+    re.ASCII,
 )
 _JWT_RE: Final[re.Pattern[str]] = re.compile(
     r"\beyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\b",
@@ -113,6 +128,7 @@ def _inject_trace_context(_logger: Any, _method: str, event: EventDict) -> Event
     if trace_fn is None:
         try:
             from opentelemetry import trace
+
             trace_fn = trace.get_current_span
         except Exception:
             trace_fn = False
@@ -145,8 +161,13 @@ def _scrub_secrets(_logger: Any, _method: str, event: EventDict) -> EventDict:
             event[key] = _redact_string(v)
         elif isinstance(v, Mapping):
             event[key] = {
-                k2: (_LOG_SCRUB_VALUE if k2.lower() in LOG_SCRUB_KEYS
-                     else _redact_string(v2) if isinstance(v2, str) else v2)
+                k2: (
+                    _LOG_SCRUB_VALUE
+                    if k2.lower() in LOG_SCRUB_KEYS
+                    else _redact_string(v2)
+                    if isinstance(v2, str)
+                    else v2
+                )
                 for k2, v2 in v.items()
             }
     return event
@@ -214,7 +235,9 @@ def configure_logging(
     global _SERVICE_NAME, _SERVICE_ENV, _SERVICE_VERSION  # noqa: PLW0603
     _SERVICE_NAME = service_name
     _SERVICE_ENV = service_env if service_env is not None else os.environ.get("AEGIS_ENV", "dev")
-    _SERVICE_VERSION = service_version if service_version is not None else os.environ.get("AEGIS_VERSION", "")
+    _SERVICE_VERSION = (
+        service_version if service_version is not None else os.environ.get("AEGIS_VERSION", "")
+    )
 
     # Decide format
     if json_output is None:
@@ -239,8 +262,13 @@ def configure_logging(
 
     # Silence particularly noisy upstream loggers. Worth revisiting per-lib
     # as needed; these are empirical defaults.
-    for noisy in ("urllib3.connectionpool", "httpx._client", "httpcore.http11",
-                  "asyncio", "botocore.credentials"):
+    for noisy in (
+        "urllib3.connectionpool",
+        "httpx._client",
+        "httpcore.http11",
+        "asyncio",
+        "botocore.credentials",
+    ):
         logging.getLogger(noisy).setLevel(max(level_num, logging.WARNING))
 
     # Shared processors — run for BOTH structlog and stdlib logging, so that
@@ -336,6 +364,7 @@ def bind_request_context(**kwargs: Any) -> None:
     Example::
 
         from aegis.core.logging import bind_request_context
+
         bind_request_context(request_id=req.id, tenant_id=tenant)
 
     The binding is cleared automatically when the containing async task
@@ -365,6 +394,7 @@ def flush_if_possible() -> None:
 # Defensive default: if a consumer imports this module and forgets to call
 # configure_logging, give them *something* reasonable rather than silence.
 # =============================================================================
+
 
 def _default_configuration() -> None:
     """Minimal fallback for stdlib logging users that never call us."""

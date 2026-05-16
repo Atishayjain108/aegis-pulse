@@ -248,7 +248,9 @@ class PgPool:
 
     @asynccontextmanager
     async def acquire(
-        self, *, tenant_id: UUID | None = None,
+        self,
+        *,
+        tenant_id: UUID | None = None,
     ) -> AsyncIterator[asyncpg.Connection]:
         """Check out a connection. Optional tenant override.
 
@@ -349,7 +351,9 @@ class PgPool:
             start = time.monotonic()
             try:
                 result = await conn.copy_records_to_table(
-                    table, records=records, columns=columns,
+                    table,
+                    records=records,
+                    columns=columns,
                 )
             finally:
                 db_query_duration_seconds.labels(op="copy_records").observe(
@@ -362,7 +366,9 @@ class PgPool:
                 return len(records)
 
     async def _timed(
-        self, op_label: str, awaitable: Awaitable[_T],
+        self,
+        op_label: str,
+        awaitable: Awaitable[_T],
     ) -> _T:
         """Await ``awaitable`` and record its duration under ``op_label``.
 
@@ -389,17 +395,21 @@ class PgPool:
         health endpoint, or a scaled-down SLO alert).
         """
         if self._pool is None:
-            return HealthResult(ok=False, latency_ms=None, server_version=None,
-                                error="pool not connected")
+            return HealthResult(
+                ok=False, latency_ms=None, server_version=None, error="pool not connected"
+            )
         t0 = time.monotonic()
         try:
             async with self.pool.acquire() as conn, asyncio.timeout(timeout):
                 version_str = await conn.fetchval("SELECT version()")
                 one = await conn.fetchval("SELECT 1")
                 if one != 1:
-                    return HealthResult(ok=False, latency_ms=None,
-                                        server_version=None,
-                                        error="SELECT 1 returned unexpected value")
+                    return HealthResult(
+                        ok=False,
+                        latency_ms=None,
+                        server_version=None,
+                        error="SELECT 1 returned unexpected value",
+                    )
                 return HealthResult(
                     ok=True,
                     latency_ms=(time.monotonic() - t0) * 1000.0,
@@ -408,12 +418,16 @@ class PgPool:
                 )
         except TimeoutError:  # asyncio.timeout raises TimeoutError
             return HealthResult(
-                ok=False, latency_ms=None, server_version=None,
+                ok=False,
+                latency_ms=None,
+                server_version=None,
                 error=f"health timeout after {timeout}s",
             )
         except Exception as e:
             return HealthResult(
-                ok=False, latency_ms=None, server_version=None,
+                ok=False,
+                latency_ms=None,
+                server_version=None,
                 error=f"{type(e).__name__}: {e}",
             )
 
@@ -438,7 +452,10 @@ class PgPool:
             readonly: mark transaction ``READ ONLY`` (lets the planner skip
                 locking; required for read-replica routing later).
         """
-        async with self.acquire(tenant_id=tenant_id) as conn, conn.transaction(isolation=isolation, readonly=readonly):
+        async with (
+            self.acquire(tenant_id=tenant_id) as conn,
+            conn.transaction(isolation=isolation, readonly=readonly),
+        ):
             yield conn
 
 

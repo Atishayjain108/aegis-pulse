@@ -143,6 +143,43 @@ services:
       - aegis
 
   # -----------------------------------------------------------------
+  # Phase 3 — Predict service (FastAPI inference surface)
+  # Build: docker build -f docker/Dockerfile.predict -t aegis-predict .
+  # Serve: POST /predict  POST /predict/batch  GET /healthz  GET /metrics
+  # -----------------------------------------------------------------
+  predict:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.predict
+    image: aegis-predict:latest
+    container_name: aegis-predict
+    restart: unless-stopped
+    environment:
+      AEGIS_PG_DSN: postgresql://${POSTGRES_USER:-aegis_app}:${POSTGRES_PASSWORD:-aegis_app_dev_pw}@postgres:5432/${POSTGRES_DB:-aegis}
+      AEGIS_REDIS_URL: redis://redis:6379/0
+      AEGIS_ENV: ${AEGIS_ENV:-development}
+      AEGIS_LOG_JSON: "true"
+      # Disable Ollama in the predict container — inference is heuristic-first
+      AEGIS_DISABLE_OLLAMA: "1"
+      # Hard timeout (seconds) per inference request
+      PREDICT_HARD_TIMEOUT_S: "30"
+    ports:
+      - "127.0.0.1:8100:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - aegis
+
+  # -----------------------------------------------------------------
   # Prometheus
   # -----------------------------------------------------------------
   prometheus:

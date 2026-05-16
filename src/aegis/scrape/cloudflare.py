@@ -67,10 +67,10 @@ log = get_logger(__name__)
 _CHALLENGE_BODY_MARKERS: Final[tuple[str, ...]] = (
     "Just a moment...",
     "Checking your browser before accessing",
-    "_cf_chl_opt",                  # Turnstile JS variable
+    "_cf_chl_opt",  # Turnstile JS variable
     "/cdn-cgi/challenge-platform",  # CF challenge platform script path
     "DDoS protection by Cloudflare",
-    "ray-id",                       # Cloudflare's request id surfaced on errors
+    "ray-id",  # Cloudflare's request id surfaced on errors
 )
 
 # Headers that, even on a 200, indicate Cloudflare touched the response.
@@ -87,7 +87,7 @@ _CHALLENGE_STATUS_CODES: Final[frozenset[int]] = frozenset({403, 429, 503})
 # FlareSolverr handles them with the same flow.
 _OTHER_PROVIDER_MARKERS: Final[tuple[str, ...]] = (
     "ddos-guard.net",
-    "_pxhd",     # PerimeterX
+    "_pxhd",  # PerimeterX
     "_pxAction",
 )
 
@@ -224,11 +224,11 @@ class FlareSolverr:
 
         fs = FlareSolverr("http://flaresolverr:8191")
         sol = await fs.get("https://example.com/", proxy="http://proxy:8080")
-        cookies = sol.cookies          # {'cf_clearance': '...', ...}
+        cookies = sol.cookies  # {'cf_clearance': '...', ...}
         ua = sol.user_agent
 
         # Use these in subsequent httpx requests:
-        async with httpx.AsyncClient(headers={'User-Agent': ua}) as c:
+        async with httpx.AsyncClient(headers={"User-Agent": ua}) as c:
             r = await c.get("https://example.com/api/...", cookies=cookies)
     """
 
@@ -365,8 +365,7 @@ class FlareSolverr:
             # FlareSolverr expects a list of {name, value, domain?, path?}.
             domain = httpx.URL(url).host
             body["cookies"] = [
-                {"name": k, "value": v, "domain": domain, "path": "/"}
-                for k, v in cookies.items()
+                {"name": k, "value": v, "domain": domain, "path": "/"} for k, v in cookies.items()
             ]
         return body
 
