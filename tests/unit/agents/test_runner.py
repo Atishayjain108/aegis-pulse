@@ -18,6 +18,10 @@ Key paths covered:
 
 from __future__ import annotations
 
+import json
+from datetime import UTC, datetime
+from unittest.mock import AsyncMock
+
 import pytest
 
 # Skip the whole module if langgraph isn't installed; we don't want
@@ -264,3 +268,150 @@ class TestRunnerNoLLMPath:
             assert (
                 "llm" not in d.details
             ), f"agent {d.agent} appears to have called LLM despite use_llm=False"
+
+
+class TestRunnerEdgePaths:
+    async def test_ainvoke_exception_returns_exception_halt(self, trend_factory, monkeypatch) -> None:
+        mock_graph = AsyncMock()
+        mock_graph.ainvoke.side_effect = RuntimeError("ainvoke boom")
+
+        async def _fake_get_graph(**_kwargs: object) -> object:
+            return mock_graph
+
+        await runner.reset_graph_cache()
+        monkeypatch.setattr(runner, "_get_graph", _fake_get_graph)
+
+        candidate = trend_factory(trend_id="ainvoke-fail-001")
+        result = await runner.run_trend(candidate, use_llm=False)
+        assert result.halt_reason == "exception"
+        assert result.final_verdict is AgentVerdict.HOLD
+
+    async def test_non_dict_final_state_returns_exception_halt(self, trend_factory, monkeypatch) -> None:
+        mock_graph = AsyncMock()
+        mock_graph.ainvoke.return_value = "not_a_dict_at_all"
+
+        async def _fake_get_graph(**_kwargs: object) -> object:
+            return mock_graph
+
+        await runner.reset_graph_cache()
+        monkeypatch.setattr(runner, "_get_graph", _fake_get_graph)
+
+        candidate = trend_factory(trend_id="bad-state-001")
+        result = await runner.run_trend(candidate, use_llm=False)
+        assert result.halt_reason == "exception"
+        assert result.final_verdict is AgentVerdict.HOLD
+
+    async def test_stream_client_publish_called_on_success(self, trend_factory, monkeypatch) -> None:
+        mock_publish = AsyncMock()
+        monkeypatch.setattr(runner, "_publish_phase2_result", mock_publish)
+
+        candidate = trend_factory(
+            trend_id="stream-success-001",
+            velocity_1h=300.0,
+            velocity_6h=1500.0,
+            velocity_24h=4000.0,
+            sentiment=0.75,
+            commercial_intent=0.85,
+            novelty=0.75,
+            coordination_risk=0.05,
+            signal_count=180,
+            unique_authors=120,
+        )
+        stream_client = AsyncMock()
+        result = await runner.run_trend(candidate, use_llm=False, stream_client=stream_client)
+        mock_publish.assert_called_once()
+        assert result.halt_reason == "completed"
+
+    async def test_stream_client_publish_exception_swallowed(self, trend_factory, monkeypatch) -> None:
+        mock_publish = AsyncMock(side_effect=RuntimeError("redis down"))
+        monkeypatch.setattr(runner, "_publish_phase2_result", mock_publish)
+
+        candidate = trend_factory(
+            trend_id="stream-exc-001",
+            velocity_1h=300.0,
+            velocity_6h=1500.0,
+            velocity_24h=4000.0,
+            sentiment=0.75,
+            commercial_intent=0.85,
+            novelty=0.75,
+            coordination_risk=0.05,
+            signal_count=180,
+            unique_authors=120,
+        )
+        result = await runner.run_trend(candidate, use_llm=False, stream_client=AsyncMock())
+        mock_publish.assert_called_once()
+        assert result.halt_reason == "completed"
+
+
+class TestPublishPhase2Result:
+    async def test_xadd_called_with_body_field(self) -> None:
+        from aegis.agents.runner import _publish_phase2_result
+        from aegis.agents.schemas import (
+            AgentDecision,
+            AgentVerdict,
+            GraphResult,
+            Priority,
+        )
+
+        now = datetime.now(tz=UTC)
+        decision = AgentDecision(
+            agent="scout",
+            trend_id="pub-001",
+            correlation_id="corr-001",
+            verdict=AgentVerdict.PROCEED,
+            score=0.8,
+            confidence=0.9,
+            reasoning="strong signal",
+        )
+        result = GraphResult(
+            trend_id="pub-001",
+            correlation_id="corr-001",
+            final_verdict=AgentVerdict.PROCEED,
+            final_priority=Priority.P2_OPPORTUNITY,
+            final_score=0.8,
+            final_confidence=0.9,
+            decisions=[decision],
+            blocked_by=[],
+            started_at=now,
+            finished_at=now,
+            duration_ms=42.0,
+            halt_reason="completed",
+        )
+        mock_redis = AsyncMock()
+        await _publish_phase2_result(mock_redis, result, "00000000-0000-0000-0000-000000000001")
+
+        mock_redis.xadd.assert_called_once()
+        call_args = mock_redis.xadd.call_args
+        assert call_args[0][0] == "aegis:phase2:graph_results"
+        payload = json.loads(call_args[0][1]["body"])
+        assert payload["trend_id"] == "pub-001"
+        assert payload["final_verdict"] == "ENTER"
+        assert payload["raw_verdict"] == "proceed"
+        assert payload["decisions"][0]["agent"] == "scout"
+
+    async def test_escalate_verdict_maps_to_hold(self) -> None:
+        from aegis.agents.runner import _publish_phase2_result
+        from aegis.agents.schemas import AgentVerdict, GraphResult, Priority
+
+        now = datetime.now(tz=UTC)
+        result = GraphResult(
+            trend_id="pub-002",
+            correlation_id="corr-002",
+            final_verdict=AgentVerdict.ESCALATE,
+            final_priority=Priority.P2_OPPORTUNITY,
+            final_score=0.5,
+            final_confidence=0.6,
+            decisions=[],
+            blocked_by=[],
+            started_at=now,
+            finished_at=now,
+            duration_ms=10.0,
+            halt_reason="completed",
+        )
+        mock_redis = AsyncMock()
+        await _publish_phase2_result(mock_redis, result, "tenant-x")
+
+        call_args = mock_redis.xadd.call_args
+        payload = json.loads(call_args[0][1]["body"])
+        assert payload["final_verdict"] == "HOLD"
+        assert payload["data_confidence"] == 1.0

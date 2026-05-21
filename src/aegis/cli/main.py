@@ -18,6 +18,7 @@ Subcommands
 * ``aegis support-bundle``    — collect a sanitised diagnostic zip
 * ``aegis doctor``            — run the bootstrap health check
 * ``aegis migrate``           — alembic upgrade head
+* ``aegis topic``             — one-word full-cycle: expand → scrape all sources → dedup → analyze
 
 Every command exits with a non-zero code on failure and prints a
 machine-readable error code (``AEGIS-CLI-NNNN``) for documentation
@@ -114,6 +115,15 @@ def _docker_compose() -> list[str]:
 @click.version_option(__version__, prog_name="aegis")
 def main() -> None:
     """AEGIS Pulse — autonomous market arbitrage intelligence engine."""
+
+
+# Register dashboard subgroup (import deferred to keep startup fast)
+try:
+    from aegis.dashboard.cli import dashboard as _dashboard_group
+
+    main.add_command(_dashboard_group, name="dashboard")
+except ImportError:
+    pass
 
 
 # ---------------------------------------------------------------------
@@ -253,15 +263,48 @@ _ADAPTER_REGISTRY: dict[str, tuple[str, str]] = {
     "reddit": ("aegis.scrape.sources.reddit", "RedditAdapter"),
     "youtube": ("aegis.scrape.sources.youtube", "YouTubeAdapter"),
     "instagram": ("aegis.scrape.sources.instagram", "InstagramAdapter"),
-    # --- No API key required ---
+    # --- No API key required (original) ---
     "tiktok": ("aegis.scrape.sources.tiktok", "TikTokAdapter"),
     "pinterest": ("aegis.scrape.sources.pinterest", "PinterestAdapter"),
     "amazon": ("aegis.scrape.sources.amazon", "AmazonAdapter"),
     "google-trends": ("aegis.scrape.sources.google_trends", "GoogleTrendsAdapter"),
+    "google-news": ("aegis.scrape.sources.google_news_rss", "GoogleNewsRSSAdapter"),
+    "bing-news": ("aegis.scrape.sources.bing_news_rss", "BingNewsRSSAdapter"),
     "hacker-news": ("aegis.scrape.sources.hacker_news", "HackerNewsAdapter"),
     "nitter": ("aegis.scrape.sources.nitter", "NitterAdapter"),
     "github-trending": ("aegis.scrape.sources.github_trending", "GitHubTrendingAdapter"),
     "reddit-rss": ("aegis.scrape.sources.reddit_rss", "RedditRSSAdapter"),
+    # --- Phase 2+ swarm adapters ---
+    "reddit-finance": ("aegis.scrape.sources.reddit_finance", "RedditFinanceAdapter"),
+    "reddit-ecommerce": ("aegis.scrape.sources.reddit_ecommerce", "RedditEcommerceAdapter"),
+    "devto": ("aegis.scrape.sources.devto", "DevToAdapter"),
+    "producthunt": ("aegis.scrape.sources.producthunt", "ProductHuntAdapter"),
+    "google-trends-india": ("aegis.scrape.sources.google_trends_india", "GoogleTrendsIndiaAdapter"),
+    "youtube-rss": ("aegis.scrape.sources.youtube_rss", "YouTubeRSSAdapter"),
+    "medium": ("aegis.scrape.sources.medium_rss", "MediumRSSAdapter"),
+    "techcrunch": ("aegis.scrape.sources.techcrunch_rss", "TechCrunchRSSAdapter"),
+    "wired": ("aegis.scrape.sources.wired_rss", "WiredRSSAdapter"),
+    "bbc-news": ("aegis.scrape.sources.bbc_business", "BBCBusinessAdapter"),
+    "reuters": ("aegis.scrape.sources.reuters_rss", "ReutersRSSAdapter"),
+    "ndtv-profit": ("aegis.scrape.sources.ndtv_profit", "NDTVProfitAdapter"),
+    "mint": ("aegis.scrape.sources.mint_rss", "MintRSSAdapter"),
+    "business-standard": ("aegis.scrape.sources.business_standard_rss", "BusinessStandardRSSAdapter"),
+    "economic-times": ("aegis.scrape.sources.economic_times_markets", "EconomicTimesMarketsAdapter"),
+    "moneycontrol": ("aegis.scrape.sources.moneycontrol", "MoneycontrolAdapter"),
+    "yahoo-finance": ("aegis.scrape.sources.yahoo_finance_rss", "YahooFinanceRSSAdapter"),
+    "investing-com": ("aegis.scrape.sources.investing_com_rss", "InvestingComRSSAdapter"),
+    "flipkart": ("aegis.scrape.sources.flipkart", "FlipkartAdapter"),
+    "meesho": ("aegis.scrape.sources.meesho", "MeeshoAdapter"),
+    "myntra": ("aegis.scrape.sources.myntra", "MyntraAdapter"),
+    "indiamart": ("aegis.scrape.sources.indiamart", "IndiaMartAdapter"),
+    "ajio": ("aegis.scrape.sources.ajio", "AjioAdapter"),
+    "nykaa": ("aegis.scrape.sources.nykaa", "NykaaAdapter"),
+    "snapdeal": ("aegis.scrape.sources.snapdeal", "SnapdealAdapter"),
+    "amazon-in": ("aegis.scrape.sources.amazon_in", "AmazonINAdapter"),
+    "nse-bse": ("aegis.scrape.sources.nse_bse", "NSEBSEAdapter"),
+    "screener-in": ("aegis.scrape.sources.screener_in", "ScreenerInAdapter"),
+    "github-public": ("aegis.scrape.sources.github_public", "GitHubPublicAdapter"),
+    "npm-trends": ("aegis.scrape.sources.npm_trends", "NPMTrendsAdapter"),
 }
 
 
@@ -431,6 +474,16 @@ def _build_adapter(source: str, adapter_cls: Any, *, limit: int) -> Any:
 
         # subreddit is forwarded dynamically via run_params → fetch_raw
         return adapter_cls(RedditRSSConfig())
+
+    if source == "google-news":
+        from aegis.scrape.sources.google_news_rss import GoogleNewsRSSConfig
+
+        return adapter_cls(GoogleNewsRSSConfig())
+
+    if source == "bing-news":
+        from aegis.scrape.sources.bing_news_rss import BingNewsRSSConfig
+
+        return adapter_cls(BingNewsRSSConfig())
 
     # Fallback for future adapters
     from aegis.scrape.base import AdapterConfig
@@ -847,6 +900,8 @@ async def _analyze_async(
 ) -> None:
     import uuid as _uuid
 
+    import redis.asyncio as aioredis
+
     from aegis.agents.runner import run_trend
     from aegis.core.logging import configure_logging
     from aegis.db.pool import PgPool
@@ -880,7 +935,16 @@ async def _analyze_async(
         f"v24h={candidate.velocity_24h:.2f}…",
         err=True,
     )
-    result = await run_trend(candidate, signals=rows_as_dicts, use_llm=use_llm)
+    redis_client = aioredis.from_url(cfg.redis_url_str, decode_responses=True)
+    try:
+        result = await run_trend(
+            candidate,
+            signals=rows_as_dicts,
+            use_llm=use_llm,
+            stream_client=redis_client,
+        )
+    finally:
+        await redis_client.aclose()
 
     if json_out:
         click.echo(result.model_dump_json(indent=2))
@@ -921,6 +985,521 @@ async def _analyze_async(
 
 
 # ---------------------------------------------------------------------
+# Topic intelligence — one-word full-cycle command
+# ---------------------------------------------------------------------
+
+
+@main.command()
+@click.argument("topic")
+@click.option(
+    "--limit",
+    type=int,
+    default=30,
+    show_default=True,
+    help="Max signals to collect per individual source run.",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=False,
+    help="Scrape and deduplicate but do not write to the database.",
+)
+@click.option(
+    "--no-analyze",
+    is_flag=True,
+    default=False,
+    help="Skip the Phase 2+3 analysis pipeline after scraping.",
+)
+@click.option(
+    "--no-llm",
+    is_flag=True,
+    default=False,
+    help="Force heuristic-only path in the analysis step.",
+)
+@click.option(
+    "--dedup-threshold",
+    type=float,
+    default=0.82,
+    show_default=True,
+    help="Semantic similarity threshold for near-duplicate detection (0-1).",
+)
+@click.option(
+    "--json-out",
+    is_flag=True,
+    default=False,
+    help="Print the analysis result as raw JSON.",
+)
+def topic(
+    topic: str,
+    limit: int,
+    dry_run: bool,
+    no_analyze: bool,
+    no_llm: bool,
+    dedup_threshold: float,
+    json_out: bool,
+) -> None:
+    """Scrape every relevant source for TOPIC and run the full analysis pipeline.
+
+    One word becomes a complete intelligence cycle:\n
+      1. Expand TOPIC into search queries and target subreddits\n
+      2. Scrape HackerNews, Google News, Reddit, GitHub, Amazon in parallel\n
+      3. Semantically deduplicate (near-identical titles removed)\n
+      4. Persist unique signals to the database\n
+      5. Run Phase 2+3 agent + ML pipeline and print the verdict\n
+    \n
+    Examples:\n
+        aegis topic "AI chips"\n
+        aegis topic "bitcoin" --limit 50\n
+        aegis topic "e-commerce" --no-analyze --dry-run\n
+        aegis topic "NVIDIA" --no-llm --json-out
+    """
+    asyncio.run(
+        _topic_async(
+            topic=topic,
+            limit=limit,
+            dry_run=dry_run,
+            run_analyze=not no_analyze,
+            use_llm=not no_llm,
+            dedup_threshold=dedup_threshold,
+            json_out=json_out,
+        )
+    )
+
+
+async def _topic_async(
+    *,
+    topic: str,
+    limit: int,
+    dry_run: bool,
+    run_analyze: bool,
+    use_llm: bool,
+    dedup_threshold: float,
+    json_out: bool,
+) -> None:
+    import uuid as _uuid
+
+    import redis.asyncio as aioredis
+
+    from aegis.core.logging import configure_logging
+    from aegis.db.pool import PgPool
+    from aegis.scrape.topic import expand_topic, scrape_topic
+
+    configure_logging()
+    cfg = settings()
+    tenant_uuid = _uuid.UUID(cfg.default_tenant_id)
+
+    expansion = expand_topic(topic)
+
+    click.echo()
+    click.echo("=" * 68)
+    click.echo(f"  AEGIS Topic Intelligence — \"{topic}\"")
+    click.echo("=" * 68)
+    click.echo(f"  Category  : {expansion.category.upper()}")
+    if expansion.related_entities:
+        click.echo(f"  Related   : {', '.join(expansion.related_entities[:5])}")
+    click.echo(f"  Queries   : {len(expansion.search_terms)} search terms generated")
+    for i, term in enumerate(expansion.search_terms[:8], 1):
+        click.echo(f"              {i:2d}. {term}")
+    if len(expansion.search_terms) > 8:
+        click.echo(f"              … +{len(expansion.search_terms) - 8} more")
+    if expansion.market_angle_queries:
+        click.echo(f"  Market    : {' · '.join(q.split(topic + ' ')[-1] for q in expansion.market_angle_queries[:3])}")
+    if expansion.competitor_queries:
+        click.echo(f"  Compete   : {' · '.join(expansion.competitor_queries[:2])}")
+    click.echo(f"  Subreddits: {', '.join(expansion.reddit_subreddits[:5])}")
+    click.echo("  Sources   : HackerNews · Google News · Bing News · Reddit · GitHub · Amazon")
+    if dry_run:
+        click.echo(click.style("  Mode      : DRY RUN — no DB writes", fg="yellow"))
+    click.echo("=" * 68)
+    click.echo("  Scraping all sources in parallel…", err=True)
+
+    pool: PgPool | None = None
+    if not dry_run:
+        pool = PgPool(dsn=cfg.pg_dsn_str)
+        await pool.start()
+
+    try:
+        result = await scrape_topic(
+            topic,
+            pool=pool,
+            tenant_id=tenant_uuid if pool else None,
+            limit_per_source=limit,
+            dry_run=dry_run,
+            dedup_threshold=dedup_threshold,
+        )
+    finally:
+        if pool is not None:
+            await pool.close()
+
+    # Print scrape summary
+    click.echo()
+    click.echo(f"  Fetched   : {result.total_fetched} signals across {len(result.sources_hit)} sources")
+    click.echo(f"  Unique    : {result.total_unique} after semantic dedup (dropped {result.duplicates_dropped})")
+    if not dry_run:
+        click.echo(f"  Inserted  : {result.total_inserted} new DB rows")
+    click.echo(f"  Duration  : {result.duration_s:.1f}s")
+    if result.errors:
+        click.echo(
+            click.style(f"  Warnings  : {len(result.errors)} source errors (non-fatal)", fg="yellow")
+        )
+        for err in result.errors[:3]:
+            click.echo(click.style(f"              - {err[:90]}", fg="yellow"))
+
+    # ── Emerging patterns ──────────────────────────────────────────────
+    if result.patterns:
+        click.echo()
+        click.echo(f"  ── Emerging Patterns ({len(result.patterns)} clusters) ──────────────────")
+        for i, cluster in enumerate(result.patterns[:6], 1):
+            vel_bar = "█" * int(cluster.velocity_score * 8) + "░" * (8 - int(cluster.velocity_score * 8))
+            click.echo(
+                f"  {i}. {click.style(cluster.label.title(), bold=True)}"
+                f"  [{vel_bar}] {cluster.signal_count} signals"
+            )
+            if cluster.top_titles:
+                click.echo(f"     → {cluster.top_titles[0][:75]}")
+
+    # ── Top signals preview ────────────────────────────────────────────
+    if result.signals:
+        click.echo()
+        click.echo("  ── Top Signals ──────────────────────────────────────────────")
+        sorted_sigs = sorted(
+            result.signals,
+            key=lambda s: ((s.engagement.likes or 0) + (s.engagement.comments or 0)) if s.engagement else 0,
+            reverse=True,
+        )
+        for sig in sorted_sigs[:8]:
+            title = (sig.title or "")[:68]
+            plat = sig.platform.value.replace("_", " ").title()
+            eng = sig.engagement
+            score = ((eng.likes or 0) + (eng.comments or 0)) if eng else 0
+            click.echo(f"  [{plat:15s}] {title}  ↑{score}")
+
+    if not run_analyze or result.total_unique == 0:
+        click.echo("=" * 68)
+        return
+
+    # ── Phase 2+3 Analysis ────────────────────────────────────────────
+    click.echo()
+    click.echo(f"  Running Phase 2+3 pipeline on {result.total_unique} signals…", err=True)
+
+    if dry_run:
+        # For dry-run, build candidate from in-memory signals directly
+        rows_as_dicts = [
+            {
+                "signal_id": str(sig.signal_id),
+                "title": sig.title,
+                "platform": sig.platform.value,
+                "captured_at": sig.posted_at or sig.provenance.scraped_at,
+                "sentiment": 0.3,
+                "commercial_intent": 0.4,
+                "novelty": 0.5,
+                "author_id": str(sig.author.platform_user_id) if sig.author else None,
+            }
+            for sig in result.signals
+        ]
+    else:
+        # Re-fetch from DB to get enriched rows with computed columns
+        from aegis.db.pool import PgPool as _PgPool
+        from aegis.db.signals import fetch_recent_signals
+
+        pool2 = _PgPool(dsn=cfg.pg_dsn_str)
+        await pool2.start()
+        try:
+            db_rows = await fetch_recent_signals(
+                pool2, tenant_id=tenant_uuid, limit=result.total_unique + 20
+            )
+            rows_as_dicts = [dict(r) for r in db_rows]
+        finally:
+            await pool2.close()
+
+    if not rows_as_dicts:
+        click.echo("  No rows available for analysis.", err=True)
+        click.echo("=" * 66)
+        return
+
+    from aegis.agents.runner import run_trend
+
+    auto_trend_id = f"topic-{topic.lower().replace(' ', '-')[:24]}-{_uuid.uuid4().hex[:6]}"
+    candidate = _candidate_from_rows(rows_as_dicts, trend_id=auto_trend_id, title=topic)
+
+    redis_client = aioredis.from_url(cfg.redis_url_str, decode_responses=True)
+    try:
+        analysis = await run_trend(
+            candidate,
+            signals=rows_as_dicts,
+            use_llm=use_llm,
+            stream_client=redis_client if not dry_run else None,
+        )
+    finally:
+        await redis_client.aclose()
+
+    if json_out:
+        click.echo(analysis.model_dump_json(indent=2))
+        return
+
+    verdict_color = {
+        "proceed": "green",
+        "hold": "yellow",
+        "block": "red",
+        "escalate": "bright_red",
+    }.get(analysis.final_verdict.value, "white")
+
+    click.echo()
+    click.echo("  ── Analysis Result ──────────────────────────────────────────")
+    click.echo(
+        "  Verdict   : "
+        + click.style(analysis.final_verdict.value.upper(), fg=verdict_color, bold=True)
+    )
+    click.echo(
+        f"  Score     : {analysis.final_score:.3f}   "
+        f"Confidence: {analysis.final_confidence:.3f}   "
+        f"Priority: {analysis.final_priority.name}"
+    )
+    click.echo(f"  Halt      : {analysis.halt_reason}   Duration: {analysis.duration_ms:.0f}ms")
+    if analysis.blocked_by:
+        click.echo(f"  Blocked by: {', '.join(analysis.blocked_by)}")
+    click.echo()
+    click.echo(f"  {'Agent':<16} {'Verdict':<10} {'Score':>6}  {'Conf':>6}  Rationale")
+    click.echo(f"  {'-'*16} {'-'*10} {'-'*6}  {'-'*6}  {'-'*30}")
+    for dec in sorted(analysis.decisions, key=lambda d: d.score, reverse=True):
+        click.echo(
+            f"  {dec.agent:<16} {dec.verdict.value:<10} {dec.score:>6.3f}  "
+            f"{dec.confidence:>6.3f}  {(dec.reasoning or '')[:50]}"
+        )
+    click.echo("=" * 68)
+
+
+# ---------------------------------------------------------------------
+# DB duplicate sweep
+# ---------------------------------------------------------------------
+
+
+@main.command()
+@click.option(
+    "--lookback-hours",
+    type=int,
+    default=168,
+    show_default=True,
+    help="How far back to scan for duplicates (default: 7 days).",
+)
+@click.option(
+    "--threshold",
+    type=float,
+    default=0.85,
+    show_default=True,
+    help="Similarity threshold (0-1). Higher = stricter matching.",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=True,
+    help="Report duplicates found without deleting them (default: dry-run on).",
+)
+@click.option(
+    "--delete",
+    is_flag=True,
+    default=False,
+    help="Actually DELETE detected duplicates (overrides --dry-run).",
+)
+def dedup(lookback_hours: int, threshold: float, dry_run: bool, delete: bool) -> None:
+    """Scan the signals database for semantic duplicates and optionally remove them.
+
+    Keeps the OLDEST version of each near-duplicate story; removes the newer
+    rewrites. Runs dry by default — use --delete to actually remove rows.
+
+    Examples:\n
+        aegis dedup\n
+        aegis dedup --lookback-hours 720 --threshold 0.90\n
+        aegis dedup --delete
+    """
+    actually_delete = delete  # --delete overrides the dry-run default
+    asyncio.run(
+        _dedup_async(
+            lookback_hours=lookback_hours,
+            threshold=threshold,
+            dry_run=not actually_delete,
+        )
+    )
+
+
+async def _dedup_async(*, lookback_hours: int, threshold: float, dry_run: bool) -> None:
+    import uuid as _uuid
+
+    from aegis.core.logging import configure_logging
+    from aegis.db.dedup import sweep_db_duplicates
+    from aegis.db.pool import PgPool
+
+    configure_logging(level="WARNING")
+    cfg = settings()
+    tenant_uuid = _uuid.UUID(cfg.default_tenant_id)
+
+    mode_label = "DRY RUN — no rows will be deleted" if dry_run else "LIVE — duplicates will be DELETED"
+    click.echo()
+    click.echo("=" * 60)
+    click.echo("  AEGIS — Semantic Duplicate Sweep")
+    click.echo("=" * 60)
+    click.echo(f"  Lookback : {lookback_hours}h ({lookback_hours // 24}d)")
+    click.echo(f"  Threshold: {threshold:.0%} similarity")
+    click.echo(click.style(f"  Mode     : {mode_label}", fg="yellow" if dry_run else "red"))
+    click.echo()
+
+    if not dry_run and not click.confirm(
+        "This will DELETE rows permanently from the database. Continue?", default=False
+    ):
+        click.echo("Aborted.", err=True)
+        return
+
+    pool = PgPool(dsn=cfg.pg_dsn_str)
+    await pool.start()
+    try:
+        click.echo("  Scanning signals…", err=True)
+        stats = await sweep_db_duplicates(
+            pool,
+            tenant_uuid,
+            lookback_hours=lookback_hours,
+            threshold=threshold,
+            dry_run=dry_run,
+        )
+    finally:
+        await pool.close()
+
+    click.echo(f"  Checked  : {stats['total_checked']:,} signals")
+    click.echo(
+        "  Dupes    : "
+        + click.style(f"{stats['duplicates_found']:,} found", fg="yellow" if stats["duplicates_found"] else "green")
+    )
+    if not dry_run:
+        click.echo(
+            "  Deleted  : "
+            + click.style(f"{stats['deleted']:,} rows removed", fg="red" if stats["deleted"] else "green")
+        )
+    else:
+        click.echo(
+            click.style(
+                f"  (Dry run — re-run with `aegis dedup --delete` to remove {stats['duplicates_found']} rows)",
+                fg="cyan",
+            )
+        )
+    click.echo("=" * 60)
+
+
+# ---------------------------------------------------------------------
+# Emerging patterns from DB signals
+# ---------------------------------------------------------------------
+
+
+@main.command()
+@click.option(
+    "--limit",
+    type=int,
+    default=300,
+    show_default=True,
+    help="Number of recent signals to analyse.",
+)
+@click.option(
+    "--min-cluster-size",
+    type=int,
+    default=2,
+    show_default=True,
+    help="Minimum signals per cluster to report.",
+)
+@click.option(
+    "--platform",
+    default=None,
+    help="Filter signals by platform before clustering.",
+)
+@click.option(
+    "--threshold",
+    type=float,
+    default=0.28,
+    show_default=True,
+    help="Cosine similarity threshold for clustering (0-1).",
+)
+def patterns(limit: int, min_cluster_size: int, platform: str | None, threshold: float) -> None:
+    """Detect emerging thematic patterns in recent DB signals.
+
+    Clusters recent signals by semantic similarity and ranks clusters by
+    velocity (size × recency). Shows what topics are gaining momentum.
+
+    Examples:\n
+        aegis patterns\n
+        aegis patterns --limit 500 --min-cluster-size 3\n
+        aegis patterns --platform hacker_news
+    """
+    asyncio.run(
+        _patterns_async(
+            limit=limit,
+            min_cluster_size=min_cluster_size,
+            platform=platform,
+            threshold=threshold,
+        )
+    )
+
+
+async def _patterns_async(
+    *,
+    limit: int,
+    min_cluster_size: int,
+    platform: str | None,
+    threshold: float,
+) -> None:
+    import uuid as _uuid
+
+    from aegis.core.logging import configure_logging
+    from aegis.db.pool import PgPool
+    from aegis.db.signals import fetch_recent_signals
+    from aegis.scrape.patterns import detect_patterns
+
+    configure_logging(level="WARNING")
+    cfg = settings()
+    tenant_uuid = _uuid.UUID(cfg.default_tenant_id)
+
+    pool = PgPool(dsn=cfg.pg_dsn_str)
+    await pool.start()
+    try:
+        rows = await fetch_recent_signals(pool, tenant_id=tenant_uuid, limit=limit, platform=platform)
+    finally:
+        await pool.close()
+
+    if not rows:
+        click.echo("No signals in DB. Run `aegis scrape` or `aegis topic` first.", err=True)
+        return
+
+    click.echo()
+    click.echo("=" * 66)
+    click.echo(f"  AEGIS — Emerging Patterns  ({len(rows)} signals analysed)")
+    click.echo("=" * 66)
+
+    # Convert DB rows to dicts for the pattern detector
+    rows_as_dicts = [dict(r) for r in rows]
+    clusters = detect_patterns(rows_as_dicts, min_cluster_size=min_cluster_size, similarity_threshold=threshold)
+
+    if not clusters:
+        click.echo("  No significant clusters found. Try --min-cluster-size 1 or more signals.")
+        click.echo("=" * 66)
+        return
+
+    click.echo(f"  Found {len(clusters)} emerging pattern clusters:\n")
+    for i, cluster in enumerate(clusters, 1):
+        vel_bar = "█" * int(cluster.velocity_score * 10) + "░" * (10 - int(cluster.velocity_score * 10))
+        plat_str = ", ".join(cluster.platforms[:4])
+        click.echo(
+            f"  [{i:2d}] {click.style(cluster.label.title(), bold=True)}"
+            f"  ({cluster.signal_count} signals)"
+        )
+        click.echo(
+            f"       Velocity [{vel_bar}] {cluster.velocity_score:.2f}  "
+            f"Recency {cluster.recency_weight:.0%}  "
+            f"Sources: {plat_str}"
+        )
+        for title in cluster.top_titles[:3]:
+            click.echo(f"       · {title[:80]}")
+        click.echo()
+
+    click.echo("=" * 66)
+
+
+# ---------------------------------------------------------------------
 # Daily workflow
 # ---------------------------------------------------------------------
 
@@ -939,7 +1518,12 @@ async def _analyze_async(
     show_default=True,
     help="Total signals to collect across all sources.",
 )
-def daily(subreddit: str, limit: int) -> None:
+@click.option(
+    "--swarm/--no-swarm",
+    default=False,
+    help="Use full swarm intelligence (30+ adapters). Default: --no-swarm.",
+)
+def daily(subreddit: str, limit: int, swarm: bool) -> None:
     """Run the full daily workflow in one command.
 
     Scrapes all working sources → stores in DB → runs AI analysis → prints verdict.
@@ -948,9 +1532,13 @@ def daily(subreddit: str, limit: int) -> None:
     Examples:\n
         aegis daily\n
         aegis daily --subreddit Entrepreneur\n
-        aegis daily --limit 100
+        aegis daily --limit 100\n
+        aegis daily --swarm
     """
-    asyncio.run(_daily_async(subreddit=subreddit, limit=limit))
+    if swarm:
+        asyncio.run(_daily_swarm_async(limit=limit))
+    else:
+        asyncio.run(_daily_async(subreddit=subreddit, limit=limit))
 
 
 async def _daily_async(*, subreddit: str, limit: int) -> None:
@@ -1275,6 +1863,173 @@ def support_bundle(out: str | None) -> None:
                     zf.write(p, arcname=p.relative_to(tmpdir))
 
     click.echo(f"Support bundle written to {out_path}", err=True)
+
+
+async def _daily_swarm_async(*, limit: int) -> None:
+    """Run daily via full swarm intelligence (30+ adapters, 4 waves)."""
+    from aegis.core.logging import configure_logging
+    from aegis.scrape.swarm import SwarmOrchestrator
+
+    configure_logging(level="ERROR")
+    now_str = datetime.now(tz=UTC).strftime("%Y-%m-%d %H:%M UTC")
+
+    click.echo()
+    click.echo("=" * 57)
+    click.echo(f"  AEGIS Pulse — Swarm Intelligence Run   {now_str}")
+    click.echo("=" * 57)
+    click.echo("  Running 4 waves across 30+ adapters (dry-run mode)…")
+    click.echo()
+
+    orch = SwarmOrchestrator()
+    result = await orch.run_all_waves(limit=max(10, limit // 4), dry_run=True)
+
+    click.echo(f"  Total signals    : {result.total_signals}")
+    click.echo(f"  Platforms hit    : {len(result.by_platform)}")
+    click.echo(f"  Market pulse     : {result.market_pulse.upper()}")
+    if result.cross_platform_themes:
+        click.echo(f"  Top themes       : {', '.join(result.cross_platform_themes[:5])}")
+    click.echo()
+    for ws in result.wave_stats:
+        click.echo(
+            f"  Wave {ws.wave_number}: {ws.agents_run:2d} agents  "
+            f"{ws.signals_collected:4d} signals  "
+            f"{ws.duration_ms:.0f}ms  "
+            f"({ws.failures} failures)"
+        )
+    click.echo()
+    click.echo(f"  {result.conclusion}")
+    click.echo("=" * 57)
+
+
+# ---------------------------------------------------------------------
+# Swarm Intelligence command group
+# ---------------------------------------------------------------------
+
+
+@main.group("swarm")
+def swarm_group() -> None:
+    """Swarm Intelligence — run all 30+ adapters in parallel waves."""
+
+
+@swarm_group.command("run")
+@click.option("--tiers", default="all", show_default=True, help="Waves to run: all | social | news | ecommerce | tech")
+@click.option("--limit", type=int, default=50, show_default=True, help="Max signals per adapter.")
+@click.option("--dry-run", is_flag=True, default=False, help="Run without persisting to DB or Redis.")
+@click.option("--json-out", is_flag=True, default=False, help="Print SwarmResult as JSON.")
+def swarm_run(tiers: str, limit: int, dry_run: bool, json_out: bool) -> None:
+    """Run all scraper adapters in parallel waves.
+
+    Examples:\n
+        aegis swarm run --limit 20 --dry-run\n
+        aegis swarm run --tiers social --limit 30\n
+        aegis swarm run --json-out
+    """
+    asyncio.run(_swarm_run_async(tiers=tiers, limit=limit, dry_run=dry_run, json_out=json_out))
+
+
+async def _swarm_run_async(*, tiers: str, limit: int, dry_run: bool, json_out: bool) -> None:
+    from aegis.core.logging import configure_logging
+    from aegis.scrape.governor import ConcurrencyGovernor
+    from aegis.scrape.swarm import (
+        WAVE_1_SOCIAL,
+        WAVE_2_NEWS,
+        WAVE_3_ECOMMERCE,
+        WAVE_4_TECH,
+        SwarmOrchestrator,
+    )
+    from aegis.scrape.swarm_agents import SwarmAgentPool
+
+    configure_logging(level="WARNING")
+    now_str = datetime.now(tz=UTC).strftime("%Y-%m-%d %H:%M UTC")
+
+    if not json_out:
+        click.echo()
+        click.echo("=" * 62)
+        click.echo(f"  AEGIS Swarm Intelligence   {now_str}")
+        if dry_run:
+            click.echo(click.style("  Mode: DRY RUN — no DB writes", fg="yellow"))
+        click.echo("=" * 62)
+
+    # Filter waves by --tiers
+    _tier_map = {
+        "social": WAVE_1_SOCIAL,
+        "news": WAVE_2_NEWS,
+        "ecommerce": WAVE_3_ECOMMERCE,
+        "tech": WAVE_4_TECH,
+    }
+    if tiers != "all" and tiers in _tier_map:
+        from aegis.scrape.swarm import _build_all_agents  # type: ignore[attr-defined]
+
+        wanted = set(_tier_map[tiers])
+        agents = [a for a in _build_all_agents() if a.name in wanted]
+        governor = ConcurrencyGovernor()
+        pool = SwarmAgentPool(agents, governor)
+        orch = SwarmOrchestrator(pool=pool)
+    else:
+        orch = SwarmOrchestrator()
+
+    result = await orch.run_all_waves(limit=limit, dry_run=dry_run)
+
+    if json_out:
+        click.echo(result.model_dump_json(indent=2))
+        return
+
+    click.echo(f"  Total signals    : {result.total_signals}")
+    click.echo(f"  Platforms hit    : {len(result.by_platform)}")
+    click.echo(f"  Market pulse     : {click.style(result.market_pulse.upper(), bold=True)}")
+    if result.cross_platform_themes:
+        click.echo(f"  Top themes       : {', '.join(result.cross_platform_themes[:5])}")
+    if result.hot_categories:
+        click.echo(f"  Hot categories   : {', '.join(result.hot_categories[:5])}")
+    click.echo()
+    for ws in result.wave_stats:
+        bar = "█" * ws.signals_collected + "░" * max(0, 20 - ws.signals_collected)
+        click.echo(
+            f"  Wave {ws.wave_number} [{bar[:20]}] "
+            f"{ws.agents_run:2d} agents  "
+            f"{ws.signals_collected:4d} signals  "
+            f"{ws.duration_ms:6.0f}ms  "
+            f"({ws.failures} fail)"
+        )
+    click.echo()
+    click.echo(f"  {result.conclusion}")
+    click.echo("=" * 62)
+
+
+@swarm_group.command("agents")
+def swarm_agents() -> None:
+    """Print agent health table for all registered adapters."""
+    from aegis.scrape.swarm import _build_all_agents
+
+    agents = _build_all_agents()
+
+    header = f"  {'AGENT':<22} {'PLATFORM':<18} {'TIER':<14} {'HEALTH':<10} {'SIGNALS':>7}  {'LATENCY':>8}  {'FAIL':>4}"
+    sep = "  " + "─" * (len(header) - 2)
+    click.echo()
+    click.echo(header)
+    click.echo(sep)
+
+    health_colors = {
+        "HEALTHY": "green",
+        "DEGRADED": "yellow",
+        "DOWN": "red",
+        "COOLING": "bright_red",
+        "UNKNOWN": "white",
+    }
+    for agent in agents:
+        health_val = agent.health.value
+        color = health_colors.get(health_val, "white")
+        latency = f"{agent.avg_latency_ms:.0f}ms" if agent.avg_latency_ms else "—"
+        click.echo(
+            f"  {agent.name:<22} "
+            f"{agent.platform:<18} "
+            f"{agent.tier:<14} "
+            + click.style(f"{health_val:<10}", fg=color)
+            + f" {agent.last_signal_count:>7}  {latency:>8}  {agent.consecutive_failures:>4}"
+        )
+    click.echo()
+    click.echo(f"  {len(agents)} adapters registered across 4 waves.")
+    click.echo()
 
 
 if __name__ == "__main__":  # pragma: no cover

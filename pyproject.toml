@@ -201,6 +201,7 @@ dev = [
 [project.scripts]
 aegis = "aegis.cli:main"             # rationale: main CLI entry point
 aegis-predict = "aegis.predict.cli.commands:_typer_app_or_die"  # rationale: Phase 3 standalone predict CLI
+aegis-dashboard = "aegis.dashboard.cli:serve"  # rationale: shortcut to start the Command Center UI
 
 # ============================================================================
 # uv — deterministic Python package manager (Astral)
@@ -223,6 +224,14 @@ torch = [
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
 explicit = true
+
+# ============================================================================
+# uv workspace — Phase 4 (aegis-execute) shares the same venv as Phases 0-3.
+# Running `uv sync` installs both packages together under Python 3.12.
+# Phase 4's looser python constraint (>=3.12,<3.14) is narrowed by this root.
+# ============================================================================
+[tool.uv.workspace]
+members = ["aegis-phase4"]
 
 # ============================================================================
 # Hatchling — build backend
@@ -306,12 +315,19 @@ ignore = [
 flake8-boolean-trap = { extend-allowed-calls = [] }
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["ANN", "S101", "PLR2004", "T20"]       # tests are less strict
-"src/aegis/cli/**" = ["T20"]                          # CLI may print
+"tests/**" = ["ANN", "S101", "PLR2004", "T20"]                 # tests are less strict
+"aegis-phase4/tests/**" = ["ANN", "S101", "PLR2004", "T20"]   # Phase 4 tests same rules
+"src/aegis/cli/**" = ["T20"]                                   # CLI may print
+"aegis-phase4/src/aegis/execute/cli/**" = ["T20"]              # Phase 4 CLI may print
 # Neural model forward() methods use torch.Tensor which is unavailable without the optional dep;
 # FastAPI lifespan/middleware functions use types from the optional fastapi package.
 "src/aegis/predict/models/**" = ["ANN001", "ANN202"]
 "src/aegis/predict/serving/app.py" = ["ANN001", "ANN202"]
+"aegis-phase4/src/aegis/execute/api/**" = ["ANN001", "ANN202"] # FastAPI handlers: same rationale
+"aegis-phase4/src/aegis/execute/metrics.py" = ["ANN001", "ANN002", "ANN003", "ANN202"] # Prometheus optional-dep wrappers
+"aegis-phase4/src/aegis/execute/notifiers/**" = ["ANN001"]     # alert arg is a duck-typed schema model
+"aegis-phase4/src/aegis/execute/policy/deduper.py" = ["ANN002", "ANN003"] # Protocol *args/**kwargs passthrough
+"aegis-phase4/src/aegis/execute/workers/intake_worker.py" = ["ANN001", "ANN202"] # inner pick() helper
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
@@ -388,7 +404,7 @@ addopts = [
   "--cov-report=xml",
   "--cov-fail-under=78",              # CLI + infra excluded from unit coverage (see coverage.run.omit)
 ]
-testpaths = ["tests"]
+testpaths = ["tests", "aegis-phase4/tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 markers = [
@@ -403,6 +419,7 @@ filterwarnings = [
   "ignore::DeprecationWarning:praw.*",
   "ignore::DeprecationWarning:google.*",      # Phase 2: google-generativeai transitive
   "ignore::DeprecationWarning:pkg_resources.*", # Phase 2: chromadb transitive
+  "ignore::DeprecationWarning:bs4.*",          # Phase 2: lxml HTMLParser strip_cdata deprecation in bs4 4.12.3
   "ignore::ResourceWarning",           # Phase 2: langgraph leaves UDS sockets open on teardown (known upstream issue)
 ]
 

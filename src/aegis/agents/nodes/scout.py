@@ -26,8 +26,9 @@ Author: AEGIS Pulse core team
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING, Any
+
+import structlog
 
 from ..llm import prompts
 from ..schemas import AgentDecision, AgentVerdict, TrendCandidate
@@ -37,7 +38,7 @@ from .base import AgentNode
 if TYPE_CHECKING:
     from ..state import GraphState
 
-_log = logging.getLogger(__name__)
+_log = structlog.get_logger("aegis.agents.nodes.scout")
 
 _PROCEED_THRESHOLD = 0.70
 _HOLD_THRESHOLD = 0.45
@@ -155,7 +156,7 @@ class ScoutAgent(AgentNode):
                 primary_horizon=24,
             )
         except Exception as exc:
-            _log.warning("scout.phase3_skipped reason=%s", type(exc).__name__)
+            _log.warning("scout.phase3_skipped", reason=type(exc).__name__)
             return None
 
         p3 = enriched.get("phase3_decision")
@@ -230,6 +231,7 @@ class ScoutAgent(AgentNode):
                 signal_count=candidate.signal_count,
                 heuristic_score=round(heuristic.score, 3),
                 breakout_class=heuristic.details.get("velocity_class", "flat"),
+                swarm_context=state.get("swarm_context"),
             )
         except Exception:
             return None

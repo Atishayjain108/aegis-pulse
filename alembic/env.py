@@ -200,7 +200,7 @@ def run_migrations_online() -> None:
                 )
                 """
             )
-            rows = await conn_a.fetch(f"SELECT revision FROM {_REV_TABLE}")
+            rows = await conn_a.fetch(f"SELECT revision FROM {_REV_TABLE}")  # noqa: S608
             applied = {row["revision"] for row in rows}
 
             for path in _list_raw_sql_files():
@@ -213,7 +213,7 @@ def run_migrations_online() -> None:
                 # which supports multiple statements in one call.
                 await conn_a.execute(sql)
                 await conn_a.execute(
-                    f"INSERT INTO {_REV_TABLE} (revision) VALUES ($1)", revision
+                    f"INSERT INTO {_REV_TABLE} (revision) VALUES ($1)", revision  # noqa: S608
                 )
                 logger.info("Applied: %s", revision)
         finally:

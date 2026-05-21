@@ -36,18 +36,13 @@ ENV PATH="/opt/venv/bin:$PATH"
 RUN pip install uv==0.5.7
 
 WORKDIR /app
-COPY pyproject.toml /app/pyproject.toml
+COPY pyproject.toml README.md /app/
 COPY src /app/src
 
 # Install runtime deps (heuristic-only by default).
-RUN uv pip install --python /opt/venv/bin/python --no-cache-dir \
-    "fastapi==0.115.6" \
-    "uvicorn[standard]==0.34.0" \
-    "pydantic==2.10.5" \
-    "structlog==25.1.0" \
-    "httpx==0.28.1" \
-    "prometheus-client==0.21.1" \
-    "/app"
+# Versions are driven by pyproject.toml [project.optional-dependencies.predict]
+# rather than being hardcoded here — keeps Dockerfile in sync with the lockfile.
+RUN uv pip install --python /opt/venv/bin/python --no-cache-dir "/app[predict]"
 
 ARG INSTALL_OPTIONAL_ML
 RUN if [ "$INSTALL_OPTIONAL_ML" = "1" ] ; then \
@@ -92,11 +87,4 @@ ENTRYPOINT ["tini", "--"]
 HEALTHCHECK --interval=10s --timeout=2s --start-period=20s --retries=3 \
     CMD curl -fsS http://localhost:8000/healthz || exit 1
 
-CMD ["uvicorn", "aegis.predict.serving.app:create_app", \
-     "--factory", \
-     "--host", "0.0.0.0", \
-     "--port", "8000", \
-     "--workers", "1", \
-     "--loop", "uvloop", \
-     "--http", "httptools", \
-     "--no-access-log"]
+CMD ["uvicorn", "aegis.predict.serving.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--loop", "uvloop", "--http", "httptools", "--no-access-log"]

@@ -21,6 +21,8 @@ from typing import Annotated, Any, TypedDict
 # All types used in GraphState field annotations must be runtime imports.
 # LangGraph calls get_type_hints(GraphState) at StateGraph construction time,
 # which evaluates forward references; TYPE_CHECKING-only imports cause NameError.
+from aegis.scrape.swarm_result import SwarmResult
+
 from .schemas import AgentDecision, AgentVerdict, Priority, TrendCandidate
 
 
@@ -126,6 +128,13 @@ class GraphState(TypedDict, total=False):
     signals: list[dict[str, Any]]
 
     # ------------------------------------------------------------------
+    # Phase 6 — Swarm context (optional cross-platform market intelligence)
+    # ------------------------------------------------------------------
+    # Latest SwarmResult fetched from Redis by the runner before graph
+    # invocation. None when Redis is unavailable or no swarm has run yet.
+    swarm_context: SwarmResult | None
+
+    # ------------------------------------------------------------------
     # Operational
     # ------------------------------------------------------------------
     metadata: Annotated[dict[str, Any], _merge_dicts]
@@ -137,6 +146,7 @@ def initial_state(
     *,
     tenant_id: str = "default",
     signals: list[dict[str, Any]] | None = None,
+    swarm_context: SwarmResult | None = None,
 ) -> GraphState:
     """Build a fresh state dict for a new graph invocation."""
     state = GraphState(
@@ -151,4 +161,6 @@ def initial_state(
     )
     if signals:
         state["signals"] = signals
+    if swarm_context is not None:
+        state["swarm_context"] = swarm_context
     return state

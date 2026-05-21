@@ -63,6 +63,47 @@ class Platform(StrEnum):
     SHOPIFY_APPS = "shopify_apps"
     WAYBACK = "wayback_machine"
 
+    # --- Tier 4: news & web (added for topic-based scraping) ------------------
+    GOOGLE_NEWS = "google_news"
+    BING_NEWS = "bing_news"
+
+    # --- Phase 1: stable RSS + public JSON adapters ---------------------------
+    TECHCRUNCH = "techcrunch"
+    WIRED = "wired"
+    BBC_NEWS = "bbc_news"
+    REUTERS = "reuters"
+    NDTV_PROFIT = "ndtv_profit"
+    MINT = "mint"
+    BUSINESS_STANDARD = "business_standard"
+    YAHOO_FINANCE = "yahoo_finance"
+    INVESTING_COM = "investing_com"
+    MEDIUM = "medium"
+    DEVTO = "devto"
+    GITHUB_PUBLIC = "github_public"
+
+    # --- Phase 2: social / trends adapters -----------------------------------
+    REDDIT_FINANCE = "reddit_finance"
+    REDDIT_ECOMMERCE = "reddit_ecommerce"
+    YOUTUBE_RSS = "youtube_rss"
+    GOOGLE_TRENDS_INDIA = "google_trends_india"
+    NPM_TRENDS = "npm_trends"
+
+    # --- Phase 3: finance / market data adapters -----------------------------
+    MONEYCONTROL = "moneycontrol"
+    ECONOMIC_TIMES = "economic_times"
+    NSE_BSE = "nse_bse"
+    SCREENER_IN = "screener_in"
+
+    # --- Phase 4: Indian e-commerce adapters (high anti-bot risk) -----------
+    AMAZON_IN = "amazon_in"
+    FLIPKART = "flipkart"
+    MEESHO = "meesho"
+    MYNTRA = "myntra"
+    AJIO = "ajio"
+    NYKAA = "nykaa"
+    SNAPDEAL = "snapdeal"
+    INDIAMART = "indiamart"
+
 
 @unique
 class SourceTier(StrEnum):
@@ -113,6 +154,42 @@ _PLATFORM_TIER: dict[Platform, SourceTier] = {
     Platform.PRODUCT_HUNT: SourceTier.TIER_5_ALTERNATIVE,
     Platform.SHOPIFY_APPS: SourceTier.TIER_5_ALTERNATIVE,
     Platform.WAYBACK: SourceTier.TIER_5_ALTERNATIVE,
+    Platform.GOOGLE_NEWS: SourceTier.TIER_4_CULTURAL,
+    Platform.BING_NEWS: SourceTier.TIER_4_CULTURAL,
+    # Phase 1 adapters
+    Platform.TECHCRUNCH: SourceTier.TIER_3_SEARCH,
+    Platform.WIRED: SourceTier.TIER_3_SEARCH,
+    Platform.BBC_NEWS: SourceTier.TIER_3_SEARCH,
+    Platform.REUTERS: SourceTier.TIER_3_SEARCH,
+    Platform.NDTV_PROFIT: SourceTier.TIER_3_SEARCH,
+    Platform.MINT: SourceTier.TIER_3_SEARCH,
+    Platform.BUSINESS_STANDARD: SourceTier.TIER_3_SEARCH,
+    Platform.YAHOO_FINANCE: SourceTier.TIER_3_SEARCH,
+    Platform.INVESTING_COM: SourceTier.TIER_3_SEARCH,
+    Platform.MEDIUM: SourceTier.TIER_4_CULTURAL,
+    Platform.DEVTO: SourceTier.TIER_1_INTENT,
+    Platform.GITHUB_PUBLIC: SourceTier.TIER_3_SEARCH,
+    # Phase 2 adapters
+    Platform.REDDIT_FINANCE: SourceTier.TIER_1_INTENT,
+    Platform.REDDIT_ECOMMERCE: SourceTier.TIER_1_INTENT,
+    Platform.YOUTUBE_RSS: SourceTier.TIER_1_INTENT,
+    Platform.GOOGLE_TRENDS_INDIA: SourceTier.TIER_3_SEARCH,
+    Platform.NPM_TRENDS: SourceTier.TIER_3_SEARCH,
+    # Phase 3 adapters
+    Platform.MONEYCONTROL: SourceTier.TIER_3_SEARCH,
+    Platform.ECONOMIC_TIMES: SourceTier.TIER_3_SEARCH,
+    Platform.NSE_BSE: SourceTier.TIER_3_SEARCH,  # no price captured; % change only
+    Platform.SCREENER_IN: SourceTier.TIER_3_SEARCH,
+    # Phase 4 adapters — Indian e-commerce (T3 because HTML scraping yields
+    # inconsistent prices; price data goes to platform_specific, not Price object)
+    Platform.AMAZON_IN: SourceTier.TIER_3_SEARCH,
+    Platform.FLIPKART: SourceTier.TIER_3_SEARCH,
+    Platform.MEESHO: SourceTier.TIER_3_SEARCH,
+    Platform.MYNTRA: SourceTier.TIER_3_SEARCH,
+    Platform.AJIO: SourceTier.TIER_3_SEARCH,
+    Platform.NYKAA: SourceTier.TIER_3_SEARCH,
+    Platform.SNAPDEAL: SourceTier.TIER_3_SEARCH,
+    Platform.INDIAMART: SourceTier.TIER_3_SEARCH,
 }
 
 

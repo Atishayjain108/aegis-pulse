@@ -130,7 +130,9 @@ try:  # pragma: no cover
     import dowhy  # noqa: F401
 
     _HAS_DOWHY = True
-except ImportError:  # pragma: no cover
+except (ImportError, SyntaxError):  # pragma: no cover
+    # dowhy 0.12 has invalid escape sequences (\s) in graph.py that are
+    # SyntaxError in Python 3.12, not ImportError.
     _HAS_DOWHY = False
 
 

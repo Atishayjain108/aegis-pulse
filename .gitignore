@@ -48,3 +48,7 @@ chroma/
 
 # Claude Code local state (machine-specific settings and memory)
 .claude/
+
+# Node (dashboard tooling)
+node_modules/
+package-lock.json

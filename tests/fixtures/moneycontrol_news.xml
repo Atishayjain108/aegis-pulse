@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Moneycontrol Latest News</title>
+    <link>https://www.moneycontrol.com</link>
+    <description>Latest news from Moneycontrol</description>
+    <language>en-in</language>
+    <item>
+      <title>Market Rally: Sensex Jumps 500 Points</title>
+      <link>https://www.moneycontrol.com/news/business/markets/market-rally-sensex-jumps-500-points.html</link>
+      <description>Indian equity markets surged today as bulls took charge amid positive global cues.</description>
+      <pubDate>Mon, 19 May 2026 09:00:00 +0530</pubDate>
+    </item>
+    <item>
+      <title>RBI Policy: Interest Rates On Hold At 6.5%</title>
+      <link>https://www.moneycontrol.com/news/business/economy/rbi-policy-interest-rates-on-hold.html</link>
+      <description>The Reserve Bank of India decided to keep the repo rate unchanged at 6.5 percent for the fifth consecutive meeting.</description>
+      <pubDate>Mon, 19 May 2026 08:30:00 +0530</pubDate>
+    </item>
+    <item>
+      <title>IT Sector Outlook: TCS and Infosys Post Strong Q4</title>
+      <link>https://www.moneycontrol.com/news/business/earnings/it-sector-outlook-tcs-infosys-q4.html</link>
+      <description>India's top IT firms reported better-than-expected quarterly results driven by deal wins in the US market.</description>
+      <pubDate>Mon, 19 May 2026 07:45:00 +0530</pubDate>
+    </item>
+  </channel>
+</rss>

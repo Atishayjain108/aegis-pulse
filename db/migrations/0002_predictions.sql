@@ -83,17 +83,28 @@ CREATE INDEX IF NOT EXISTS idx_predictions_correlation_id
 CREATE INDEX IF NOT EXISTS idx_predictions_model_id
     ON predictions (model_id);
 
--- TimescaleDB hypertable — 1-day chunks. Lets us drop chunks > 90d cheaply.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_predictions_correlation_id_unique
+    ON predictions (correlation_id);
+
+-- TimescaleDB hypertable — 1-day chunks. Only possible when the PRIMARY KEY
+-- includes the partition column. The predictions PK is prediction_id alone, so
+-- the conversion is skipped here; the table works fine as a plain Postgres table
+-- with the time-based indexes above. Promote to a hypertable manually once the
+-- schema is migrated to a composite PK in a later migration.
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'timescaledb') THEN
-        PERFORM create_hypertable(
-            'predictions',
-            'finished_at',
-            chunk_time_interval => INTERVAL '1 day',
-            if_not_exists       => TRUE,
-            migrate_data        => TRUE
-        );
+        BEGIN
+            PERFORM create_hypertable(
+                'predictions',
+                'finished_at',
+                chunk_time_interval => INTERVAL '1 day',
+                if_not_exists       => TRUE,
+                migrate_data        => TRUE
+            );
+        EXCEPTION WHEN OTHERS THEN
+            RAISE WARNING 'create_hypertable(predictions) skipped: % — table remains a regular Postgres table', SQLERRM;
+        END;
     END IF;
 END$$;
 
@@ -105,8 +116,8 @@ END$$;
 -- Append-only. We keep it in the same DB (rather than only on MinIO)
 -- so an operator triaging an alert can JOIN against it.
 CREATE TABLE IF NOT EXISTS prediction_audit (
-    correlation_id    TEXT PRIMARY KEY REFERENCES predictions(correlation_id)
-                          DEFERRABLE INITIALLY DEFERRED,
+    -- No FK to predictions: audit records must survive prediction archival/deletion.
+    correlation_id    TEXT PRIMARY KEY,
     tenant_id         UUID NOT NULL,
     trend_id          TEXT NOT NULL,
     bundle_id         TEXT NOT NULL,
@@ -202,30 +213,7 @@ CREATE INDEX IF NOT EXISTS idx_backtest_results_model
     ON backtest_results (model_id, fold_index);
 
 
--- --------------------------------------------------------------------
--- Continuous aggregate: daily breakout precision per model.
--- Used by the auto-rollback job to detect production drift.
--- --------------------------------------------------------------------
-DO $$
-BEGIN
-    IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'timescaledb') THEN
-        EXECUTE $caggs$
-            CREATE MATERIALIZED VIEW IF NOT EXISTS predictions_daily_summary
-            WITH (timescaledb.continuous) AS
-            SELECT
-                tenant_id,
-                model_id,
-                time_bucket(INTERVAL '1 day', finished_at) AS day,
-                COUNT(*)                                      AS n_predictions,
-                AVG(duration_ms)                              AS avg_duration_ms,
-                COUNT(*) FILTER (
-                    WHERE (bundle_json->'predictions'->0->>'p_breakout')::float >= 0.55
-                ) AS n_breakout_calls
-            FROM predictions
-            GROUP BY tenant_id, model_id, day
-            WITH NO DATA;
-        $caggs$;
-    END IF;
-END$$;
+-- Continuous aggregate omitted: requires predictions to be a TimescaleDB
+-- hypertable. Add in a future migration once the composite-PK upgrade lands.
 
 COMMIT;

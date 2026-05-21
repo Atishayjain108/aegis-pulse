@@ -38,7 +38,10 @@ try:  # pragma: no cover
     import onnx  # noqa: F401
 
     _HAS_ONNX = True
-except ImportError:  # pragma: no cover
+except (ImportError, SystemError):  # pragma: no cover
+    # onnx → google.protobuf C extension raises DeprecationWarning-as-error
+    # in Python 3.12 inside _CanImport(), which the C import machinery then
+    # wraps into a SystemError. Treat as "onnx not available".
     _HAS_ONNX = False
 
 

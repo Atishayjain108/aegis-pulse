@@ -26,10 +26,13 @@ Author: AEGIS Pulse core team
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 import structlog
+
+from aegis.scrape.swarm_result import SwarmResult
 
 from .schemas import (
     AgentVerdict,
@@ -101,6 +104,7 @@ async def run_trend(
     snapshot_manager: SnapshotManager | None = None,
     use_llm: bool = True,
     timeout_s: float = 120.0,
+    stream_client: Any | None = None,
 ) -> GraphResult:
     """Execute the agent graph against `candidate` and return the result.
 
@@ -109,7 +113,21 @@ async def run_trend(
     queue without try/except.
     """
     started_at = datetime.now(tz=UTC)
-    state: GraphState = initial_state(candidate, tenant_id=tenant_id, signals=signals)
+
+    # Fetch latest SwarmResult from Redis for cross-platform market context.
+    # Non-blocking: any failure is logged and pipeline continues with None.
+    swarm_context: SwarmResult | None = None
+    if stream_client is not None:
+        try:
+            raw = await stream_client.get("aegis:swarm:latest")
+            if raw:
+                swarm_context = SwarmResult.model_validate_json(raw)
+        except Exception as exc:
+            _log.warning("swarm_context_fetch_failed", error=str(exc))
+
+    state: GraphState = initial_state(
+        candidate, tenant_id=tenant_id, signals=signals, swarm_context=swarm_context
+    )
 
     try:
         compiled = await _get_graph(
@@ -166,6 +184,14 @@ async def run_trend(
         except Exception:  # pragma: no cover
             _log.exception("runner.snapshot_failed", trend_id=candidate.trend_id)
 
+    # Best-effort Phase 4 stream publish — never raises.
+    if stream_client is not None:
+        try:
+            await _publish_phase2_result(stream_client, result, tenant_id)
+        except Exception:
+            _log.warning("runner.stream_publish_failed", trend_id=candidate.trend_id)
+
+    data_confidence_log: float = getattr(result, "data_confidence", 1.0)
     _log.info(
         "runner.completed",
         trend_id=candidate.trend_id,
@@ -173,6 +199,7 @@ async def run_trend(
         priority=int(result.final_priority),
         score=round(result.final_score, 3),
         confidence=round(result.final_confidence, 3),
+        data_confidence=round(data_confidence_log, 3),
         halt=result.halt_reason,
         decisions=len(result.decisions),
         duration_ms=round(result.duration_ms, 1),
@@ -183,6 +210,65 @@ async def run_trend(
 # ----------------------------------------------------------------------
 # Helpers
 # ----------------------------------------------------------------------
+
+
+# Maps Phase 2 AgentVerdict values to Phase 4's execution vocabulary.
+# Phase 4 composer expects ENTER/HOLD/EXIT/BLOCK; AgentVerdict uses proceed/hold/block/escalate.
+_VERDICT_TO_PHASE4: dict[str, str] = {
+    "proceed": "ENTER",
+    "hold": "HOLD",
+    "block": "BLOCK",
+    "escalate": "HOLD",  # escalation has no Phase 4 equivalent; conservatively hold
+}
+
+
+async def _publish_phase2_result(
+    redis_client: Any,
+    result: GraphResult,
+    tenant_id: str,
+) -> None:
+    """XADD a GraphResult summary to the Phase 4 intake stream."""
+    raw_verdict = result.final_verdict.value
+    phase4_verdict = _VERDICT_TO_PHASE4.get(raw_verdict, "HOLD")
+    # Pull data_confidence from result metadata if the runner attached it.
+    # Falls back to 1.0 (assume clean) when not set — avoids breaking old
+    # callers that do not run the confidence gate.
+    data_confidence: float = getattr(result, "data_confidence", 1.0)
+
+    payload = {
+        # Phase 4 intake fields (verdict mapped to P4 vocabulary)
+        "trend_id": result.trend_id,
+        "final_verdict": phase4_verdict,
+        "final_score": result.final_score,
+        "final_confidence": result.final_confidence,
+        "final_priority": int(result.final_priority),
+        "halt_reason": result.halt_reason,
+        "blocked_by": list(result.blocked_by),
+        "correlation_id": result.correlation_id,
+        "decision_window": "default",
+        "tenant_id": tenant_id,
+        # Dashboard display fields (raw verdict + per-agent breakdown)
+        "raw_verdict": raw_verdict,
+        "started_at": result.started_at.isoformat() if result.started_at else None,
+        "finished_at": result.finished_at.isoformat() if result.finished_at else None,
+        "duration_ms": result.duration_ms,
+        # Phase 5: data quality confidence from the scrape confidence gate
+        "data_confidence": round(data_confidence, 4),
+        "decisions": [
+            {
+                "agent": d.agent,
+                "verdict": d.verdict.value,
+                "score": d.score,
+                "confidence": d.confidence,
+                "reasoning": d.reasoning,
+                "used_llm": d.used_llm,
+                "duration_ms": d.duration_ms,
+            }
+            for d in result.decisions
+        ],
+    }
+    body = json.dumps(payload, default=str)
+    await redis_client.xadd("aegis:phase2:graph_results", {"body": body})
 
 
 def _build_exception_result(

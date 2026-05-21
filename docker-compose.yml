@@ -159,6 +159,7 @@ services:
       AEGIS_REDIS_URL: redis://redis:6379/0
       AEGIS_ENV: ${AEGIS_ENV:-development}
       AEGIS_LOG_JSON: "true"
+      AEGIS_FLARESOLVERR_URL: "http://aegis-flaresolverr:8191/v1"
       # Disable Ollama in the predict container — inference is heuristic-first
       AEGIS_DISABLE_OLLAMA: "1"
       # Hard timeout (seconds) per inference request
@@ -176,6 +177,112 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
+    networks:
+      - aegis
+
+  # -----------------------------------------------------------------
+  # Phase 4 — Execute API (alert engine, killswitch, SSE dashboard)
+  # Build: docker build -f aegis-phase4/docker/Dockerfile.api -t aegis-execute-api aegis-phase4/
+  # Serve: GET /healthz  GET /readyz  GET /dashboard/  POST /alerts  GET /stream
+  # -----------------------------------------------------------------
+  execute-api:
+    build:
+      context: aegis-phase4
+      dockerfile: docker/Dockerfile.api
+    image: aegis-execute-api:latest
+    container_name: aegis-execute-api
+    restart: unless-stopped
+    environment:
+      AEGIS_EXECUTE_MODE: advisory
+      AEGIS_EXECUTE_API_HOST: "0.0.0.0"
+      AEGIS_EXECUTE_API_PORT: "8200"
+      AEGIS_EXECUTE_HMAC_KEY: "dev-hmac-key-not-for-prod"
+      AEGIS_EXECUTE_KILLSWITCH_KEY: "aegis:execute:killswitch"
+      AEGIS_PG_DSN: postgresql://${POSTGRES_USER:-aegis_app}:${POSTGRES_PASSWORD:-aegis_app_dev_pw}@postgres:5432/${POSTGRES_DB:-aegis}
+      AEGIS_REDIS_URL: redis://redis:6379/0
+      AEGIS_FLARESOLVERR_URL: "http://aegis-flaresolverr:8191/v1"
+    ports:
+      - "127.0.0.1:8200:8200"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; urllib.request.urlopen('http://127.0.0.1:8200/healthz', timeout=2); sys.exit(0)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - aegis
+
+  # -----------------------------------------------------------------
+  # Phase 4 — Execute Drain worker (outbox → notification channels)
+  # -----------------------------------------------------------------
+  execute-drain:
+    build:
+      context: aegis-phase4
+      dockerfile: docker/Dockerfile.drain
+    image: aegis-execute-drain:latest
+    container_name: aegis-execute-drain
+    restart: unless-stopped
+    environment:
+      # Tenant UUID for this drain worker. Use the same default_tenant_id
+      # as the main aegis stack (from AEGIS_DEFAULT_TENANT_ID in .env).
+      AEGIS_EXECUTE_TENANT_ID: ${AEGIS_DEFAULT_TENANT_ID:-00000000-0000-0000-0000-000000000001}
+      AEGIS_EXECUTE_HMAC_KEY: "dev-hmac-key-not-for-prod"
+      AEGIS_EXECUTE_KILLSWITCH_KEY: "aegis:execute:killswitch"
+      AEGIS_PG_DSN: postgresql://${POSTGRES_USER:-aegis_app}:${POSTGRES_PASSWORD:-aegis_app_dev_pw}@postgres:5432/${POSTGRES_DB:-aegis}
+      AEGIS_REDIS_URL: redis://redis:6379/0
+      AEGIS_FLARESOLVERR_URL: "http://aegis-flaresolverr:8191/v1"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - aegis
+
+  # -----------------------------------------------------------------
+  # AEGIS Command Center Dashboard (unified web UI on :8300)
+  # Reads from Postgres + Redis; proxies Phase 3 :8100 + Phase 4 :8200.
+  # Start separately: uv run aegis dashboard serve
+  # Or via compose: docker compose up dashboard
+  # -----------------------------------------------------------------
+  dashboard:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.dashboard
+    image: aegis-dashboard:latest
+    container_name: aegis-dashboard
+    restart: unless-stopped
+    environment:
+      AEGIS_PG_DSN: postgresql://${POSTGRES_USER:-aegis_app}:${POSTGRES_PASSWORD:-aegis_app_dev_pw}@postgres:5432/${POSTGRES_DB:-aegis}
+      AEGIS_REDIS_URL: redis://redis:6379/0
+      AEGIS_ENV: ${AEGIS_ENV:-development}
+      AEGIS_PREDICT_API_URL: http://predict:8000
+      AEGIS_EXECUTE_API_URL: http://execute-api:8200
+      AEGIS_FLARESOLVERR_URL: "http://aegis-flaresolverr:8191/v1"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - "127.0.0.1:8300:8300"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      predict:
+        condition: service_healthy
+      execute-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; urllib.request.urlopen('http://127.0.0.1:8300/healthz', timeout=2); sys.exit(0)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     networks:
       - aegis
 

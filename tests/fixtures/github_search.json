@@ -1,0 +1,48 @@
+{
+  "total_count": 3,
+  "incomplete_results": false,
+  "items": [
+    {
+      "id": 100000001,
+      "name": "awesome-llm",
+      "full_name": "example-org/awesome-llm",
+      "description": "A curated list of large language model resources, papers, and tools",
+      "html_url": "https://github.com/example-org/awesome-llm",
+      "stargazers_count": 12450,
+      "watchers_count": 12450,
+      "forks_count": 890,
+      "language": "Python",
+      "topics": ["llm", "ai", "machine-learning", "nlp"],
+      "pushed_at": "2024-10-18T12:00:00Z",
+      "owner": {"login": "example-org", "type": "Organization"}
+    },
+    {
+      "id": 100000002,
+      "name": "fintech-starter",
+      "full_name": "fintech-labs/fintech-starter",
+      "description": "Open source fintech starter kit with payments, KYC, and compliance modules",
+      "html_url": "https://github.com/fintech-labs/fintech-starter",
+      "stargazers_count": 3820,
+      "watchers_count": 3820,
+      "forks_count": 214,
+      "language": "TypeScript",
+      "topics": ["fintech", "payments", "compliance", "typescript"],
+      "pushed_at": "2024-10-15T09:30:00Z",
+      "owner": {"login": "fintech-labs", "type": "Organization"}
+    },
+    {
+      "id": 100000003,
+      "name": "india-ecommerce-data",
+      "full_name": "data-collective/india-ecommerce-data",
+      "description": "Dataset and analysis tools for Indian e-commerce market trends",
+      "html_url": "https://github.com/data-collective/india-ecommerce-data",
+      "stargazers_count": 678,
+      "watchers_count": 678,
+      "forks_count": 52,
+      "language": "Jupyter Notebook",
+      "topics": ["ecommerce", "india", "data-analysis", "market-research"],
+      "pushed_at": "2024-09-28T16:45:00Z",
+      "owner": {"login": "data-collective", "type": "Organization"}
+    }
+  ]
+}

@@ -35,9 +35,10 @@ Author: AEGIS Pulse core team
 
 from __future__ import annotations
 
-import logging
 import math
 from typing import TYPE_CHECKING, Any
+
+import structlog
 
 from ..llm import prompts
 from ..schemas import AgentDecision, AgentVerdict, TrendCandidate
@@ -47,7 +48,7 @@ from .base import AgentNode
 if TYPE_CHECKING:
     from ..state import GraphState
 
-_log = logging.getLogger(__name__)
+_log = structlog.get_logger("aegis.agents.nodes.sentinel")
 
 _SAT_VOLUME_REFERENCE = 1000  # signals → maturity 1.0
 _PROCEED_THRESHOLD = 0.70  # exit recommended
@@ -164,7 +165,7 @@ class SentinelAgent(AgentNode):
                 primary_horizon=6,
             )
         except Exception as exc:
-            _log.warning("sentinel.phase3_skipped reason=%s", type(exc).__name__)
+            _log.warning("sentinel.phase3_skipped", reason=type(exc).__name__)
             return None
 
         p3 = enriched.get("phase3_decision")

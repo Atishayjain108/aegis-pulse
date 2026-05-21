@@ -1,0 +1,18 @@
+# AEGIS Pulse — Phase 4 Grafana dashboard provisioning.
+#
+# Loads every JSON file in /var/lib/grafana/dashboards into a folder
+# called "AEGIS Pulse". Drop new dashboards there to add panels.
+
+apiVersion: 1
+
+providers:
+  - name: aegis-pulse
+    orgId: 1
+    folder: AEGIS Pulse
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

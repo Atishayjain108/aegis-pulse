@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aegis-execute"
+version = "0.4.0"
+description = "AEGIS Pulse — Phase 4: Execution & Alert System"
+readme = "README.md"
+requires-python = ">=3.12,<3.14"
+license = { text = "Proprietary" }
+authors = [{ name = "AEGIS Pulse" }]
+dependencies = [
+  "pydantic>=2.6,<3",
+  "pydantic-settings>=2.2,<3",
+  "structlog>=24.1,<25",
+  "typer>=0.12,<1",
+  "fastapi>=0.110,<1",
+  "httpx>=0.27,<1",
+]
+
+[project.optional-dependencies]
+serve = ["uvicorn[standard]>=0.27,<1"]
+db = ["asyncpg>=0.29,<1"]
+redis = ["redis>=5.0,<6"]
+prometheus = ["prometheus-client>=0.20,<1"]
+dev = [
+  "pytest>=8.0,<9",
+  "pytest-asyncio>=0.23,<1",
+  "anyio>=4.0,<5",
+]
+
+[project.scripts]
+aegis-execute = "aegis.execute.cli.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["aegis*"]
+
+[tool.setuptools.package-data]
+"aegis.execute.dashboard" = ["static/*.html", "static/*.js", "static/*.css"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+addopts = ["-q"]
+filterwarnings = [
+  "ignore::ResourceWarning",
+  "ignore::DeprecationWarning:pydantic.*",
+]

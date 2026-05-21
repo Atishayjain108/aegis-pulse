@@ -1,0 +1,43 @@
+# AEGIS-EXEC-0032 — Notifier disabled due to missing configuration (non-fatal).
+
+**Symbolic name:** `EXEC_NOTIFIER_DISABLED`
+
+**Component:** Phase 4 / `aegis.execute`
+
+**Retryable:** no — fail-fast
+
+## Likely causes
+
+- A notifier HTTP request failed or timed out.
+- The channel is disabled (config not set) but was still asked
+  to deliver.
+- The generic webhook is enabled without an HMAC key —
+  Phase 4 refuses to send unsigned payloads.
+
+## Diagnosis
+
+1. Search the structlog output for `error_code=AEGIS-EXEC-0032`.
+2. Inspect the surrounding context fields — Phase 4 always emits
+   `tenant_id`, `trend_id`, and `alert_id` where applicable.
+3. Cross-reference the operator dashboard at `/dashboard/` for the
+   affected tenant.
+4. If the upstream is Phase 2 / Phase 3, check the relevant Redis stream
+   (`aegis:phase2:graph_results` or `aegis:phase3:inference_results`)
+   for the matching `correlation_id`.
+
+## Remediation
+
+- For BLOCK / gate-downgrade codes (0010–0019): the system is behaving
+  correctly; review whether the threshold itself needs adjustment.
+- For kill-switch codes (0020–0024): trip / arm via the CLI or API; see
+  `docs/phase4/OPERATIONS.md`.
+- For pool / outbox codes (0025–0029): ensure `set_shared_pool()` runs
+  at startup; check Postgres availability.
+- For notifier codes (0030–0033): inspect the failing channel's config;
+  the registry will auto-skip it if the relevant env var is empty.
+
+## Related
+
+- `docs/phase4/ARCHITECTURE.md` — design rationale
+- `docs/phase4/OPERATIONS.md` — incident response runbook
+- `docs/phase4/INTEGRATION.md` — Phase 2 / Phase 3 contract

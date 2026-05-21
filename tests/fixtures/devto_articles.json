@@ -1,0 +1,41 @@
+[
+  {
+    "id": 1234567,
+    "title": "Building a RAG pipeline with LangChain and ChromaDB",
+    "description": "A step-by-step guide to building a retrieval-augmented generation pipeline for production use.",
+    "url": "https://dev.to/johndoe/building-rag-pipeline-langchain-chromadb-abc123",
+    "canonical_url": "https://dev.to/johndoe/building-rag-pipeline-langchain-chromadb-abc123",
+    "tag_list": ["ai", "python", "langchain", "rag"],
+    "reactions_count": 247,
+    "comments_count": 38,
+    "published_at": "2024-10-01T10:00:00Z",
+    "reading_time_minutes": 12,
+    "user": {"name": "John Doe", "username": "johndoe"}
+  },
+  {
+    "id": 1234568,
+    "title": "10 TypeScript tricks every developer should know in 2024",
+    "description": "Practical TypeScript patterns for cleaner, more maintainable code.",
+    "url": "https://dev.to/janedoe/typescript-tricks-2024-xyz789",
+    "canonical_url": "https://dev.to/janedoe/typescript-tricks-2024-xyz789",
+    "tag_list": ["typescript", "javascript", "webdev"],
+    "reactions_count": 512,
+    "comments_count": 67,
+    "published_at": "2024-10-05T08:30:00Z",
+    "reading_time_minutes": 8,
+    "user": {"name": "Jane Doe", "username": "janedoe"}
+  },
+  {
+    "id": 1234569,
+    "title": "How we scaled our fintech API to 1 million requests per day",
+    "description": "Lessons from building a high-throughput payments API on AWS.",
+    "url": "https://dev.to/techblog/fintech-api-scaling-million-requests-def456",
+    "canonical_url": "https://dev.to/techblog/fintech-api-scaling-million-requests-def456",
+    "tag_list": ["fintech", "aws", "scalability", "api"],
+    "reactions_count": 189,
+    "comments_count": 24,
+    "published_at": "2024-10-10T14:00:00Z",
+    "reading_time_minutes": 15,
+    "user": {"name": "Tech Blog", "username": "techblog"}
+  }
+]

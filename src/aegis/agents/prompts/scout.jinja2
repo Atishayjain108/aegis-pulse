@@ -29,3 +29,13 @@ If you are NOT MORE confident than the heuristic, return
 "confidence_factor": 1.0 and explain in the reasoning. If you spot
 a quality concern (vague claim, wrong audience, single-creator
 echo), use 0.5..0.8.
+{% if swarm_context is defined and swarm_context %}
+
+## Cross-Platform Market Intelligence
+Signals: {{ swarm_context.total_signals }} across {{ swarm_context.by_platform|length }} platforms
+Market pulse: {{ swarm_context.market_pulse | upper }}
+Confidence: {{ "%.0f"|format(swarm_context.batch_confidence * 100) }}%
+Emerging themes: {{ swarm_context.cross_platform_themes | join(", ") }}
+Hot categories: {{ swarm_context.hot_categories | join(", ") }}
+Synthesis: {{ swarm_context.conclusion }}
+{% endif %}

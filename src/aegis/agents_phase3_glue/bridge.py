@@ -23,13 +23,14 @@ Halt reasons from Phase 3 (e.g. `latency_budget_exceeded`,
 
 from __future__ import annotations
 
-import logging
 from typing import Any
+
+import structlog
 
 from aegis.predict.inference import InferenceResult
 from aegis.predict.schemas import PredictionAction
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger("aegis.agents_phase3_glue.bridge")
 
 
 # Verdict mapping — kept as a top-level constant so it's editable
@@ -186,7 +187,7 @@ async def _enrich(
 
     trend_id = state.get("trend_id")
     if not trend_id:
-        logger.warning("%s: state missing trend_id — skipping Phase 3 enrichment", agent_name)
+        logger.warning("phase3_glue.missing_trend_id", agent=agent_name)
         return state
 
     runner = state.get("_phase3_runner")
@@ -202,7 +203,7 @@ async def _enrich(
             window=state.get("feature_window"),
         )
     except Exception as exc:
-        logger.exception("%s: Phase 3 inference failed: %s", agent_name, exc)
+        logger.exception("phase3_glue.inference_failed", agent=agent_name, exc_type=type(exc).__name__)
         return {
             **state,
             "phase3_decision": {

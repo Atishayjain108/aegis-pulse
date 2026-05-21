@@ -1,0 +1,43 @@
+{
+  "responseBody": {
+    "hits": [
+      {
+        "code": "AJIO123456",
+        "name": "Regular Fit Cotton T-Shirt",
+        "brandname": "HIGHLANDER",
+        "price": 599,
+        "wasPriceData": 999,
+        "discount": 40,
+        "rating": 4.2,
+        "url": "/p/AJIO123456",
+        "images": [{"src": "https://assets.ajio.com/medias/AJIO123456.jpg"}]
+      },
+      {
+        "code": "AJIO789012",
+        "name": "Slim Fit Chinos",
+        "brandname": "ALLEN SOLLY",
+        "price": 1299,
+        "wasPriceData": 2499,
+        "discount": 48,
+        "rating": 4.5,
+        "url": "/p/AJIO789012",
+        "images": [{"src": "https://assets.ajio.com/medias/AJIO789012.jpg"}]
+      },
+      {
+        "code": "AJIO345678",
+        "name": "Printed Floral Maxi Dress",
+        "brandname": "AND",
+        "price": 1799,
+        "wasPriceData": 3499,
+        "discount": 49,
+        "rating": 4.3,
+        "url": "/p/AJIO345678",
+        "images": [{"src": "https://assets.ajio.com/medias/AJIO345678.jpg"}]
+      }
+    ],
+    "total": 3,
+    "currentQuery": {
+      "query": "trending"
+    }
+  }
+}

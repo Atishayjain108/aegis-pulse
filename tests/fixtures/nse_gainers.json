@@ -1,0 +1,22 @@
+{
+  "ADVANCES_DECLINES": [
+    {
+      "symbol": "RELIANCE",
+      "companyName": "Reliance Industries Ltd",
+      "change": 5.23,
+      "totalTradedVolume": 1234567
+    },
+    {
+      "symbol": "TCS",
+      "companyName": "Tata Consultancy Services Ltd",
+      "change": 3.11,
+      "totalTradedVolume": 987654
+    },
+    {
+      "symbol": "INFY",
+      "companyName": "Infosys Ltd",
+      "change": 2.45,
+      "totalTradedVolume": 765432
+    }
+  ]
+}

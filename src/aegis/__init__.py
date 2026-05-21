@@ -30,4 +30,15 @@ Author: AEGIS Pulse Team
 
 from __future__ import annotations
 
+import pathlib as _pathlib
+
 __version__ = "0.3.0"
+
+# uv workspace ordering puts aegis-phase4/src before src/ in sys.path, which
+# causes the Phase 4 aegis/__init__.py to shadow this package. By extending
+# __path__ we expose aegis.execute (from aegis-phase4/) alongside the main
+# submodules without requiring a pure namespace-package setup.
+_p4_aegis = _pathlib.Path(__file__).parent.parent.parent / "aegis-phase4" / "src" / "aegis"
+if _p4_aegis.is_dir() and str(_p4_aegis) not in __path__:
+    __path__ = [*__path__, str(_p4_aegis)]  # type: ignore[assignment]
+del _p4_aegis, _pathlib

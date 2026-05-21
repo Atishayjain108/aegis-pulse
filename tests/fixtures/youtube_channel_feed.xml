@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns:yt="http://www.youtube.com/xml/schemas/2015"
+      xmlns:media="http://search.yahoo.com/mrss/"
+      xmlns="http://www.w3.org/2005/Atom">
+  <link rel="self" href="https://www.youtube.com/feeds/videos.xml?channel_id=UCnUYZLuoy1rq1aVMwx4aTzw"/>
+  <id>yt:channel:UCnUYZLuoy1rq1aVMwx4aTzw</id>
+  <yt:channelId>UCnUYZLuoy1rq1aVMwx4aTzw</yt:channelId>
+  <title>Pranjal Kamra</title>
+  <author>
+    <name>Pranjal Kamra</name>
+    <uri>https://www.youtube.com/channel/UCnUYZLuoy1rq1aVMwx4aTzw</uri>
+  </author>
+  <entry>
+    <id>yt:video:vid001xyz</id>
+    <yt:videoId>vid001xyz</yt:videoId>
+    <yt:channelId>UCnUYZLuoy1rq1aVMwx4aTzw</yt:channelId>
+    <title>Best Mutual Funds to Invest in 2026</title>
+    <link rel="alternate" href="https://www.youtube.com/watch?v=vid001xyz"/>
+    <author>
+      <name>Pranjal Kamra</name>
+      <uri>https://www.youtube.com/channel/UCnUYZLuoy1rq1aVMwx4aTzw</uri>
+    </author>
+    <published>2026-05-17T10:00:00+00:00</published>
+    <updated>2026-05-17T10:00:00+00:00</updated>
+    <media:group>
+      <media:description>A comprehensive guide to the best mutual funds available for Indian investors in 2026.</media:description>
+    </media:group>
+  </entry>
+  <entry>
+    <id>yt:video:vid002abc</id>
+    <yt:videoId>vid002abc</yt:videoId>
+    <yt:channelId>UCnUYZLuoy1rq1aVMwx4aTzw</yt:channelId>
+    <title>Should You Buy HDFC Bank Shares Right Now?</title>
+    <link rel="alternate" href="https://www.youtube.com/watch?v=vid002abc"/>
+    <author>
+      <name>Pranjal Kamra</name>
+      <uri>https://www.youtube.com/channel/UCnUYZLuoy1rq1aVMwx4aTzw</uri>
+    </author>
+    <published>2026-05-16T09:30:00+00:00</published>
+    <updated>2026-05-16T09:30:00+00:00</updated>
+    <media:group>
+      <media:description>Deep-dive analysis of HDFC Bank stock with buy/hold/sell recommendation.</media:description>
+    </media:group>
+  </entry>
+  <entry>
+    <id>yt:video:vid003def</id>
+    <yt:videoId>vid003def</yt:videoId>
+    <yt:channelId>UCnUYZLuoy1rq1aVMwx4aTzw</yt:channelId>
+    <title>Indian Startup Ecosystem 2026 — Opportunities and Risks</title>
+    <link rel="alternate" href="https://www.youtube.com/watch?v=vid003def"/>
+    <author>
+      <name>Pranjal Kamra</name>
+      <uri>https://www.youtube.com/channel/UCnUYZLuoy1rq1aVMwx4aTzw</uri>
+    </author>
+    <published>2026-05-15T11:00:00+00:00</published>
+    <updated>2026-05-15T11:00:00+00:00</updated>
+    <media:group>
+      <media:description>Analysis of the Indian startup investment landscape with focus on fintech and e-commerce.</media:description>
+    </media:group>
+  </entry>
+</feed>

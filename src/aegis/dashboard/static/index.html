@@ -1,0 +1,1951 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AEGIS Pulse — Command Center</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<style>
+/* ═══════════════════════════════════════════════════════════
+   AEGIS COMMAND CENTER — Dark Intelligence Platform Theme
+═══════════════════════════════════════════════════════════ */
+:root {
+  --bg0: #030810;
+  --bg1: #080f1e;
+  --bg2: #0d1526;
+  --bg3: #121e33;
+  --bg4: #1a2a42;
+  --border: #1e3354;
+  --border2: #2a4870;
+  --text0: #e8f4ff;
+  --text1: #a8c8e8;
+  --text2: #6a9bbf;
+  --text3: #3d6580;
+  --cyan: #00d4ff;
+  --cyan2: #0099cc;
+  --green: #00e676;
+  --green2: #00b85a;
+  --amber: #ffb300;
+  --red: #ff3d55;
+  --purple: #9c6eff;
+  --orange: #ff8c42;
+  --cyan-glow: 0 0 15px rgba(0,212,255,.35);
+  --green-glow: 0 0 15px rgba(0,230,118,.35);
+  --red-glow: 0 0 15px rgba(255,61,85,.35);
+  --sidebar-w: 220px;
+  --header-h: 54px;
+  --font-mono: 'JetBrains Mono','Fira Code','Cascadia Code',monospace;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:var(--bg0);color:var(--text0);font-family:system-ui,-apple-system,sans-serif;font-size:14px;overflow:hidden}
+
+/* ── Scrollbar ─────────────────────────────────────────── */
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:var(--bg1)}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
+
+/* ── Layout skeleton ────────────────────────────────────── */
+#app{display:grid;grid-template-rows:var(--header-h) 1fr;grid-template-columns:var(--sidebar-w) 1fr;height:100vh}
+
+/* ── Header ─────────────────────────────────────────────── */
+#header{
+  grid-column:1/-1;
+  display:flex;align-items:center;gap:16px;
+  padding:0 20px;
+  background:var(--bg1);
+  border-bottom:1px solid var(--border);
+  z-index:100;
+}
+.logo{
+  display:flex;align-items:center;gap:10px;
+  font-weight:700;font-size:15px;letter-spacing:.05em;
+  color:var(--cyan);text-shadow:var(--cyan-glow);
+  min-width:var(--sidebar-w);
+}
+.logo svg{width:26px;height:26px}
+.logo-sub{font-size:10px;color:var(--text2);font-family:var(--font-mono);letter-spacing:.12em;margin-top:2px}
+.header-pills{display:flex;gap:8px;flex:1}
+.pill{
+  display:flex;align-items:center;gap:6px;
+  padding:4px 12px;border-radius:20px;font-size:11px;font-family:var(--font-mono);
+  border:1px solid var(--border2);background:var(--bg2);cursor:default;
+  transition:all .2s;
+}
+.pill.ok{border-color:var(--green2);color:var(--green)}
+.pill.err{border-color:var(--red);color:var(--red)}
+.pill.warn{border-color:var(--amber);color:var(--amber)}
+.pill.loading{border-color:var(--border2);color:var(--text2)}
+.dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.dot.ok{background:var(--green);box-shadow:var(--green-glow)}
+.dot.err{background:var(--red);box-shadow:var(--red-glow)}
+.dot.warn{background:var(--amber)}
+.dot.loading{background:var(--text3)}
+#clock{margin-left:auto;font-family:var(--font-mono);font-size:12px;color:var(--text2)}
+.live-badge{
+  display:flex;align-items:center;gap:5px;padding:4px 10px;
+  border-radius:4px;font-size:11px;font-family:var(--font-mono);
+  background:rgba(0,230,118,.1);border:1px solid var(--green2);color:var(--green);
+}
+.pulse{width:8px;height:8px;border-radius:50%;background:var(--green);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.7)}}
+
+/* ── Sidebar ─────────────────────────────────────────────── */
+#sidebar{
+  background:var(--bg1);border-right:1px solid var(--border);
+  display:flex;flex-direction:column;overflow-y:auto;padding:12px 0;
+}
+.nav-section{padding:4px 12px 2px;font-size:10px;color:var(--text3);letter-spacing:.12em;text-transform:uppercase;margin-top:8px}
+.nav-item{
+  display:flex;align-items:center;gap:10px;
+  padding:9px 16px;cursor:pointer;font-size:13px;color:var(--text1);
+  border-left:2px solid transparent;transition:all .15s;user-select:none;
+}
+.nav-item:hover{background:var(--bg2);color:var(--text0)}
+.nav-item.active{
+  background:rgba(0,212,255,.08);border-left-color:var(--cyan);
+  color:var(--cyan);font-weight:600;
+}
+.nav-icon{font-size:14px;width:18px;text-align:center;flex-shrink:0}
+.sidebar-footer{margin-top:auto;padding:12px 16px;font-size:11px;color:var(--text3);font-family:var(--font-mono)}
+
+/* ── Main content ────────────────────────────────────────── */
+#main{overflow-y:auto;padding:20px;background:var(--bg0)}
+
+/* ── Cards / panels ──────────────────────────────────────── */
+.card{
+  background:var(--bg2);border:1px solid var(--border);border-radius:8px;
+  padding:16px;transition:border-color .2s;
+}
+.card:hover{border-color:var(--border2)}
+.card-title{font-size:11px;color:var(--text2);letter-spacing:.1em;text-transform:uppercase;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.card-title .ct-badge{font-size:10px;padding:2px 7px;border-radius:10px;background:var(--bg4);color:var(--text1)}
+
+/* ── Grid helpers ─────────────────────────────────────────── */
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
+.grid-4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.grid-5{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
+
+/* ── Stat card ───────────────────────────────────────────── */
+.stat-card{
+  background:var(--bg2);border:1px solid var(--border);border-radius:8px;
+  padding:16px;display:flex;flex-direction:column;gap:6px;
+}
+.stat-label{font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.1em}
+.stat-value{font-size:24px;font-weight:700;font-family:var(--font-mono);color:var(--text0)}
+.stat-sub{font-size:11px;color:var(--text2)}
+.stat-card.cyan .stat-value{color:var(--cyan)}
+.stat-card.green .stat-value{color:var(--green)}
+.stat-card.amber .stat-value{color:var(--amber)}
+.stat-card.red .stat-value{color:var(--red)}
+.stat-card.purple .stat-value{color:var(--purple)}
+
+/* ── Verdict badge ────────────────────────────────────────── */
+.verdict{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:4px 12px;border-radius:4px;font-family:var(--font-mono);
+  font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+}
+.verdict.proceed{background:rgba(0,230,118,.12);border:1px solid var(--green2);color:var(--green)}
+.verdict.hold{background:rgba(255,179,0,.1);border:1px solid #806000;color:var(--amber)}
+.verdict.block{background:rgba(255,61,85,.1);border:1px solid #80001a;color:var(--red)}
+.verdict.escalate{background:rgba(255,140,66,.1);border:1px solid #804020;color:var(--orange)}
+.verdict.unknown{background:var(--bg4);border:1px solid var(--border2);color:var(--text2)}
+
+/* ── Progress bar ─────────────────────────────────────────── */
+.progress-bar{height:6px;background:var(--bg4);border-radius:3px;overflow:hidden}
+.progress-fill{height:100%;border-radius:3px;transition:width .4s}
+.progress-fill.cyan{background:var(--cyan)}
+.progress-fill.green{background:var(--green)}
+.progress-fill.amber{background:var(--amber)}
+.progress-fill.red{background:var(--red)}
+.progress-fill.purple{background:var(--purple)}
+
+/* ── Table ───────────────────────────────────────────────── */
+.tbl{width:100%;border-collapse:collapse;font-size:12px}
+.tbl th{padding:8px 10px;text-align:left;color:var(--text2);font-size:10px;text-transform:uppercase;letter-spacing:.1em;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg2);z-index:1}
+.tbl td{padding:8px 10px;border-bottom:1px solid var(--border);color:var(--text1);vertical-align:middle}
+.tbl tr:hover td{background:var(--bg3);cursor:default}
+.tbl tr:last-child td{border-bottom:none}
+.mono{font-family:var(--font-mono)}
+.truncate{max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ── Platform badge ──────────────────────────────────────── */
+.platform{
+  display:inline-block;padding:2px 8px;border-radius:3px;
+  font-size:10px;font-family:var(--font-mono);font-weight:600;
+  background:var(--bg4);border:1px solid var(--border2);color:var(--text1);
+}
+.platform.reddit{border-color:#ff4500;color:#ff4500;background:rgba(255,69,0,.08)}
+.platform.hacker_news{border-color:#ff6600;color:#ff6600;background:rgba(255,102,0,.08)}
+.platform.github_trending{border-color:#7ee787;color:#7ee787;background:rgba(126,231,135,.08)}
+.platform.amazon{border-color:#ff9900;color:#ff9900;background:rgba(255,153,0,.08)}
+.platform.google_news{border-color:#4285f4;color:#4285f4;background:rgba(66,133,244,.08)}
+.platform.bing_news{border-color:#00809d;color:#00c4d8;background:rgba(0,196,216,.08)}
+
+/* ── Agent DAG ───────────────────────────────────────────── */
+.dag-container{
+  overflow-x:auto;padding:12px 0;
+}
+.dag{
+  display:flex;flex-direction:column;gap:0;align-items:center;min-width:700px;
+}
+.dag-row{display:flex;gap:8px;align-items:center;justify-content:center;position:relative}
+.dag-row+.dag-row{margin-top:0}
+.dag-arrow{
+  display:flex;flex-direction:column;align-items:center;
+  color:var(--text3);font-size:18px;padding:2px 0;line-height:1;
+}
+.agent-node{
+  background:var(--bg3);border:1px solid var(--border2);border-radius:8px;
+  padding:10px 14px;text-align:center;min-width:110px;transition:all .2s;cursor:default;
+}
+.agent-node:hover{border-color:var(--cyan);box-shadow:var(--cyan-glow)}
+.agent-node.proceed{border-color:var(--green2);background:rgba(0,230,118,.07)}
+.agent-node.hold{border-color:#806000;background:rgba(255,179,0,.07)}
+.agent-node.block{border-color:#80001a;background:rgba(255,61,85,.07)}
+.agent-node.escalate{border-color:#804020;background:rgba(255,140,66,.07)}
+.agent-node .node-name{font-size:11px;font-family:var(--font-mono);font-weight:600;color:var(--text0);text-transform:uppercase;letter-spacing:.06em}
+.agent-node .node-score{font-size:18px;font-weight:700;font-family:var(--font-mono);margin:4px 0 2px}
+.agent-node .node-conf{font-size:10px;color:var(--text2)}
+.agent-node .node-verdict{font-size:9px;margin-top:4px}
+.verdict-chip{display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:3px;font-size:9px;font-family:var(--font-mono);font-weight:700;text-transform:uppercase;letter-spacing:.06em}
+.verdict-chip.proceed{background:rgba(0,230,118,.15);color:var(--green)}
+.verdict-chip.hold{background:rgba(255,179,0,.15);color:var(--amber)}
+.verdict-chip.block{background:rgba(255,61,85,.15);color:var(--red)}
+.verdict-chip.escalate{background:rgba(255,140,66,.15);color:var(--orange)}
+.verdict-chip.unknown{background:var(--bg4);color:var(--text2)}
+.verdict-node{
+  background:var(--bg3);border:2px solid var(--border2);border-radius:12px;
+  padding:14px 28px;text-align:center;min-width:180px;
+}
+.verdict-node.proceed{border-color:var(--green);box-shadow:var(--green-glow);background:rgba(0,230,118,.08)}
+.verdict-node.hold{border-color:var(--amber);background:rgba(255,179,0,.08)}
+.verdict-node.block{border-color:var(--red);box-shadow:var(--red-glow);background:rgba(255,61,85,.08)}
+.verdict-node.escalate{border-color:var(--orange);background:rgba(255,140,66,.08)}
+.verdict-node .vn-label{font-size:10px;color:var(--text2);letter-spacing:.1em;text-transform:uppercase}
+.verdict-node .vn-text{font-size:22px;font-weight:700;font-family:var(--font-mono);letter-spacing:.06em;margin:4px 0}
+.verdict-node.proceed .vn-text{color:var(--green)}
+.verdict-node.hold .vn-text{color:var(--amber)}
+.verdict-node.block .vn-text{color:var(--red)}
+.verdict-node.escalate .vn-text{color:var(--orange)}
+
+/* ── Docker container cards ──────────────────────────────── */
+.container-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px}
+.container-card{
+  background:var(--bg2);border:1px solid var(--border);border-radius:8px;
+  padding:12px 14px;transition:all .2s;
+}
+.container-card.running{border-color:var(--green2)}
+.container-card.exited,.container-card.stopped{border-color:var(--red)}
+.container-card .cc-name{font-size:11px;font-family:var(--font-mono);font-weight:600;color:var(--text0);margin-bottom:6px;word-break:break-word}
+.container-card .cc-status{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2)}
+.container-card .cc-health{font-size:10px;margin-top:4px;color:var(--text3);font-family:var(--font-mono)}
+.status-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.status-dot.healthy,.status-dot.running{background:var(--green);box-shadow:var(--green-glow)}
+.status-dot.unhealthy,.status-dot.exited{background:var(--red)}
+.status-dot.starting{background:var(--amber)}
+
+/* ── Console ─────────────────────────────────────────────── */
+#console-box{
+  background:var(--bg0);border:1px solid var(--border);border-radius:6px;
+  font-family:var(--font-mono);font-size:12px;line-height:1.6;
+  padding:14px;height:300px;overflow-y:auto;color:#a8ffa0;
+  white-space:pre-wrap;word-break:break-all;
+}
+#console-box .cmd-line{color:var(--cyan)}
+#console-box .err-line{color:var(--red)}
+#console-box .ok-line{color:var(--green)}
+
+/* ── Buttons ─────────────────────────────────────────────── */
+.btn{
+  display:inline-flex;align-items:center;gap:7px;
+  padding:8px 16px;border-radius:5px;border:1px solid var(--border2);
+  background:var(--bg3);color:var(--text0);font-size:12px;cursor:pointer;
+  transition:all .15s;user-select:none;font-family:inherit;
+}
+.btn:hover{background:var(--bg4);border-color:var(--cyan);color:var(--cyan)}
+.btn:active{transform:scale(.97)}
+.btn.primary{background:rgba(0,212,255,.1);border-color:var(--cyan);color:var(--cyan)}
+.btn.primary:hover{background:rgba(0,212,255,.2)}
+.btn.danger{background:rgba(255,61,85,.1);border-color:var(--red);color:var(--red)}
+.btn.danger:hover{background:rgba(255,61,85,.2)}
+.btn.success{background:rgba(0,230,118,.1);border-color:var(--green2);color:var(--green)}
+.btn.sm{padding:5px 11px;font-size:11px}
+.btn-group{display:flex;flex-wrap:wrap;gap:8px}
+
+/* ── Select / Input ─────────────────────────────────────── */
+select,input{
+  background:var(--bg3);border:1px solid var(--border2);color:var(--text0);
+  border-radius:5px;padding:6px 10px;font-size:12px;font-family:inherit;
+  outline:none;transition:border-color .2s;
+}
+select:hover,input:hover,select:focus,input:focus{border-color:var(--cyan);color:var(--text0)}
+
+/* ── Section header ──────────────────────────────────────── */
+.section-header{display:flex;align-items:baseline;gap:12px;margin-bottom:18px;padding-bottom:12px;border-bottom:1px solid var(--border)}
+.section-title{font-size:18px;font-weight:700;color:var(--text0)}
+.section-sub{font-size:12px;color:var(--text2)}
+
+/* ── Chart wrapper ───────────────────────────────────────── */
+.chart-wrap{position:relative;height:220px}
+.chart-wrap-sm{position:relative;height:160px}
+
+/* ── Score ring ──────────────────────────────────────────── */
+.score-ring{position:relative;width:80px;height:80px;flex-shrink:0}
+.score-ring canvas{position:absolute;top:0;left:0}
+.score-ring-val{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:var(--font-mono)}
+.score-ring-val .sv-num{font-size:18px;font-weight:700}
+.score-ring-val .sv-lbl{font-size:9px;color:var(--text2)}
+
+/* ── Feature bar ─────────────────────────────────────────── */
+.feature-row{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.feature-name{font-size:11px;color:var(--text1);min-width:130px;font-family:var(--font-mono)}
+.feature-bar-wrap{flex:1;height:8px;background:var(--bg4);border-radius:4px;overflow:hidden}
+.feature-bar-fill{height:100%;border-radius:4px;transition:width .5s}
+.feature-val{font-size:11px;font-family:var(--font-mono);color:var(--text0);min-width:40px;text-align:right}
+
+/* ── Notification toast ──────────────────────────────────── */
+#toasts{position:fixed;bottom:24px;right:24px;z-index:9999;display:flex;flex-direction:column;gap:8px}
+.toast{
+  background:var(--bg3);border:1px solid var(--border2);border-radius:8px;
+  padding:12px 16px;font-size:12px;color:var(--text0);max-width:320px;
+  box-shadow:0 8px 24px rgba(0,0,0,.5);animation:slide-in .3s ease;
+}
+.toast.ok{border-left:3px solid var(--green)}
+.toast.err{border-left:3px solid var(--red)}
+.toast.info{border-left:3px solid var(--cyan)}
+@keyframes slide-in{from{transform:translateX(100%);opacity:0}to{transform:none;opacity:1}}
+
+/* ── Reasoning panel ─────────────────────────────────────── */
+.reasoning-box{
+  background:var(--bg0);border:1px solid var(--border);border-radius:6px;
+  padding:12px;font-size:12px;color:var(--text1);line-height:1.7;
+  max-height:120px;overflow-y:auto;font-family:var(--font-mono);
+}
+.reasoning-box:empty::before{content:'No reasoning available';color:var(--text3);font-style:italic}
+
+/* ── ML metric gauges ────────────────────────────────────── */
+.gauge-row{display:flex;gap:16px;flex-wrap:wrap}
+.gauge{
+  background:var(--bg2);border:1px solid var(--border);border-radius:8px;
+  padding:14px 16px;flex:1;min-width:140px;
+}
+.gauge-label{font-size:10px;color:var(--text2);letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px}
+.gauge-value{font-size:26px;font-weight:700;font-family:var(--font-mono);color:var(--text0)}
+.gauge-bar{margin-top:8px;height:4px;background:var(--bg4);border-radius:2px;overflow:hidden}
+.gauge-bar-fill{height:100%;border-radius:2px;transition:width .5s}
+
+/* ── Loading / empty states ─────────────────────────────── */
+.loading-text{color:var(--text2);font-size:13px;text-align:center;padding:40px 0;font-family:var(--font-mono)}
+.empty-state{color:var(--text3);font-size:13px;text-align:center;padding:30px 0}
+.spinning{animation:spin 1s linear infinite;display:inline-block}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── Responsive ──────────────────────────────────────────── */
+@media(max-width:900px){
+  .grid-4{grid-template-columns:1fr 1fr}
+  .grid-5{grid-template-columns:1fr 1fr}
+  .grid-3{grid-template-columns:1fr}
+  .grid-2{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div id="app">
+
+<!-- ═══════════════════════════════════ HEADER ══════════════════════════════ -->
+<header id="header">
+  <div class="logo">
+    <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <polygon points="16,2 30,9 30,23 16,30 2,23 2,9" fill="none" stroke="#00d4ff" stroke-width="1.5"/>
+      <polygon points="16,7 25,12 25,20 16,25 7,20 7,12" fill="rgba(0,212,255,.15)" stroke="#00d4ff" stroke-width="1"/>
+      <circle cx="16" cy="16" r="3" fill="#00d4ff"/>
+      <line x1="16" y1="2" x2="16" y2="7" stroke="#00d4ff" stroke-width="1"/>
+      <line x1="16" y1="25" x2="16" y2="30" stroke="#00d4ff" stroke-width="1"/>
+    </svg>
+    <div>
+      <div>AEGIS PULSE</div>
+      <div class="logo-sub">COMMAND CENTER</div>
+    </div>
+  </div>
+  <div class="header-pills" id="header-pills">
+    <div class="pill loading" id="pill-pg"><span class="dot loading"></span>Postgres</div>
+    <div class="pill loading" id="pill-redis"><span class="dot loading"></span>Redis</div>
+    <div class="pill loading" id="pill-predict"><span class="dot loading"></span>Predict</div>
+    <div class="pill loading" id="pill-execute"><span class="dot loading"></span>Execute</div>
+    <div class="pill loading" id="pill-docker"><span class="dot loading"></span>Docker</div>
+  </div>
+  <div class="live-badge"><span class="pulse"></span>LIVE</div>
+  <div id="clock" style="margin-left:12px"></div>
+</header>
+
+<!-- ═══════════════════════════════════ SIDEBAR ═════════════════════════════ -->
+<nav id="sidebar">
+  <div class="nav-section">Intelligence</div>
+  <div class="nav-item active" onclick="nav('overview')" id="nav-overview">
+    <span class="nav-icon">⬡</span> Overview
+  </div>
+  <div class="nav-item" onclick="nav('signals')" id="nav-signals">
+    <span class="nav-icon">◈</span> Signal Feed
+  </div>
+  <div class="nav-item" onclick="nav('pipeline')" id="nav-pipeline">
+    <span class="nav-icon">◎</span> Agent Pipeline
+  </div>
+  <div class="nav-item" onclick="nav('intelligence')" id="nav-intelligence">
+    <span class="nav-icon">◑</span> ML Intelligence
+  </div>
+  <div class="nav-item" onclick="nav('decisions')" id="nav-decisions">
+    <span class="nav-icon">▣</span> Decision Log
+  </div>
+  <div class="nav-item" onclick="nav('swarm')" id="nav-swarm">
+    <span class="nav-icon">◉</span> Swarm Intel
+  </div>
+  <div class="nav-section">Infrastructure</div>
+  <div class="nav-item" onclick="nav('infra')" id="nav-infra">
+    <span class="nav-icon">▤</span> Infrastructure
+  </div>
+  <div class="nav-section">Control</div>
+  <div class="nav-item" onclick="nav('control')" id="nav-control">
+    <span class="nav-icon">▶</span> Control Panel
+  </div>
+  <div class="sidebar-footer">
+    v0.3.0 · Phase 0–5<br>
+    <span id="sig-count-sidebar" style="color:var(--cyan)">…</span> signals
+  </div>
+</nav>
+
+<!-- ═══════════════════════════════════ MAIN ════════════════════════════════ -->
+<main id="main">
+  <div id="section-content"></div>
+</main>
+
+</div><!-- #app -->
+
+<!-- Toast container -->
+<div id="toasts"></div>
+
+<!-- ════════════════════════════════════════════════════════════════════════
+     SECTION TEMPLATES (hidden, cloned by JS)
+════════════════════════════════════════════════════════════════════════ -->
+
+<!-- ── OVERVIEW ──────────────────────────────────────────────────────────── -->
+<template id="tmpl-overview">
+<div>
+  <div class="section-header">
+    <div class="section-title">System Overview</div>
+    <div class="section-sub" id="ov-ts">—</div>
+  </div>
+
+  <!-- Phase status cards -->
+  <div class="grid-5" style="margin-bottom:16px" id="ov-phases">
+    <div class="stat-card cyan">
+      <div class="stat-label">Phase 0 — Scrape</div>
+      <div class="stat-value" id="ov-p0-val">…</div>
+      <div class="stat-sub" id="ov-p0-sub">signals in DB</div>
+    </div>
+    <div class="stat-card green">
+      <div class="stat-label">Phase 1 — Persist</div>
+      <div class="stat-value" id="ov-p1-val">…</div>
+      <div class="stat-sub" id="ov-p1-sub">DB + Redis + MinIO</div>
+    </div>
+    <div class="stat-card purple">
+      <div class="stat-label">Phase 2 — Agents</div>
+      <div class="stat-value" id="ov-p2-val">…</div>
+      <div class="stat-sub" id="ov-p2-sub">graph runs in stream</div>
+    </div>
+    <div class="stat-card amber">
+      <div class="stat-label">Phase 3 — Predict</div>
+      <div class="stat-value" id="ov-p3-val">…</div>
+      <div class="stat-sub" id="ov-p3-sub">inference server</div>
+    </div>
+    <div class="stat-card red">
+      <div class="stat-label">Phase 4 — Execute</div>
+      <div class="stat-value" id="ov-p4-val">…</div>
+      <div class="stat-sub" id="ov-p4-sub">alert engine</div>
+    </div>
+  </div>
+
+  <div class="grid-2" style="margin-bottom:16px">
+    <!-- Last verdict card -->
+    <div class="card">
+      <div class="card-title">Last Analysis Result</div>
+      <div id="ov-last-verdict" style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+        <div class="loading-text" style="padding:10px 0">No analysis runs yet</div>
+      </div>
+    </div>
+
+    <!-- Live feed -->
+    <div class="card">
+      <div class="card-title">Live Event Feed <span class="ct-badge" id="ov-event-count">0 events</span></div>
+      <div id="ov-live-feed" style="height:140px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;font-size:12px">
+        <div class="empty-state">Waiting for events…</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <!-- Platform breakdown -->
+    <div class="card">
+      <div class="card-title">Signal Distribution by Platform</div>
+      <div class="chart-wrap"><canvas id="ov-plat-chart"></canvas></div>
+    </div>
+    <!-- 24h activity -->
+    <div class="card">
+      <div class="card-title">24-Hour Ingestion Activity</div>
+      <div class="chart-wrap"><canvas id="ov-activity-chart"></canvas></div>
+    </div>
+  </div>
+</div>
+</template>
+
+<!-- ── SIGNAL FEED ────────────────────────────────────────────────────────── -->
+<template id="tmpl-signals">
+<div>
+  <div class="section-header">
+    <div class="section-title">Signal Feed</div>
+    <div class="section-sub" id="sig-ts">Live ingestion monitor</div>
+  </div>
+
+  <div class="grid-4" style="margin-bottom:16px">
+    <div class="stat-card cyan"><div class="stat-label">Total Signals</div><div class="stat-value" id="sf-total">…</div></div>
+    <div class="stat-card green"><div class="stat-label">Last 24h</div><div class="stat-value" id="sf-24h">…</div></div>
+    <div class="stat-card amber"><div class="stat-label">Last Hour</div><div class="stat-value" id="sf-1h">…</div></div>
+    <div class="stat-card purple"><div class="stat-label">Platforms Active</div><div class="stat-value" id="sf-plats">…</div></div>
+  </div>
+
+  <div class="grid-2" style="margin-bottom:16px">
+    <div class="card">
+      <div class="card-title">Platform Distribution</div>
+      <div class="chart-wrap"><canvas id="sf-donut-chart"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Platform Intelligence Score</div>
+      <div id="sf-platform-metrics" style="padding-top:8px"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title" style="justify-content:space-between">
+      <span>Recent Signals</span>
+      <div style="display:flex;gap:8px;align-items:center">
+        <select id="sf-platform-filter" onchange="filterSignals()">
+          <option value="all">All Platforms</option>
+        </select>
+        <select id="sf-limit" onchange="filterSignals()">
+          <option value="30">30</option>
+          <option value="60" selected>60</option>
+          <option value="100">100</option>
+        </select>
+        <button class="btn sm" onclick="loadSignals()">↻ Refresh</button>
+      </div>
+    </div>
+    <div style="overflow-x:auto;max-height:380px;overflow-y:auto;margin-top:8px">
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th>Time</th><th>Platform</th><th>Title</th>
+            <th>Sentiment</th><th>Commercial</th><th>Novelty</th><th>Engagement</th>
+          </tr>
+        </thead>
+        <tbody id="sf-table-body">
+          <tr><td colspan="7" class="loading-text">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+</template>
+
+<!-- ── AGENT PIPELINE ─────────────────────────────────────────────────────── -->
+<template id="tmpl-pipeline">
+<div>
+  <div class="section-header">
+    <div class="section-title">Agent Pipeline</div>
+    <div class="section-sub">10-node LangGraph DAG — Phase 2 analysis</div>
+    <button class="btn sm primary" onclick="loadAgents()" style="margin-left:auto">↻ Refresh</button>
+  </div>
+
+  <!-- Run selector -->
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-title" style="justify-content:space-between">
+      <span>Analysis Run</span>
+      <select id="pl-run-select" onchange="renderPipelineRun()" style="min-width:280px"></select>
+    </div>
+    <div id="pl-run-meta" style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;font-size:12px;color:var(--text2)">
+      <span id="pl-meta-id">—</span>
+      <span id="pl-meta-duration">—</span>
+      <span id="pl-meta-halt">—</span>
+    </div>
+  </div>
+
+  <!-- Agent DAG -->
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-title">Agent Decision Flow</div>
+    <div class="dag-container">
+      <div class="dag" id="pl-dag"></div>
+    </div>
+  </div>
+
+  <!-- Per-agent details -->
+  <div class="card">
+    <div class="card-title">Agent Decision Details</div>
+    <div id="pl-decisions" style="display:flex;flex-direction:column;gap:12px;margin-top:4px"></div>
+  </div>
+</div>
+</template>
+
+<!-- ── ML INTELLIGENCE ────────────────────────────────────────────────────── -->
+<template id="tmpl-intelligence">
+<div>
+  <div class="section-header">
+    <div class="section-title">ML Intelligence</div>
+    <div class="section-sub">Phase 3 — Predictive Apex · Heuristic-first doctrine</div>
+  </div>
+
+  <!-- Doctrine summary -->
+  <div class="card" style="margin-bottom:16px;background:rgba(156,110,255,.05);border-color:rgba(156,110,255,.3)">
+    <div style="display:flex;gap:16px;flex-wrap:wrap">
+      <div>
+        <div style="font-size:10px;color:var(--text2);letter-spacing:.1em;text-transform:uppercase;margin-bottom:4px">Architecture</div>
+        <div style="font-size:13px;color:var(--purple)">Heuristic Floor + Neural Augmentation</div>
+      </div>
+      <div>
+        <div style="font-size:10px;color:var(--text2);letter-spacing:.1em;text-transform:uppercase;margin-bottom:4px">Neural Role</div>
+        <div style="font-size:13px;color:var(--text0)">Can only REDUCE confidence [0.5–1.0×]</div>
+      </div>
+      <div>
+        <div style="font-size:10px;color:var(--text2);letter-spacing:.1em;text-transform:uppercase;margin-bottom:4px">Latency Floor</div>
+        <div style="font-size:13px;color:var(--green)">&lt;12ms p99 heuristic path</div>
+      </div>
+      <div>
+        <div style="font-size:10px;color:var(--text2);letter-spacing:.1em;text-transform:uppercase;margin-bottom:4px">Horizons</div>
+        <div style="font-size:13px;color:var(--cyan)">1h · 6h · 24h · 72h</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid-2" style="margin-bottom:16px">
+    <!-- Feature importance from last run -->
+    <div class="card">
+      <div class="card-title">Feature Importance — Last Analysis</div>
+      <div id="ml-features" style="padding-top:4px"></div>
+    </div>
+    <!-- Radar chart -->
+    <div class="card">
+      <div class="card-title">TrendCandidate Feature Radar</div>
+      <div class="chart-wrap" style="height:240px"><canvas id="ml-radar-chart"></canvas></div>
+    </div>
+  </div>
+
+  <div class="grid-3" style="margin-bottom:16px">
+    <div class="card">
+      <div class="card-title">Overfitting Risk</div>
+      <div id="ml-overfit-indicator" style="padding-top:8px"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Model Confidence Distribution</div>
+      <div class="chart-wrap-sm"><canvas id="ml-conf-chart"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Phase 3 Bridge — Agent Inputs</div>
+      <div id="ml-bridge-info" style="padding-top:8px"></div>
+    </div>
+  </div>
+
+  <!-- Decision factors explanation -->
+  <div class="card">
+    <div class="card-title">Why Did the AI Decide This? — Decision Factor Explanation</div>
+    <div id="ml-explanation" style="padding-top:8px"></div>
+  </div>
+</div>
+</template>
+
+<!-- ── DECISION LOG ───────────────────────────────────────────────────────── -->
+<template id="tmpl-decisions">
+<div>
+  <div class="section-header">
+    <div class="section-title">Decision Log</div>
+    <div class="section-sub">Full history of all Phase 2 analysis runs</div>
+    <button class="btn sm" onclick="loadAgents()" style="margin-left:auto">↻ Refresh</button>
+  </div>
+
+  <div id="dl-runs" style="display:flex;flex-direction:column;gap:12px"></div>
+</div>
+</template>
+
+<!-- ── INFRASTRUCTURE ─────────────────────────────────────────────────────── -->
+<template id="tmpl-infra">
+<div>
+  <div class="section-header">
+    <div class="section-title">Infrastructure</div>
+    <div class="section-sub">Docker · Postgres · Redis · Phase 3 · Phase 4</div>
+    <button class="btn sm" onclick="loadSystem()" style="margin-left:auto">↻ Refresh</button>
+  </div>
+
+  <!-- Docker containers -->
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-title">Docker Containers <span class="ct-badge" id="infra-container-count">…</span></div>
+    <div class="container-grid" id="infra-containers">
+      <div class="loading-text">Loading…</div>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <!-- Postgres stats -->
+    <div class="card">
+      <div class="card-title">PostgreSQL / TimescaleDB</div>
+      <div id="infra-pg" style="display:flex;flex-direction:column;gap:10px;margin-top:4px"></div>
+    </div>
+    <!-- Redis stats -->
+    <div class="card">
+      <div class="card-title">Redis</div>
+      <div id="infra-redis" style="display:flex;flex-direction:column;gap:10px;margin-top:4px"></div>
+    </div>
+  </div>
+
+  <div class="grid-2" style="margin-top:16px">
+    <div class="card">
+      <div class="card-title">Phase 3 — Predict API (:8100)</div>
+      <div id="infra-predict"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Phase 4 — Execute API (:8200)</div>
+      <div id="infra-execute"></div>
+    </div>
+  </div>
+</div>
+</template>
+
+<!-- ── CONTROL PANEL ──────────────────────────────────────────────────────── -->
+<template id="tmpl-control">
+<div>
+  <div class="section-header">
+    <div class="section-title">Control Panel</div>
+    <div class="section-sub">Trigger operations · Monitor output · Configure pipeline</div>
+  </div>
+
+  <div class="grid-2" style="margin-bottom:16px">
+    <!-- Scrape operations -->
+    <div class="card">
+      <div class="card-title">Data Ingestion</div>
+      <div class="btn-group" style="margin-bottom:10px">
+        <button class="btn success sm" onclick="runOp(['aegis','scrape','--source','hacker-news','--limit','30'])">⬦ Hacker News</button>
+        <button class="btn success sm" onclick="runOp(['aegis','scrape','--source','reddit-rss','--subreddit','MachineLearning','--limit','30'])">⬦ Reddit ML</button>
+        <button class="btn success sm" onclick="runOp(['aegis','scrape','--source','github-trending','--limit','20'])">⬦ GitHub</button>
+        <button class="btn success sm" onclick="runOp(['aegis','scrape','--source','amazon','--limit','40'])">⬦ Amazon</button>
+      </div>
+      <div class="btn-group">
+        <button class="btn sm" onclick="runOp(['aegis','daily'])">⬦ Full Daily Workflow</button>
+        <button class="btn sm" onclick="runOp(['aegis','dedup'])">⬦ Dedup Scan</button>
+        <button class="btn sm" onclick="runOp(['aegis','patterns','--limit','200'])">⬦ Detect Patterns</button>
+      </div>
+    </div>
+
+    <!-- Analysis operations -->
+    <div class="card">
+      <div class="card-title">Analysis Pipeline</div>
+      <div class="btn-group" style="margin-bottom:10px">
+        <button class="btn primary sm" onclick="runOp(['aegis','analyze','--limit','20'])">▶ Analyze (20 signals)</button>
+        <button class="btn primary sm" onclick="runOp(['aegis','analyze','--limit','50'])">▶ Analyze (50 signals)</button>
+        <button class="btn primary sm" onclick="runOp(['aegis','analyze','--no-llm','--limit','20'])">▶ Heuristic-only</button>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:8px">
+        <input id="ctrl-topic-input" placeholder="Enter topic: e.g. 'AI chips'" style="flex:1">
+        <button class="btn primary sm" onclick="runTopicFromInput()">▶ Run Topic</button>
+      </div>
+      <div class="btn-group">
+        <button class="btn sm" onclick="runOp(['aegis','signals','tail','--limit','20'])">⬦ Tail Signals</button>
+        <button class="btn sm" onclick="runOp(['aegis','status'])">⬦ Stack Status</button>
+        <button class="btn sm" onclick="runOp(['aegis','doctor','--secrets'])">⬦ Doctor</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Console -->
+  <div class="card">
+    <div class="card-title" style="justify-content:space-between">
+      <span>Live Console</span>
+      <button class="btn sm" onclick="clearConsole()">Clear</button>
+    </div>
+    <div id="console-box" class=""></div>
+  </div>
+</div>
+</template>
+
+<!-- ── SWARM INTELLIGENCE ─────────────────────────────────────────────────── -->
+<template id="tmpl-swarm">
+<div>
+  <div class="section-header">
+    <div class="section-title">Swarm Intelligence</div>
+    <div class="section-sub">Cross-platform market intelligence · Phase 5 autonomous scale</div>
+    <button class="btn sm primary" onclick="loadSwarm()" style="margin-left:auto">↻ Refresh</button>
+  </div>
+
+  <div class="grid-4" style="margin-bottom:16px">
+    <div class="stat-card cyan">
+      <div class="stat-label">Total Signals</div>
+      <div class="stat-value" id="sw-total">…</div>
+      <div class="stat-sub" id="sw-dedup">dedup pending</div>
+    </div>
+    <div class="stat-card" id="sw-pulse-card">
+      <div class="stat-label">Market Pulse</div>
+      <div class="stat-value" id="sw-pulse">…</div>
+      <div class="stat-sub" id="sw-confidence">confidence</div>
+    </div>
+    <div class="stat-card green">
+      <div class="stat-label">Platforms Active</div>
+      <div class="stat-value" id="sw-platforms">…</div>
+      <div class="stat-sub">adapters in last run</div>
+    </div>
+    <div class="stat-card amber">
+      <div class="stat-label">Unique Signals</div>
+      <div class="stat-value" id="sw-unique">…</div>
+      <div class="stat-sub" id="sw-waves">waves completed</div>
+    </div>
+  </div>
+
+  <div class="grid-2" style="margin-bottom:16px">
+    <div class="card">
+      <div class="card-title">Signal Distribution by Platform</div>
+      <div class="chart-wrap"><canvas id="sw-donut-chart"></canvas></div>
+    </div>
+    <div class="grid-2" style="gap:12px">
+      <div class="card">
+        <div class="card-title">Emerging Themes</div>
+        <ol id="sw-themes-list" style="padding-left:18px;margin-top:4px;display:flex;flex-direction:column;gap:6px;font-size:12px"></ol>
+      </div>
+      <div class="card">
+        <div class="card-title">Hot Categories</div>
+        <ol id="sw-cats-list" style="padding-left:18px;margin-top:4px;display:flex;flex-direction:column;gap:6px;font-size:12px"></ol>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-title">Adapter Health Grid <span class="ct-badge" id="sw-agent-badge">…</span></div>
+    <div id="sw-agent-grid" class="container-grid" style="margin-top:8px">
+      <div class="loading-text">Loading agent health…</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title" style="justify-content:space-between">
+      <span>Swarm Run History (last 24h)</span>
+      <button class="btn success sm" onclick="runOp(['aegis','swarm','run','--limit','50'])">▶ Run Swarm Now</button>
+    </div>
+    <div style="overflow-x:auto;max-height:320px;overflow-y:auto;margin-top:8px">
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th>Run ID</th><th>Started</th><th>Total</th><th>Unique</th><th>Dedup'd</th>
+            <th>Pulse</th><th>Confidence</th><th>Conclusion</th>
+          </tr>
+        </thead>
+        <tbody id="sw-history-body">
+          <tr><td colspan="8" class="loading-text">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+</template>
+
+<!-- ════════════════════════════════════════════════════════════════════════
+     JAVASCRIPT APPLICATION
+════════════════════════════════════════════════════════════════════════ -->
+<script>
+'use strict';
+
+// ── State ────────────────────────────────────────────────────────────────────
+const S = {
+  section: 'overview',
+  system: null,
+  stats: null,
+  signals: [],
+  agents: [],
+  swarm: null,
+  liveEvents: [],
+  charts: {},
+  refreshTimer: null,
+  sseSource: null,
+};
+
+const AGENT_ORDER = ['scout','geo_arbitrage','narrative','historian','sourcer','auditor','sentinel','compliance','red_team','hedge'];
+const AGENT_DESC = {
+  scout:         'Velocity & momentum analysis (Phase 3 p_breakout 24h)',
+  geo_arbitrage: 'Regional pricing gap detection',
+  narrative:     'Story coherence & credibility',
+  historian:     'Historical pattern matching',
+  sourcer:       'Source reliability assessment',
+  auditor:       'Data freshness & completeness',
+  sentinel:      'Fake/coordinated activity detection (Phase 3 p_decline 6h)',
+  compliance:    'Legal & ToS risk assessment',
+  red_team:      "Devil's advocate — downside scenarios",
+  hedge:         'Risk-adjusted expected value (fractional-Kelly)',
+};
+
+const PLATFORM_COLORS = {
+  reddit:'#ff4500',hacker_news:'#ff6600',github_trending:'#7ee787',
+  amazon:'#ff9900',google_news:'#4285f4',bing_news:'#00c4d8',
+  google_trends:'#fbbc05',tiktok:'#ff0050',youtube:'#ff0000',
+  instagram:'#c13584',pinterest:'#e60023',
+};
+function platColor(p){return PLATFORM_COLORS[p]||'#6a9bbf'}
+
+// ── Clock ────────────────────────────────────────────────────────────────────
+function startClock(){
+  const el=document.getElementById('clock');
+  const tick=()=>{el.textContent=new Date().toUTCString().replace(' GMT','Z')};
+  tick();setInterval(tick,1000);
+}
+
+// ── Navigation ────────────────────────────────────────────────────────────────
+function nav(sec){
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  const navEl=document.getElementById('nav-'+sec);
+  if(navEl)navEl.classList.add('active');
+  S.section=sec;
+  destroyCharts();
+  renderSection(sec);
+}
+
+function destroyCharts(){
+  Object.values(S.charts).forEach(c=>{try{c.destroy()}catch(e){}});
+  S.charts={};
+}
+
+// ── SSE ───────────────────────────────────────────────────────────────────────
+function startSSE(){
+  if(S.sseSource){S.sseSource.close()}
+  S.sseSource=new EventSource('/stream/events');
+  S.sseSource.onmessage=e=>{
+    try{
+      const d=JSON.parse(e.data);
+      S.liveEvents.unshift(d);
+      if(S.liveEvents.length>50)S.liveEvents.pop();
+      if(d.type==='tick'&&d.signal_count!==undefined){
+        const el=document.getElementById('sig-count-sidebar');
+        if(el)el.textContent=d.signal_count.toLocaleString();
+      }
+      if(d.type==='swarm_complete'){
+        toast('Swarm complete: '+d.market_pulse+' · '+(d.total_signals||0)+' signals','ok');
+        loadSwarm();
+      }
+      if(d.type==='analysis_complete'){
+        toast('Analysis complete: '+d.verdict+' ('+((d.score||0)*100).toFixed(0)+'%)', 'ok');
+        loadAgents();
+      }
+      updateLiveFeed();
+    }catch(err){}
+  };
+  S.sseSource.onerror=()=>{
+    setTimeout(startSSE,5000);
+  };
+}
+
+function updateLiveFeed(){
+  const el=document.getElementById('ov-live-feed');
+  if(!el)return;
+  const cnt=document.getElementById('ov-event-count');
+  if(cnt)cnt.textContent=S.liveEvents.length+' events';
+  if(S.liveEvents.length===0){el.innerHTML='<div class="empty-state">Waiting for events…</div>';return}
+  el.innerHTML=S.liveEvents.slice(0,20).map(ev=>{
+    const ts=ev.ts?new Date(ev.ts).toLocaleTimeString():'';
+    if(ev.type==='analysis_complete'){
+      const vcls=ev.verdict||'unknown';
+      return `<div style="display:flex;gap:8px;align-items:center;font-size:11px;padding:4px 0;border-bottom:1px solid var(--border)">
+        <span style="color:var(--text3);flex-shrink:0">${ts}</span>
+        <span class="verdict-chip ${vcls}">${vcls}</span>
+        <span style="color:var(--text1);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${ev.trend_id||''}</span>
+        <span style="color:var(--cyan);font-family:var(--font-mono)">${((ev.score||0)*100).toFixed(0)}%</span>
+      </div>`;
+    }
+    if(ev.type==='tick'){
+      return `<div style="display:flex;gap:8px;align-items:center;font-size:11px;padding:4px 0;border-bottom:1px solid var(--border);color:var(--text3)">
+        <span>${ts}</span><span>System tick — ${(ev.signal_count||0).toLocaleString()} signals</span>
+      </div>`;
+    }
+    return '';
+  }).join('');
+}
+
+// ── Data loaders ─────────────────────────────────────────────────────────────
+async function loadSystem(){
+  try{
+    const d=await api('/api/system');
+    S.system=d;
+    updateHeaderPills(d);
+    if(S.section==='overview')renderOverview();
+    if(S.section==='infra')renderInfra();
+  }catch(e){console.error('loadSystem',e)}
+}
+
+async function loadStats(){
+  try{
+    S.stats=await api('/api/signals/stats');
+    const el=document.getElementById('sig-count-sidebar');
+    if(el)el.textContent=(S.stats.total||0).toLocaleString();
+    if(S.section==='overview')renderOverview();
+    if(S.section==='signals')renderSignalsSection();
+  }catch(e){}
+}
+
+async function loadSignals(){
+  const platEl=document.getElementById('sf-platform-filter');
+  const limitEl=document.getElementById('sf-limit');
+  const plat=platEl?platEl.value:'all';
+  const lim=limitEl?limitEl.value:60;
+  try{
+    S.signals=await api(`/api/signals/recent?limit=${lim}&platform=${plat}`);
+    if(S.section==='signals')renderSignalTable();
+  }catch(e){}
+}
+
+async function loadAgents(){
+  try{
+    S.agents=await api('/api/agents/recent?limit=15');
+    if(S.section==='pipeline')renderPipelineSection();
+    if(S.section==='decisions')renderDecisionsSection();
+    if(S.section==='intelligence')renderIntelligenceSection();
+  }catch(e){}
+}
+
+function filterSignals(){loadSignals()}
+
+// ── Section router ────────────────────────────────────────────────────────────
+function renderSection(sec){
+  const main=document.getElementById('section-content');
+  const tmpl=document.getElementById('tmpl-'+sec);
+  if(!tmpl){main.innerHTML='<div class="empty-state">Section not found: '+sec+'</div>';return}
+  main.innerHTML='';
+  main.appendChild(tmpl.content.cloneNode(true));
+
+  if(sec==='overview'){renderOverview();loadStats();loadAgents()}
+  else if(sec==='signals'){renderSignalsSection();loadSignals();loadStats()}
+  else if(sec==='pipeline'){renderPipelineSection();loadAgents()}
+  else if(sec==='intelligence'){renderIntelligenceSection()}
+  else if(sec==='decisions'){renderDecisionsSection()}
+  else if(sec==='swarm'){renderSwarm();loadSwarm()}
+  else if(sec==='infra'){renderInfra()}
+  else if(sec==='control'){renderControl()}
+}
+
+// ── OVERVIEW ─────────────────────────────────────────────────────────────────
+function renderOverview(){
+  const ts=document.getElementById('ov-ts');
+  if(ts&&S.system)ts.textContent=new Date(S.system.timestamp).toLocaleString();
+
+  // Phase cards
+  const pg=S.system?.postgres||{};
+  const redis=S.system?.redis||{};
+  const predict=S.system?.predict||{};
+  const execute=S.system?.execute||{};
+
+  setEl('ov-p0-val',(pg.signal_count||0).toLocaleString());
+  setEl('ov-p0-sub',pg.status==='healthy'?'signals in DB':'⚠ DB error');
+  setEl('ov-p1-val',pg.status==='healthy'&&redis.status==='healthy'?'✓':'⚠');
+  setEl('ov-p1-sub',pg.status==='healthy'&&redis.status==='healthy'?'DB + Redis + MinIO':'Check infra');
+  setEl('ov-p2-val',(redis.graph_results_stream_len||0));
+  setEl('ov-p2-sub','graph runs in stream');
+  setEl('ov-p3-val',predict.status==='healthy'?'✓ Online':'⚠');
+  setEl('ov-p3-sub',predict.status==='healthy'?'inference server :8100':'Not reachable');
+  setEl('ov-p4-val',execute.status==='healthy'?'✓ Online':'⚠');
+  setEl('ov-p4-sub',execute.status==='healthy'?'alert engine :8200':'Not reachable');
+
+  // Last verdict from agents
+  const verdictEl=document.getElementById('ov-last-verdict');
+  if(verdictEl&&S.agents&&S.agents.length>0){
+    const a=S.agents[0];
+    const vc=a.final_verdict||'unknown';
+    verdictEl.innerHTML=`
+      <div class="score-ring" style="width:90px;height:90px">
+        <canvas id="ov-score-ring" width="90" height="90"></canvas>
+        <div class="score-ring-val">
+          <div class="sv-num" style="color:${verdictColor(vc)}">${((a.final_score||0)*100).toFixed(0)}</div>
+          <div class="sv-lbl">SCORE</div>
+        </div>
+      </div>
+      <div style="flex:1">
+        <div style="margin-bottom:8px"><span class="verdict ${vc}">${vc.toUpperCase()}</span></div>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:4px">
+          Confidence: <span style="color:var(--text0);font-family:var(--font-mono)">${((a.final_confidence||0)*100).toFixed(1)}%</span>
+        </div>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:4px">
+          Priority: <span style="color:var(--text0)">${priorityLabel(a.final_priority)}</span>
+        </div>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:4px">
+          Halt: <span style="color:var(--text0);font-family:var(--font-mono)">${a.halt_reason||'?'}</span>
+        </div>
+        <div style="font-size:11px;color:var(--text3)">
+          ${a.decisions?a.decisions.length:0} agents ran · ${Math.round(a.duration_ms||0)}ms · ${a.trend_id||''}
+        </div>
+      </div>
+    `;
+    drawScoreRing('ov-score-ring',a.final_score||0,verdictColor(a.final_verdict||'unknown'));
+  }
+
+  // Charts
+  const byPlatform=S.stats?.by_platform||S.system?.postgres?.by_platform||{};
+  drawPlatformBar('ov-plat-chart',byPlatform);
+  drawActivityLine('ov-activity-chart',S.stats?.hourly_24h||[]);
+  updateLiveFeed();
+}
+
+// ── SIGNALS ───────────────────────────────────────────────────────────────────
+function renderSignalsSection(){
+  const st=S.stats||{};
+  setEl('sf-total',(st.total||0).toLocaleString());
+  setEl('sf-24h',(st.last_24h||0).toLocaleString());
+  setEl('sf-1h',(st.last_1h||0).toLocaleString());
+  const platforms=Object.keys(st.by_platform||{});
+  setEl('sf-plats',platforms.length);
+
+  // Populate platform filter
+  const pf=document.getElementById('sf-platform-filter');
+  if(pf){
+    const existing=Array.from(pf.options).map(o=>o.value);
+    platforms.forEach(p=>{
+      if(!existing.includes(p)){
+        const opt=document.createElement('option');
+        opt.value=p;opt.textContent=p.replace(/_/g,' ');
+        pf.appendChild(opt);
+      }
+    });
+  }
+
+  // Donut chart
+  const bp=st.by_platform||{};
+  const labels=Object.keys(bp);
+  const data=Object.values(bp);
+  const colors=labels.map(platColor);
+  destroyChart('sf-donut-chart');
+  const ctx=document.getElementById('sf-donut-chart');
+  if(ctx&&labels.length>0){
+    S.charts['sf-donut-chart']=new Chart(ctx,{
+      type:'doughnut',
+      data:{labels,datasets:[{data,backgroundColor:colors,borderColor:colors,borderWidth:0,hoverBorderWidth:2}]},
+      options:{
+        plugins:{legend:{position:'right',labels:{color:'#a8c8e8',font:{size:11},boxWidth:12}}},
+        cutout:'65%',
+      }
+    });
+  }
+
+  // Platform metrics bars
+  const pmEl=document.getElementById('sf-platform-metrics');
+  const pm=st.platform_metrics||{};
+  if(pmEl){
+    pmEl.innerHTML=Object.keys(pm).slice(0,6).map(p=>`
+      <div style="margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+          <span class="platform ${p}">${p.replace(/_/g,' ')}</span>
+          <span style="font-size:10px;color:var(--text2)">${Math.round(pm[p].novelty*100)}% novelty</span>
+        </div>
+        <div style="display:flex;gap:4px;align-items:center">
+          <div style="flex:1;height:4px;background:var(--bg4);border-radius:2px;overflow:hidden">
+            <div style="width:${(pm[p].sentiment+1)/2*100}%;height:100%;background:${pm[p].sentiment>0?'var(--green)':'var(--red)'};border-radius:2px"></div>
+          </div>
+          <span style="font-size:10px;color:var(--text2);min-width:50px">Snt ${pm[p].sentiment>0?'+':''}${pm[p].sentiment.toFixed(2)}</span>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  renderSignalTable();
+}
+
+function renderSignalTable(){
+  const tbody=document.getElementById('sf-table-body');
+  if(!tbody)return;
+  if(S.signals.length===0){
+    tbody.innerHTML='<tr><td colspan="7" class="empty-state">No signals — run a scrape first</td></tr>';
+    return;
+  }
+  tbody.innerHTML=S.signals.map(s=>{
+    const t=s.scraped_at?new Date(s.scraped_at).toLocaleTimeString():'—';
+    const plat=s.platform||'';
+    const eng=s.engagement||0;
+    const url=s.url?`<a href="${s.url}" target="_blank" style="color:var(--cyan);text-decoration:none" title="${s.title}">${s.title}</a>`:s.title;
+    const sentColor=s.sentiment>=0?'var(--green)':'var(--red)';
+    return `<tr>
+      <td class="mono" style="color:var(--text2)">${t}</td>
+      <td><span class="platform ${plat}">${plat.replace(/_/g,' ')}</span></td>
+      <td class="truncate">${url||'—'}</td>
+      <td class="mono" style="color:${sentColor}">${s.sentiment>=0?'+':''}${s.sentiment.toFixed(2)}</td>
+      <td class="mono">${(s.commercial_intent*100).toFixed(0)}%</td>
+      <td class="mono">${(s.novelty*100).toFixed(0)}%</td>
+      <td class="mono" style="color:var(--cyan)">${eng>0?eng.toLocaleString():'—'}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── PIPELINE ─────────────────────────────────────────────────────────────────
+function renderPipelineSection(){
+  const sel=document.getElementById('pl-run-select');
+  if(!sel)return;
+  sel.innerHTML=S.agents.map((a,i)=>`<option value="${i}">${a.trend_id||'run-'+i} — ${a.final_verdict} (${((a.final_score||0)*100).toFixed(0)}%)</option>`).join('');
+  renderPipelineRun();
+}
+
+function renderPipelineRun(){
+  const sel=document.getElementById('pl-run-select');
+  if(!sel||S.agents.length===0)return;
+  const idx=parseInt(sel.value||'0');
+  const run=S.agents[idx];
+  if(!run)return;
+
+  setEl('pl-meta-id','Trend: '+run.trend_id);
+  setEl('pl-meta-duration',Math.round(run.duration_ms||0)+'ms total');
+  setEl('pl-meta-halt','Halt: '+(run.halt_reason||'?'));
+
+  // Build decision lookup
+  const decMap={};
+  (run.decisions||[]).forEach(d=>{decMap[d.agent]=d});
+
+  // DAG
+  const dag=document.getElementById('pl-dag');
+  if(!dag)return;
+
+  const dagRows=[
+    [['scout']],
+    [['geo_arbitrage','narrative','historian','sourcer','auditor']],
+    [['sentinel','compliance']],
+    [['red_team','hedge']],
+  ];
+
+  dag.innerHTML=dagRows.map((row,ri)=>{
+    const nodeHtml=row[0].map(agent=>{
+      const d=decMap[agent];
+      const vc=d?d.verdict:'unknown';
+      const score=d?d.score:0;
+      const conf=d?d.confidence:0;
+      return `<div class="agent-node ${vc}" title="${AGENT_DESC[agent]||''}">
+        <div class="node-name">${agent.replace(/_/g,' ')}</div>
+        <div class="node-score" style="color:${verdictColor(vc)}">${d?((score)*100).toFixed(0):'—'}</div>
+        <div class="node-conf">${d?'conf '+((conf)*100).toFixed(0)+'%':'no data'}</div>
+        <div class="node-verdict"><span class="verdict-chip ${vc}">${vc}</span></div>
+      </div>`;
+    }).join('');
+    const arrow=ri<dagRows.length-1?'<div class="dag-arrow">↓</div>':'';
+    return `<div class="dag-row">${nodeHtml}</div>${arrow}`;
+  }).join('');
+
+  // Verdict node
+  const fv=run.final_verdict||'unknown';
+  dag.innerHTML+=`
+    <div class="dag-arrow">↓</div>
+    <div class="dag-row">
+      <div class="verdict-node ${fv}">
+        <div class="vn-label">FINAL VERDICT</div>
+        <div class="vn-text">${fv.toUpperCase()}</div>
+        <div style="font-size:11px;color:var(--text2)">
+          Score: <span style="color:${verdictColor(fv)};font-family:var(--font-mono)">${((run.final_score||0)*100).toFixed(1)}%</span>
+          &nbsp;·&nbsp;
+          Confidence: <span style="font-family:var(--font-mono)">${((run.final_confidence||0)*100).toFixed(1)}%</span>
+        </div>
+      </div>
+    </div>`;
+
+  // Decision details
+  const decsEl=document.getElementById('pl-decisions');
+  if(!decsEl)return;
+  const orderedDecs=AGENT_ORDER.map(a=>decMap[a]).filter(Boolean);
+  if(orderedDecs.length===0){
+    decsEl.innerHTML='<div class="empty-state">No decision data available</div>';
+    return;
+  }
+  decsEl.innerHTML=orderedDecs.map(d=>{
+    const vc=d.verdict||'unknown';
+    const scoreBar=Math.round((d.score||0)*100);
+    const confBar=Math.round((d.confidence||0)*100);
+    return `<div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:14px">
+      <div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:10px;flex-wrap:wrap">
+        <div style="min-width:120px">
+          <div style="font-size:10px;color:var(--text2);letter-spacing:.1em;text-transform:uppercase;margin-bottom:4px">${d.agent.replace(/_/g,' ')}</div>
+          <span class="verdict-chip ${vc}" style="font-size:11px">${vc}</span>
+        </div>
+        <div style="flex:1;display:flex;flex-direction:column;gap:6px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:10px;color:var(--text2);min-width:55px">SCORE</span>
+            <div class="progress-bar" style="flex:1;height:8px"><div class="progress-fill ${vc==='proceed'?'green':vc==='block'?'red':vc==='hold'?'amber':'purple'}" style="width:${scoreBar}%"></div></div>
+            <span class="mono" style="font-size:12px;min-width:35px;text-align:right">${scoreBar}%</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:10px;color:var(--text2);min-width:55px">CONF</span>
+            <div class="progress-bar" style="flex:1;height:8px"><div class="progress-fill cyan" style="width:${confBar}%"></div></div>
+            <span class="mono" style="font-size:12px;min-width:35px;text-align:right">${confBar}%</span>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:2px;text-align:right;font-size:11px;color:var(--text2)">
+          <div>${Math.round(d.duration_ms||0)}ms</div>
+          ${d.used_llm?'<div style="color:var(--purple)">LLM ✓</div>':'<div style="color:var(--text3)">heuristic</div>'}
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--text2);margin-bottom:6px">${AGENT_DESC[d.agent]||''}</div>
+      <div class="reasoning-box">${d.reasoning||''}</div>
+    </div>`;
+  }).join('');
+}
+
+// ── ML INTELLIGENCE ───────────────────────────────────────────────────────────
+function renderIntelligenceSection(){
+  if(S.agents.length===0){
+    document.getElementById('ml-features').innerHTML='<div class="empty-state">Run an analysis first (Control Panel)</div>';
+    return;
+  }
+  const run=S.agents[0];
+  const decMap={};
+  (run.decisions||[]).forEach(d=>{decMap[d.agent]=d});
+
+  // Feature importance from last candidate
+  const scout=decMap['scout']||{};
+  const sentinel=decMap['sentinel']||{};
+  const hedge=decMap['hedge']||{};
+  const features=[
+    {name:'velocity_24h (scout)',val:scout.score||0,color:'var(--cyan)'},
+    {name:'velocity_6h (sentinel)',val:sentinel.score||0,color:'var(--purple)'},
+    {name:'sentiment (narrative)',val:Math.abs(decMap['narrative']?.score||0.4),color:'var(--green)'},
+    {name:'commercial_intent',val:decMap['sourcer']?.score||0.5,color:'var(--amber)'},
+    {name:'novelty (historian)',val:decMap['historian']?.score||0.45,color:'var(--cyan)'},
+    {name:'coordination_risk',val:Math.max(0,1-(sentinel.score||0.5)),color:'var(--red)'},
+    {name:'source_credibility',val:decMap['sourcer']?.confidence||0.6,color:'var(--green)'},
+    {name:'compliance_risk',val:Math.max(0,1-(decMap['compliance']?.score||0.8)),color:'var(--amber)'},
+    {name:'risk_reward (hedge)',val:hedge.score||0.5,color:'var(--purple)'},
+  ];
+
+  const featEl=document.getElementById('ml-features');
+  if(featEl){
+    featEl.innerHTML=features.map(f=>`
+      <div class="feature-row">
+        <div class="feature-name">${f.name}</div>
+        <div class="feature-bar-wrap">
+          <div class="feature-bar-fill" style="width:${(f.val*100).toFixed(0)}%;background:${f.color}"></div>
+        </div>
+        <div class="feature-val">${(f.val*100).toFixed(0)}%</div>
+      </div>
+    `).join('');
+  }
+
+  // Radar chart
+  destroyChart('ml-radar-chart');
+  const radarCtx=document.getElementById('ml-radar-chart');
+  if(radarCtx){
+    S.charts['ml-radar-chart']=new Chart(radarCtx,{
+      type:'radar',
+      data:{
+        labels:['velocity_24h','velocity_6h','sentiment','commercial','novelty','coordination','credibility'],
+        datasets:[{
+          label:'Last Run',
+          data:[
+            (scout.score||0)*100,
+            (sentinel.score||0)*100,
+            Math.abs(decMap['narrative']?.score||0.4)*100,
+            (decMap['sourcer']?.score||0.5)*100,
+            (decMap['historian']?.score||0.45)*100,
+            Math.max(0,1-(sentinel.score||0.5))*100,
+            (decMap['sourcer']?.confidence||0.6)*100,
+          ],
+          borderColor:'var(--cyan)',
+          backgroundColor:'rgba(0,212,255,.12)',
+          pointBackgroundColor:'var(--cyan)',
+          pointBorderColor:'transparent',
+          borderWidth:2,
+        }],
+      },
+      options:{
+        scales:{r:{
+          ticks:{color:'var(--text3)',stepSize:20,backdropColor:'transparent'},
+          grid:{color:'var(--border)'},
+          pointLabels:{color:'var(--text1)',font:{size:10}},
+          min:0,max:100,
+        }},
+        plugins:{legend:{display:false}},
+      }
+    });
+  }
+
+  // Confidence distribution histogram from all runs
+  destroyChart('ml-conf-chart');
+  const confCtx=document.getElementById('ml-conf-chart');
+  if(confCtx&&S.agents.length>0){
+    const buckets=Array(10).fill(0);
+    S.agents.forEach(a=>{
+      const b=Math.min(9,Math.floor((a.final_confidence||0)*10));
+      buckets[b]++;
+    });
+    const confLabels=['0-10','10-20','20-30','30-40','40-50','50-60','60-70','70-80','80-90','90-100'];
+    S.charts['ml-conf-chart']=new Chart(confCtx,{
+      type:'bar',
+      data:{
+        labels:confLabels,
+        datasets:[{
+          data:buckets,
+          backgroundColor:confLabels.map((_,i)=>`hsla(${i*12+180},80%,60%,.6)`),
+          borderRadius:3,
+        }]
+      },
+      options:{
+        plugins:{legend:{display:false}},
+        scales:{
+          x:{ticks:{color:'var(--text2)',font:{size:9}},grid:{color:'var(--border)'}},
+          y:{ticks:{color:'var(--text2)',font:{size:9}},grid:{color:'var(--border)'},min:0},
+        }
+      }
+    });
+  }
+
+  // Overfitting indicator
+  const ovEl=document.getElementById('ml-overfit-indicator');
+  if(ovEl){
+    const scores=S.agents.map(a=>a.final_score||0);
+    const mean=scores.reduce((a,b)=>a+b,0)/Math.max(1,scores.length);
+    const variance=scores.reduce((a,b)=>a+Math.pow(b-mean,2),0)/Math.max(1,scores.length);
+    const std=Math.sqrt(variance);
+    const risk=std>0.25?'HIGH':std>0.15?'MEDIUM':'LOW';
+    const riskColor=risk==='HIGH'?'var(--red)':risk==='MEDIUM'?'var(--amber)':'var(--green)';
+    ovEl.innerHTML=`
+      <div class="gauge">
+        <div class="gauge-label">Score Variance (Bias Proxy)</div>
+        <div class="gauge-value" style="color:${riskColor}">${risk}</div>
+        <div style="font-size:11px;color:var(--text2);margin-top:4px">σ = ${std.toFixed(3)} across ${scores.length} runs</div>
+        <div class="gauge-bar"><div class="gauge-bar-fill" style="width:${std*200}%;background:${riskColor}"></div></div>
+      </div>
+      <div style="margin-top:10px;font-size:11px;color:var(--text2);line-height:1.6">
+        <div style="color:var(--text0);margin-bottom:4px">Heuristic-first doctrine:</div>
+        Neural models can only REDUCE confidence by factor [0.5, 1.0] — they cannot flip a verdict.
+        This prevents overfitting from invalidating deterministic rules.
+      </div>
+    `;
+  }
+
+  // Bridge info
+  const bridgeEl=document.getElementById('ml-bridge-info');
+  if(bridgeEl){
+    bridgeEl.innerHTML=`
+      <div style="display:flex;flex-direction:column;gap:8px;font-size:12px">
+        <div style="background:var(--bg3);border-radius:6px;padding:10px">
+          <div style="color:var(--text2);margin-bottom:4px;font-size:10px;text-transform:uppercase;letter-spacing:.1em">SCOUT ← Phase 3</div>
+          <div style="font-family:var(--font-mono);color:var(--cyan)">p_breakout @ 24h horizon</div>
+          <div style="font-size:11px;color:var(--text2);margin-top:2px">If breakout probability high → PROCEED boost</div>
+        </div>
+        <div style="background:var(--bg3);border-radius:6px;padding:10px">
+          <div style="color:var(--text2);margin-bottom:4px;font-size:10px;text-transform:uppercase;letter-spacing:.1em">SENTINEL ← Phase 3</div>
+          <div style="font-family:var(--font-mono);color:var(--purple)">p_decline @ 6h horizon</div>
+          <div style="font-size:11px;color:var(--text2);margin-top:2px">If decline probability high → BLOCK boost</div>
+        </div>
+      </div>
+    `;
+  }
+
+  // Decision explanation
+  const explEl=document.getElementById('ml-explanation');
+  if(explEl){
+    const fv=run.final_verdict||'unknown';
+    const factors=Object.values(decMap).sort((a,b)=>b.score-a.score).slice(0,5);
+    const explanation=buildExplanation(fv,run,factors);
+    explEl.innerHTML=`
+      <div style="display:flex;gap:16px;flex-wrap:wrap">
+        <div style="flex:1;min-width:260px">
+          <div style="font-size:13px;line-height:1.8;color:var(--text1)">${explanation}</div>
+        </div>
+        <div style="flex:1;min-width:200px">
+          <div style="font-size:10px;color:var(--text2);margin-bottom:8px;letter-spacing:.1em;text-transform:uppercase">Top Contributing Agents</div>
+          ${factors.map(f=>`
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+              <span class="verdict-chip ${f.verdict}" style="min-width:65px;text-align:center">${f.verdict}</span>
+              <div style="flex:1">
+                <div style="font-size:11px;font-family:var(--font-mono);color:var(--text0)">${f.agent.replace(/_/g,' ')}</div>
+                <div class="progress-bar" style="margin-top:3px">
+                  <div class="progress-fill cyan" style="width:${(f.score*100).toFixed(0)}%"></div>
+                </div>
+              </div>
+              <span class="mono" style="font-size:11px">${(f.score*100).toFixed(0)}%</span>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  }
+}
+
+function buildExplanation(verdict,run,topFactors){
+  const vmap={
+    proceed:`The system issued a <strong style="color:var(--green)">PROCEED</strong> verdict, indicating a strong, credible signal. `,
+    hold:`The system issued a <strong style="color:var(--amber)">HOLD</strong> verdict — more data is needed before acting. `,
+    block:`The system issued a <strong style="color:var(--red)">BLOCK</strong> verdict, stopping this trend from proceeding. `,
+    escalate:`The system issued an <strong style="color:var(--orange)">ESCALATE</strong> verdict requiring human review. `,
+  };
+  let text=vmap[verdict]||`The verdict was <strong>${verdict}</strong>. `;
+  if(topFactors.length>0){
+    const top=topFactors[0];
+    text+=`The most influential factor was the <em>${top.agent.replace(/_/g,' ')}</em> agent `;
+    text+=`which scored <strong style="font-family:var(--font-mono)">${(top.score*100).toFixed(0)}%</strong>. `;
+  }
+  const score=run.final_score||0;
+  text+=score>0.7?'High aggregate confidence across agents supports this decision. ':
+        score>0.5?'Moderate confidence — some agent disagreement present. ':
+        'Low confidence — significant uncertainty across the agent ensemble. ';
+  if(run.blocked_by&&run.blocked_by.length>0){
+    text+=`Pipeline was blocked by: <strong>${run.blocked_by.join(', ')}</strong>. `;
+  }
+  text+=`<br><br><span style="color:var(--text2);font-size:11px">HALT REASON: <span style="font-family:var(--font-mono)">${run.halt_reason||'unknown'}</span> · Duration: ${Math.round(run.duration_ms||0)}ms</span>`;
+  return text;
+}
+
+// ── DECISIONS ─────────────────────────────────────────────────────────────────
+function renderDecisionsSection(){
+  const el=document.getElementById('dl-runs');
+  if(!el)return;
+  if(S.agents.length===0){
+    el.innerHTML='<div class="empty-state">No analysis runs yet — go to Control Panel and run an analysis.</div>';
+    return;
+  }
+  el.innerHTML=S.agents.map((run,i)=>{
+    const fv=run.final_verdict||'unknown';
+    const ts=run.finished_at?new Date(run.finished_at).toLocaleString():'';
+    const decs=run.decisions||[];
+    const agentRow=decs.slice(0,6).map(d=>`
+      <div style="display:flex;flex-direction:column;align-items:center;gap:4px;min-width:80px">
+        <div style="font-size:9px;color:var(--text2);font-family:var(--font-mono);text-align:center">${d.agent.replace(/_/g,' ')}</div>
+        <span class="verdict-chip ${d.verdict}">${d.verdict}</span>
+        <div style="font-size:10px;font-family:var(--font-mono);color:var(--text0)">${((d.score||0)*100).toFixed(0)}%</div>
+      </div>
+    `).join('');
+    return `<div class="card">
+      <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">
+        <div>
+          <div style="margin-bottom:6px"><span class="verdict ${fv}">${fv.toUpperCase()}</span></div>
+          <div style="font-size:12px;color:var(--text2)">Score: <span class="mono" style="color:var(--text0)">${((run.final_score||0)*100).toFixed(1)}%</span></div>
+          <div style="font-size:12px;color:var(--text2)">Conf: <span class="mono" style="color:var(--text0)">${((run.final_confidence||0)*100).toFixed(1)}%</span></div>
+        </div>
+        <div style="flex:1">
+          <div style="font-size:11px;font-family:var(--font-mono);color:var(--text2);margin-bottom:4px">${run.trend_id||''}</div>
+          <div style="font-size:11px;color:var(--text2)">${ts} · ${Math.round(run.duration_ms||0)}ms · ${run.halt_reason||''}</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">${agentRow}</div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── INFRASTRUCTURE ────────────────────────────────────────────────────────────
+function renderInfra(){
+  const sys=S.system||{};
+
+  // Docker containers
+  const containers=sys.docker?.containers||[];
+  const cntEl=document.getElementById('infra-container-count');
+  if(cntEl)cntEl.textContent=containers.length+' containers';
+
+  const cGrid=document.getElementById('infra-containers');
+  if(cGrid){
+    if(containers.length===0){
+      cGrid.innerHTML='<div class="empty-state">No containers found — is docker compose running?</div>';
+    } else {
+      cGrid.innerHTML=containers.map(c=>{
+        const name=c.Service||c.Name||'?';
+        const state=(c.State||'unknown').toLowerCase();
+        const health=(c.Health||'n/a').toLowerCase();
+        const ports=c.Publishers?c.Publishers.map(p=>`${p.PublishedPort||''}→${p.TargetPort||''}`).filter(p=>p!=='→').join(', '):'';
+        const stateClass=state.includes('run')?'running':state.includes('exit')&&'exited';
+        const dotCls=health==='healthy'||state==='running'?'healthy':health==='unhealthy'?'unhealthy':'starting';
+        return `<div class="container-card ${stateClass}">
+          <div class="cc-name">${name}</div>
+          <div class="cc-status">
+            <div class="status-dot ${dotCls}"></div>
+            <span>${state}</span>
+          </div>
+          ${health!=='n/a'?`<div class="cc-health">health: ${health}</div>`:''}
+          ${ports?`<div class="cc-health" style="color:var(--text2)">${ports}</div>`:''}
+        </div>`;
+      }).join('');
+    }
+  }
+
+  // Postgres
+  const pgEl=document.getElementById('infra-pg');
+  const pg=sys.postgres||{};
+  if(pgEl){
+    const items=[
+      ['Status',pg.status==='healthy'?'<span style="color:var(--green)">● Healthy</span>':'<span style="color:var(--red)">● Error: '+pg.error+'</span>'],
+      ['Total Signals',(pg.signal_count||0).toLocaleString()],
+      ['Predictions',(pg.prediction_count||0).toLocaleString()],
+      ['Last Scraped',pg.last_scraped?new Date(pg.last_scraped).toLocaleString():'—'],
+      ['DSN','localhost:5433/aegis'],
+    ];
+    pgEl.innerHTML=items.map(([k,v])=>`
+      <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;padding:4px 0;border-bottom:1px solid var(--border)">
+        <span style="color:var(--text2)">${k}</span>
+        <span class="mono" style="color:var(--text0)">${v}</span>
+      </div>
+    `).join('');
+  }
+
+  // Redis
+  const rEl=document.getElementById('infra-redis');
+  const redis=sys.redis||{};
+  if(rEl){
+    const items=[
+      ['Status',redis.status==='healthy'?'<span style="color:var(--green)">● Healthy</span>':'<span style="color:var(--red)">● Error</span>'],
+      ['Memory',redis.used_memory_human||'—'],
+      ['Clients',(redis.connected_clients||0).toLocaleString()],
+      ['Cache Hits',(redis.keyspace_hits||0).toLocaleString()],
+      ['Cache Misses',(redis.keyspace_misses||0).toLocaleString()],
+      ['Graph Results Stream',(redis.graph_results_stream_len||0)+' entries'],
+    ];
+    rEl.innerHTML=items.map(([k,v])=>`
+      <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;padding:4px 0;border-bottom:1px solid var(--border)">
+        <span style="color:var(--text2)">${k}</span>
+        <span class="mono" style="color:var(--text0)">${v}</span>
+      </div>
+    `).join('');
+  }
+
+  // Phase 3 / Phase 4
+  const p3El=document.getElementById('infra-predict');
+  const predict=sys.predict||{};
+  if(p3El){
+    p3El.innerHTML=predict.status==='healthy'
+      ?`<div style="font-size:12px;color:var(--green);margin-top:4px">● Online</div>
+         <div style="font-size:11px;color:var(--text2);margin-top:6px">Heuristic-first ML inference on :8100<br>
+         PatchTST · Autoformer · TimesNet · HGT (optional neural)<br>
+         GET /healthz &nbsp; POST /predict &nbsp; POST /predict/batch</div>`
+      :`<div style="font-size:12px;color:var(--red);margin-top:4px">● Offline — ${predict.error||''}</div>`;
+  }
+  const p4El=document.getElementById('infra-execute');
+  const execute=sys.execute||{};
+  if(p4El){
+    p4El.innerHTML=execute.status==='healthy'
+      ?`<div style="font-size:12px;color:var(--green);margin-top:4px">● Online</div>
+         <div style="font-size:11px;color:var(--text2);margin-top:6px">Alert engine + SSE + kill-switch on :8200<br>
+         POST /alerts &nbsp; GET /stream &nbsp; GET /dashboard/</div>`
+      :`<div style="font-size:12px;color:var(--red);margin-top:4px">● Offline — ${execute.error||''}</div>`;
+  }
+}
+
+// ── CONTROL ───────────────────────────────────────────────────────────────────
+function renderControl(){
+  const con=document.getElementById('console-box');
+  if(con&&con.innerHTML==='')con.textContent='AEGIS Command Center — ready\n';
+}
+
+let _streaming=false;
+async function runOp(cmd){
+  if(_streaming){toast('A command is already running','err');return}
+  const con=document.getElementById('console-box');
+  if(!con){nav('control');setTimeout(()=>runOp(cmd),200);return}
+  _streaming=true;
+  con.textContent='';
+  try{
+    const resp=await fetch('/api/ops/run',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({cmd}),
+    });
+    if(!resp.ok){const t=await resp.text();appendConsole(t,'err');return}
+    const reader=resp.body.getReader();
+    const decoder=new TextDecoder();
+    while(true){
+      const {done,value}=await reader.read();
+      if(done)break;
+      appendConsole(decoder.decode(value));
+    }
+    // After analysis, reload agents
+    if(cmd.includes('analyze')||cmd.includes('topic')||cmd.includes('daily')){
+      setTimeout(()=>{loadAgents();loadStats()},1000);
+    }
+    if(cmd.includes('scrape')){setTimeout(loadStats,1000)}
+  }catch(e){
+    appendConsole('\n[Error: '+e.message+']\n','err');
+  }finally{
+    _streaming=false;
+  }
+}
+
+function appendConsole(text,cls){
+  const con=document.getElementById('console-box');
+  if(!con)return;
+  const el=document.createElement('span');
+  if(cls)el.className=cls+'-line';
+  el.textContent=text;
+  con.appendChild(el);
+  con.scrollTop=con.scrollHeight;
+}
+
+function clearConsole(){
+  const con=document.getElementById('console-box');
+  if(con)con.textContent='';
+}
+
+function runTopicFromInput(){
+  const inp=document.getElementById('ctrl-topic-input');
+  if(!inp||!inp.value.trim()){toast('Enter a topic first','err');return}
+  const topic=inp.value.trim();
+  nav('control');
+  setTimeout(()=>runOp(['aegis','topic',topic,'--limit','20']),100);
+}
+
+// ── Charts ────────────────────────────────────────────────────────────────────
+function destroyChart(id){
+  if(S.charts[id]){try{S.charts[id].destroy()}catch(e){} delete S.charts[id]}
+}
+
+const _chartDefaults={
+  plugins:{legend:{display:false}},
+  scales:{
+    x:{ticks:{color:'#6a9bbf',font:{size:10}},grid:{color:'#1e3354'}},
+    y:{ticks:{color:'#6a9bbf',font:{size:10}},grid:{color:'#1e3354'}},
+  },
+};
+
+function drawPlatformBar(id,byPlatform){
+  destroyChart(id);
+  const ctx=document.getElementById(id);
+  if(!ctx)return;
+  const labels=Object.keys(byPlatform);
+  const data=Object.values(byPlatform);
+  if(!labels.length)return;
+  S.charts[id]=new Chart(ctx,{
+    type:'bar',
+    data:{
+      labels:labels.map(l=>l.replace(/_/g,' ')),
+      datasets:[{
+        data,
+        backgroundColor:labels.map(l=>(platColor(l)+'99')),
+        borderColor:labels.map(platColor),
+        borderWidth:1,
+        borderRadius:4,
+      }]
+    },
+    options:{..._chartDefaults}
+  });
+}
+
+function drawActivityLine(id,hourly){
+  destroyChart(id);
+  const ctx=document.getElementById(id);
+  if(!ctx||!hourly.length)return;
+  const labels=hourly.map(h=>{
+    const d=new Date(h.hour);
+    return d.getHours().toString().padStart(2,'0')+':00';
+  });
+  const data=hourly.map(h=>h.count);
+  S.charts[id]=new Chart(ctx,{
+    type:'line',
+    data:{
+      labels,
+      datasets:[{
+        data,
+        borderColor:'var(--cyan)',
+        backgroundColor:'rgba(0,212,255,.1)',
+        fill:true,
+        tension:.4,
+        pointRadius:2,
+        pointBackgroundColor:'var(--cyan)',
+      }]
+    },
+    options:{..._chartDefaults}
+  });
+}
+
+function drawScoreRing(id,score,color){
+  const canvas=document.getElementById(id);
+  if(!canvas)return;
+  const ctx=canvas.getContext('2d');
+  const cx=45,cy=45,r=36;
+  ctx.clearRect(0,0,90,90);
+  ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);
+  ctx.strokeStyle='#1e3354';ctx.lineWidth=8;ctx.stroke();
+  ctx.beginPath();
+  const end=-Math.PI/2+Math.PI*2*score;
+  ctx.arc(cx,cy,r,-Math.PI/2,end);
+  ctx.strokeStyle=color;ctx.lineWidth=8;ctx.lineCap='round';ctx.stroke();
+}
+
+// ── Header pills ──────────────────────────────────────────────────────────────
+function updateHeaderPills(sys){
+  setPill('pill-pg',sys.postgres?.status==='healthy','Postgres '+(sys.postgres?.signal_count||0)+'S');
+  setPill('pill-redis',sys.redis?.status==='healthy','Redis '+(sys.redis?.used_memory_human||'?'));
+  setPill('pill-predict',sys.predict?.status==='healthy','Predict :8100');
+  setPill('pill-execute',sys.execute?.status==='healthy','Execute :8200');
+  const dockers=sys.docker?.containers||[];
+  const runCount=dockers.filter(c=>(c.State||'').toLowerCase().includes('run')).length;
+  setPill('pill-docker',runCount>0,`Docker ${runCount}/${dockers.length}`);
+}
+
+function setPill(id,ok,text){
+  const el=document.getElementById(id);
+  if(!el)return;
+  el.className='pill '+(ok?'ok':'err');
+  el.innerHTML=`<span class="dot ${ok?'ok':'err'}"></span>${text}`;
+}
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
+async function api(path){
+  const r=await fetch(path);
+  if(!r.ok)throw new Error(`${r.status} ${r.statusText}`);
+  return r.json();
+}
+
+function setEl(id,val){const el=document.getElementById(id);if(el)el.textContent=val??'—'}
+
+function verdictColor(v){
+  return {proceed:'var(--green)',hold:'var(--amber)',block:'var(--red)',escalate:'var(--orange)'}[v]||'var(--text2)';
+}
+
+function priorityLabel(p){
+  return ['P0 BREAKOUT','P1 Exit','P2 Opportunity','P3 Housekeeping'][p]||('P'+p);
+}
+
+function toast(msg,type='info'){
+  const box=document.getElementById('toasts');
+  const el=document.createElement('div');
+  el.className='toast '+type;
+  el.textContent=msg;
+  box.appendChild(el);
+  setTimeout(()=>el.remove(),4000);
+}
+
+// ── SWARM ─────────────────────────────────────────────────────────────────────
+async function loadSwarm(){
+  try{
+    const [latest,agents,history]=await Promise.all([
+      api('/api/swarm/latest').catch(()=>({status:'error'})),
+      api('/api/swarm/agents').catch(()=>({status:'error',agents:{}})),
+      api('/api/swarm/history').catch(()=>({status:'error',runs:[]})),
+    ]);
+    S.swarm={latest,agents,history};
+    if(S.section==='swarm')renderSwarm();
+  }catch(e){console.error('loadSwarm',e)}
+}
+
+function renderSwarm(){
+  const d=S.swarm||{};
+  const latest=d.latest?.data||null;
+  const agents=d.agents?.agents||{};
+  const runs=d.history?.runs||[];
+
+  if(latest){
+    setEl('sw-total',(latest.total_signals||0).toLocaleString());
+    setEl('sw-dedup',(latest.dedup_removed||0)+' deduped');
+    const pulse=(latest.market_pulse||'neutral').toLowerCase();
+    setEl('sw-pulse',pulse.toUpperCase());
+    setEl('sw-confidence',((latest.batch_confidence||0)*100).toFixed(0)+'% confidence');
+    setEl('sw-platforms',Object.keys(latest.by_platform||{}).length);
+    setEl('sw-unique',(latest.unique_signals||0).toLocaleString());
+    setEl('sw-waves',(latest.wave_stats||[]).length+' waves');
+    const pulseCard=document.getElementById('sw-pulse-card');
+    const pmap={bullish:'green',bearish:'red',neutral:'',mixed:'amber',volatile:'orange'};
+    if(pulseCard)pulseCard.className='stat-card '+(pmap[pulse]||'');
+    // Donut
+    const bp=latest.by_platform||{};
+    const labels=Object.keys(bp);
+    const data=Object.values(bp);
+    const colors=labels.map(platColor);
+    destroyChart('sw-donut-chart');
+    const ctx=document.getElementById('sw-donut-chart');
+    if(ctx&&labels.length>0){
+      S.charts['sw-donut-chart']=new Chart(ctx,{
+        type:'doughnut',
+        data:{labels,datasets:[{data,backgroundColor:colors,borderColor:colors,borderWidth:0,hoverBorderWidth:2}]},
+        options:{plugins:{legend:{position:'right',labels:{color:'#a8c8e8',font:{size:11},boxWidth:12}}},cutout:'65%'},
+      });
+    }
+    // Themes
+    const themesEl=document.getElementById('sw-themes-list');
+    if(themesEl){
+      const themes=(latest.cross_platform_themes||[]).slice(0,5);
+      themesEl.innerHTML=themes.length
+        ?themes.map(t=>`<li style="color:var(--cyan)">${t}</li>`).join('')
+        :'<li style="color:var(--text3);list-style:none">No themes detected yet</li>';
+    }
+    // Categories
+    const catsEl=document.getElementById('sw-cats-list');
+    if(catsEl){
+      const cats=(latest.hot_categories||[]).slice(0,5);
+      catsEl.innerHTML=cats.length
+        ?cats.map(c=>`<li style="color:var(--amber)">${c}</li>`).join('')
+        :'<li style="color:var(--text3);list-style:none">No categories detected yet</li>';
+    }
+  }else{
+    ['sw-total','sw-unique','sw-platforms'].forEach(id=>setEl(id,'—'));
+    setEl('sw-pulse','N/A');
+    setEl('sw-confidence','No swarm run yet');
+  }
+
+  // Agent health grid
+  const gridEl=document.getElementById('sw-agent-grid');
+  if(gridEl){
+    const entries=Object.entries(agents);
+    setEl('sw-agent-badge',entries.length+' adapters');
+    if(entries.length===0){
+      gridEl.innerHTML='<div class="empty-state">No agent health data — run a swarm to populate.</div>';
+    }else{
+      const hmap={UP:'running',DOWN:'exited',DEGRADED:'starting',UNKNOWN:'starting'};
+      gridEl.innerHTML=entries.map(([name,info])=>{
+        const h=(info.health||'UNKNOWN').toUpperCase();
+        const cls=hmap[h]||'starting';
+        const fails=info.consecutive_failures||0;
+        return `<div class="container-card ${cls==='running'?'running':cls==='exited'?'exited':''}">
+          <div class="cc-name">${name.replace(/_/g,' ')}</div>
+          <div class="cc-status"><span class="status-dot ${cls}"></span>${h}</div>
+          <div class="cc-health">Failures: ${fails} · ${Math.round(info.avg_latency_ms||0)}ms</div>
+        </div>`;
+      }).join('');
+    }
+  }
+
+  // Run history
+  const tbody=document.getElementById('sw-history-body');
+  if(tbody){
+    if(runs.length===0){
+      tbody.innerHTML='<tr><td colspan="8" class="empty-state">No swarm runs in the last 24h</td></tr>';
+    }else{
+      const pc2={bullish:'var(--green)',bearish:'var(--red)',neutral:'var(--text2)',mixed:'var(--amber)',volatile:'var(--orange)'};
+      tbody.innerHTML=runs.map(r=>{
+        const p=(r.market_pulse||'neutral').toLowerCase();
+        const startTs=r.started_at?new Date(r.started_at).toLocaleString():'—';
+        return `<tr>
+          <td class="mono truncate" style="max-width:120px">${(r.run_id||'').slice(0,8)}…</td>
+          <td style="white-space:nowrap">${startTs}</td>
+          <td class="mono">${r.total_signals||0}</td>
+          <td class="mono">${r.unique_signals||0}</td>
+          <td class="mono">${r.dedup_removed||0}</td>
+          <td><span style="color:${pc2[p]||'var(--text2)'};font-weight:600;font-family:var(--font-mono)">${p.toUpperCase()}</span></td>
+          <td class="mono">${((r.batch_confidence||0)*100).toFixed(0)}%</td>
+          <td class="truncate" style="max-width:200px;color:var(--text2)">${r.conclusion||'—'}</td>
+        </tr>`;
+      }).join('');
+    }
+  }
+}
+
+// ── Auto-refresh ──────────────────────────────────────────────────────────────
+function startAutoRefresh(){
+  // Heavy refresh every 30s
+  setInterval(()=>{loadSystem();loadStats()},30000);
+  // Agents refresh every 15s
+  setInterval(()=>{loadAgents()},15000);
+  // Swarm refresh every 60s
+  setInterval(()=>{loadSwarm()},60000);
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+async function init(){
+  startClock();
+  renderSection('overview');
+  startSSE();
+
+  // Initial data load
+  await Promise.all([loadSystem(),loadStats()]);
+  await loadAgents();
+  renderSection(S.section);
+
+  startAutoRefresh();
+}
+
+init();
+</script>
+</body>
+</html>

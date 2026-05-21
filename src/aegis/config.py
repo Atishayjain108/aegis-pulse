@@ -106,6 +106,43 @@ class _ScrapeSettings(BaseSettings):
     default_concurrency: int = Field(default=4, ge=1, le=64)
     respect_robots_txt: bool = Field(default=True)
 
+    # ── Phase 5: data quality + trend velocity ────────────────────────
+    confidence_threshold: float = Field(
+        default=0.85,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Minimum batch confidence score [0, 1] before the self-healing "
+            "warning is triggered. Set AEGIS_SCRAPE_CONFIDENCE_THRESHOLD=0.0 "
+            "to disable the gate entirely."
+        ),
+    )
+    velocity_high_priority_slope: float = Field(
+        default=2.0,
+        ge=0.0,
+        description=(
+            "OLS slope threshold (signals/hour) above which a pattern cluster "
+            "is flagged 'High Priority' for the Executive Agent. "
+            "Set AEGIS_SCRAPE_VELOCITY_HIGH_PRIORITY_SLOPE to tune."
+        ),
+    )
+
+    # ── Swarm orchestrator ────────────────────────────────────────────
+    swarm_wave_timeout_s: float = Field(default=60.0)
+    swarm_max_signals_per_adapter: int = Field(default=100)
+    swarm_max_concurrent: int = Field(default=5, description="ConcurrencyGovernor global semaphore")
+    swarm_flaresolverr_max_concurrent: int = Field(default=2)
+    swarm_jitter_max_ms: int = Field(default=500)
+    swarm_enabled_tiers: list[str] = Field(
+        default=["T1_intent", "T2_commerce", "T3_search"],
+    )
+    swarm_publish_redis: bool = Field(default=True)
+    swarm_cache_ttl_s: int = Field(default=300, description="Per-adapter result cache TTL")
+
+    # ── Scrape timeouts ───────────────────────────────────────────────
+    scrape_timeout_s: float = Field(default=30.0)
+    scrape_delay_s: float = Field(default=1.0)
+
 
 class _RedditSettings(BaseSettings):
     """Reddit / PRAW credentials.
@@ -184,7 +221,7 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
     env: Environment = Field(default="dev")
     service_name: str = Field(default="aegis-pulse")
-    service_version: str = Field(default="0.1.0")
+    service_version: str = Field(default="0.3.0")
     instance_id: str = Field(
         default_factory=lambda: __import__("socket").gethostname(),
         description="Unique identifier for this process instance, used in "
@@ -239,6 +276,49 @@ class Settings(BaseSettings):
     reddit: _RedditSettings = Field(default_factory=_RedditSettings)
     youtube: _YouTubeSettings = Field(default_factory=_YouTubeSettings)
     alerts: _AlertSettings = Field(default_factory=_AlertSettings)
+
+    # ------------------------------------------------------------------
+    # Swarm data-source seed lists (override via env JSON strings)
+    # ------------------------------------------------------------------
+    youtube_channel_ids: list[str] = Field(
+        default=[
+            "UCBcRF18a7Qf58cCRy5xuWwQ",  # MKBHD
+            "UCXuqSBlHAE6Xw-yeJA0Tunw",  # Linus Tech Tips
+            "UCnUYZLuoy1rq1aVMwx4aTzw",  # Pranjal Kamra (Finance India)
+            "UCAL3JXZSzSm8AlZyD3nQdBA",  # CA Rachana Phadke Ranade
+            "UCVhQ2NnY5Rskt6UjCUkJ_DA",  # Y Combinator
+            "UCddiUEpeqJcYeBxX1IVBKvQ",  # Akshat Shrivastava
+        ],
+    )
+    medium_tags: list[str] = Field(
+        default=["artificial-intelligence", "startup", "ecommerce", "india", "fintech"],
+    )
+    github_topics: list[str] = Field(
+        default=["ecommerce", "fintech", "llm", "india", "saas"],
+    )
+    npm_seed_keywords: list[str] = Field(
+        default=["ai", "llm", "ecommerce", "fintech", "payments"],
+    )
+    finance_tickers_global: list[str] = Field(
+        default=[
+            "AAPL", "GOOGL", "MSFT", "AMZN", "NVDA", "META", "TSLA",
+            "RELIANCE.NS", "TCS.NS", "INFY.NS", "HDFCBANK.NS", "ICICIBANK.NS",
+        ],
+    )
+
+    # ------------------------------------------------------------------
+    # Internal service URLs (override in Docker via env vars)
+    # ------------------------------------------------------------------
+    predict_api_url: str = Field(
+        default="http://localhost:8100",
+        description="Base URL for the Phase 3 predict service. "
+        "Set AEGIS_PREDICT_API_URL=http://predict:8000 inside Docker.",
+    )
+    execute_api_url: str = Field(
+        default="http://localhost:8200",
+        description="Base URL for the Phase 4 execute service. "
+        "Set AEGIS_EXECUTE_API_URL=http://execute-api:8200 inside Docker.",
+    )
 
     # ------------------------------------------------------------------
     # Validators

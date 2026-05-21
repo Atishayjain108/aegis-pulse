@@ -502,26 +502,15 @@ class ProductSignal(_FrozenBase):
     BREAKING change (all existing hashes invalidate) — bump SCHEMA_VERSION."""
 
     def _derive_hash(self) -> str:
-        """Recompute the hash from the current field values.
-
-        Uses BLAKE2b with a fixed digest size (see ``constants``). Inputs are
-        concatenated with a null byte separator so that ``("a", "bc")`` and
-        ``("ab", "c")`` hash differently — preventing collisions across
-        variable-length fields.
-        """
-        h = _new_content_hasher()
-        for name in self._HASH_INPUT_FIELDS:
-            value = getattr(self, name)
-            # Convert to a stable string form.
-            if value is None:
-                chunk = b"\x00NULL"
-            elif isinstance(value, datetime):
-                chunk = value.astimezone(UTC).isoformat().encode("utf-8")
-            else:
-                chunk = str(value).encode("utf-8")
-            h.update(b"\x00")
-            h.update(chunk)
-        return h.hexdigest()
+        # Delegate to compute_content_hash so the two code paths can never diverge.
+        return compute_content_hash(
+            platform=self.platform,
+            external_id=self.external_id,
+            url=str(self.url) if self.url is not None else None,
+            title=self.title,
+            raw_text=self.raw_text,
+            posted_at=self.posted_at,
+        )
 
     # ---------------------------------------------------------------------
     # Helpers
@@ -569,6 +558,11 @@ def compute_content_hash(
     if url is not None:
         with contextlib.suppress(Exception):
             url = str(HttpUrl(url))
+    # ShortText fields have strip_whitespace=True — normalise here so that
+    # compute_content_hash() and ProductSignal._derive_hash() always agree.
+    if title is not None:
+        title = title.strip() or None
+    external_id = external_id.strip()
 
     h = _new_content_hasher()
     for value in (platform.value, external_id, url, title, raw_text, posted_at):
