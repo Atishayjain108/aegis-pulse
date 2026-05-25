@@ -19,6 +19,7 @@ from typing import Any
 import asyncpg
 import httpx
 import redis.asyncio as aioredis
+import structlog
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, StreamingResponse
@@ -26,6 +27,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from aegis.config import settings
+
+_sse_log = structlog.get_logger("aegis.dashboard.sse")
 
 # ---------------------------------------------------------------------------
 # Path resolution
@@ -534,56 +537,61 @@ async def sse_events(request: Request) -> StreamingResponse:
     async def _generate() -> AsyncIterator[bytes]:
         last_id = "$"
         tick = 0
-        while not await request.is_disconnected():
-            tick += 1
+        # One persistent connection per SSE client — O(1) lifetime cost.
+        # Eliminates the prior O(2/s) reconnect pattern (was: from_url+aclose per tick).
+        _r = aioredis.from_url(cfg.redis_url_str, decode_responses=True)
+        try:
+            while not await request.is_disconnected():
+                tick += 1
 
-            # System health tick every 20 iterations (~10 s)
-            if tick % 20 == 1:
+                # System health tick every 20 iterations
+                if tick % 20 == 1:
+                    try:
+                        conn = await asyncpg.connect(cfg.pg_dsn_str, timeout=2)
+                        cnt = await conn.fetchval("SELECT COUNT(*) FROM signals")
+                        await conn.close()
+                        payload = json.dumps({
+                            "type": "tick",
+                            "signal_count": cnt,
+                            "ts": datetime.now(UTC).isoformat(),
+                        })
+                        yield f"data: {payload}\n\n".encode()
+                    except Exception as exc:
+                        _sse_log.warning("sse.health_tick_failed", error=str(exc))
+
+                # XREAD blocks for up to 1500ms — yields to the event loop
+                # during the wait, so no asyncio.sleep() needed.
                 try:
-                    conn = await asyncpg.connect(cfg.pg_dsn_str, timeout=2.0)
-                    cnt = await conn.fetchval("SELECT COUNT(*) FROM signals")
-                    await conn.close()
-                    payload = json.dumps({
-                        "type": "tick",
-                        "signal_count": cnt,
-                        "ts": datetime.now(UTC).isoformat(),
-                    })
-                    yield f"data: {payload}\n\n".encode()
-                except Exception:
-                    pass
-
-            # Poll Redis stream for new graph results
-            try:
-                r = aioredis.from_url(
-                    cfg.redis_url_str, decode_responses=True, socket_timeout=1.0
-                )
-                entries = await r.xread(
-                    {"aegis:phase2:graph_results": last_id}, count=5, block=400
-                )
-                await r.aclose()
-                if entries:
-                    for _stream_name, msgs in entries:
-                        for mid, data in msgs:
-                            last_id = mid
-                            try:
-                                raw = data.get("body") or data.get("payload") or "{}"
-                                p = json.loads(raw)
-                                evt = json.dumps({
-                                    "type": "analysis_complete",
-                                    "trend_id": p.get("trend_id"),
-                                    "verdict": p.get("final_verdict"),
-                                    "score": p.get("final_score"),
-                                    "confidence": p.get("final_confidence"),
-                                    "halt_reason": p.get("halt_reason"),
-                                    "ts": datetime.now(UTC).isoformat(),
-                                })
-                                yield f"data: {evt}\n\n".encode()
-                            except Exception:
-                                pass
-            except Exception:
-                pass
-
-            await asyncio.sleep(0.5)
+                    entries = await _r.xread(
+                        {"aegis:phase2:graph_results": last_id}, count=5, block=1500
+                    )
+                    if entries:
+                        for _, msgs in entries:
+                            for mid, data in msgs:
+                                last_id = mid
+                                try:
+                                    raw = data.get("body") or data.get("payload") or "{}"
+                                    p = json.loads(raw)
+                                    evt = json.dumps({
+                                        "type": "analysis_complete",
+                                        "trend_id": p.get("trend_id"),
+                                        "verdict": p.get("final_verdict"),
+                                        "score": p.get("final_score"),
+                                        "confidence": p.get("final_confidence"),
+                                        "halt_reason": p.get("halt_reason"),
+                                        "ts": datetime.now(UTC).isoformat(),
+                                    })
+                                    yield f"data: {evt}\n\n".encode()
+                                except (json.JSONDecodeError, KeyError, TypeError) as exc:
+                                    _sse_log.warning(
+                                        "sse.entry_decode_failed",
+                                        entry_id=mid,
+                                        error=str(exc),
+                                    )
+                except Exception as exc:
+                    _sse_log.warning("sse.xread_failed", error=str(exc))
+        finally:
+            await _r.aclose()
 
     return StreamingResponse(
         _generate(),

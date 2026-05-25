@@ -11,6 +11,8 @@ It scrapes signals from social platforms, stores them in TimescaleDB, and runs a
 **Phase 3** — Predictive Apex (hybrid ML core: heuristic floor + optional neural augmentation; FastAPI serving; fractional-Kelly RL policy)  
 **Phase 4** — Execution & Alert System (alert pipeline, killswitch, SSE streaming, notification channels; FastAPI execute-api on :8200)  
 **Phase 5** — Production & Autonomous Scale (statistical modeling pipeline, data quality gate, autonomous confidence scoring)  
+**Phase 10** — Data Lake & Analytics (Bronze/Silver/Gold medallion over Parquet on MinIO; DuckDB query engine; Prefect orchestration; `aegis datalake` CLI)  
+**Phase 11** — Local LLM Orchestration (LLMGateway with circuit breaker + provider-selector; Ollama→Groq→OpenRouter→Gemini fallback; semantic router; guardrails; Pydantic structured output; `aegis llm` CLI)  
 **Dashboard** — Unified Command Center web UI on :8300 (aggregates all phases; SSE live feed; streaming console for running CLI ops)
 
 ## Package layout
@@ -37,7 +39,7 @@ src/aegis/
     runner.py          — run_trend() entrypoint; compiled-graph cache
     supervisor.py      — finalize node: aggregate decisions → final verdict
     nodes/             — 10 agent nodes; scout + sentinel wired to Phase 3 bridge
-    llm/               — LLM router (Ollama→Groq→OpenRouter→Gemini fallback)
+    llm/               — LLM router (Ollama→Groq→OpenRouter→Gemini fallback); Phase 11 shim re-exports get_gateway/complete_for_agent
     memory/            — ChromaDB semantic store + Redis shared memory + MinIO snapshots
     messaging/         — Redis Streams inter-agent bus + HMAC-SHA256 signing
     tools/             — velocity_classify, compliance_check, monte_carlo, historical_lookup, signal_query
@@ -60,6 +62,42 @@ src/aegis/
     cli/               — Typer: run, serve, bench, eval
   agents_phase3_glue/  — Phase 2 ↔ Phase 3 bridge (no LangGraph import)
     bridge.py          — InferenceResult → AgentDecision dict mapping
+  datalake/            — Phase 10: Bronze/Silver/Gold data lake
+    __init__.py        — lazy-import facade; PHASE="phase10", VERSION="0.10.0", FEATURE_FLAGS
+    settings.py        — DataLakeSettings (AEGIS_DATALAKE_* env prefix)
+    constants.py       — BRONZE/SILVER/GOLD layer names, batching + DuckDB + quality constants
+    schemas.py         — BronzeSignal/Prediction/Alert/AgentResult, SilverSignal/Prediction, Gold* (frozen Pydantic v2)
+    errors.py          — typed error hierarchy AEGIS-DATALAKE-0000..0502
+    facade.py          — DataLake: top-level composer (open/session/query/build_silver/build_gold/health)
+    migrations.py      — SQLite catalog schema migrations (run_migrations / current_version)
+    retention.py       — RetentionEnforcer: plan + apply deletion by layer cutoff date
+    bronze/            — Raw ingest layer: PostgresSignalsIngester, PostgresPredictionsIngester, PostgresAlertsIngester, RedisStreamIngester, BronzeWriter
+    silver/            — Cleaned + conformed: SilverBuilder (signals + predictions for a UTC date)
+    gold/              — Business aggregates: GoldAggregator (daily platform stats, verdict rollup, prediction accuracy)
+    catalog/           — SQLite-backed table + partition registry (LakeCatalog)
+    storage/           — StorageBackend Protocol; LocalStorageBackend + S3StorageBackend; parquet read/write
+    query/             — DuckDBQueryEngine: read-only SQL over registered catalog views
+    orchestration/     — Prefect 3 flow definitions (daily-lake-refresh; gracefully no-ops if prefect absent)
+    api/               — FastAPI router (/datalake/health /tables /partitions /query /lineage)
+    cli/               — Click CLI: doctor migrate list-tables ingest-* build-silver build-gold query retention daily
+  llm/                 — Phase 11: Local LLM Orchestration Layer
+    __init__.py        — exports LLMGateway, LLMResponse, ProviderSelector, SemanticRouter; __version__ = "11.0.0"
+    config.py          — LLMSettings (AEGIS_* env prefix): all provider URLs/keys/models
+    constants.py       — PROVIDER_PRIORITY, timeouts, ERR_* error codes, cost tables
+    errors.py          — AegisLLMError hierarchy: AllProvidersFailed, ProviderTimeout, GuardrailBlock, etc.
+    gateway/           — LLMGateway (create/complete/embed/health/aclose/cost_summary), LLMResponse, middleware, streaming
+    providers/         — OllamaProvider, GroqProvider, OpenRouterProvider, GeminiProvider, AnthropicProvider, OpenAIProvider, VLLMProvider
+    routing/           — ProviderSelector (health TTL cache), SemanticRouter (cosine similarity), TaskRouter (task-type matrix), CostAwareRouter
+    guardrails/        — GuardrailsValidator (max-len/PII/toxic), PIIScrubber (email/phone/SSN/Aadhaar/PAN)
+    instructor/        — InstructorAdapter (Pydantic structured output + retry), per-node output schemas (ScoutOutput, SentinelOutput, …)
+    cache.py           — LLMCache: 2-layer LRU (in-process) + Redis; bypasses temperature > 0.5
+    metrics.py         — Prometheus metrics with _NoOpMetric fallback
+    tokenizer.py       — count_tokens, fits_in_context, truncate_messages (tiktoken-backed)
+    bridge/            — agents_bridge (process-singleton get_gateway/complete_for_agent), phase3_bridge, phase4_bridge
+    registry/          — ModelRegistry (capability + latency catalog), PromptRegistry (Jinja2 + YAML front-matter + audit trail)
+    prompts/           — 10 Jinja2 prompt templates (scout, sentinel, historian, geo_arbitrage, compliance, narrative, hedge, auditor, sourcer, red_team)
+    eval/              — nightly golden-answer eval runner + metrics
+    cli/               — Click: health, complete, embed, eval, pull, cost, models
   dashboard/           — Command Center web UI (FastAPI :8300)
     app.py             — REST + SSE backend (aggregates Postgres, Redis, Phase3, Phase4, Docker)
     cli.py             — `aegis dashboard serve` entry point
@@ -100,9 +138,10 @@ docker/
   Dockerfile.dashboard — multi-stage dashboard server
 alembic/               — Alembic migration scaffolding
 config/                — Prometheus + Grafana configs
-docker-compose.yml     — 11-service dev stack (postgres, redis, minio, flaresolverr,
+docker-compose.yml     — 14-service dev stack (postgres, redis, minio, flaresolverr,
                          predict :8100, execute-api :8200, execute-drain,
-                         dashboard :8300, prometheus, grafana, jaeger)
+                         dashboard :8300, prometheus, grafana, jaeger,
+                         ollama :11434, ollama-init [one-shot], litellm :8080 [profile: llm-proxy])
 docs/phase3/           — Phase 3 architecture, models, operations, integration docs
 SYSTEM_TOUR.md         — Plain-English architectural tour (non-technical reference)
 ```
@@ -237,7 +276,84 @@ uv run --package aegis-execute aegis-execute compose-demo \
   --trend-id demo-1 --verdict ENTER --score 0.82 --confidence 0.75
 ```
 
-### 11. Stack lifecycle
+### 11. Data Lake (Phase 10)
+
+```bash
+# Health check:
+uv run aegis datalake doctor --json-out
+
+# Apply catalog schema migrations:
+uv run aegis datalake migrate
+
+# Ingest Phase 1 signals → Bronze (last 7 days by default):
+uv run aegis datalake ingest-postgres-signals \
+  --dsn postgresql://aegis_app:aegis_app_dev_pw@localhost:5433/aegis
+
+# Ingest Phase 3 predictions → Bronze:
+uv run aegis datalake ingest-postgres-predictions \
+  --dsn postgresql://aegis_app:aegis_app_dev_pw@localhost:5433/aegis
+
+# Ingest Phase 4 alerts → Bronze:
+uv run aegis datalake ingest-postgres-alerts \
+  --dsn postgresql://aegis_app:aegis_app_dev_pw@localhost:5433/aegis
+
+# Drain Phase 2 Redis stream → Bronze:
+uv run aegis datalake ingest-redis
+
+# Build Silver + Gold for today:
+uv run aegis datalake build-silver --date today
+uv run aegis datalake build-gold --date today
+
+# Full daily run (Bronze ingest → Silver → Gold):
+uv run aegis datalake daily \
+  --dsn postgresql://aegis_app:aegis_app_dev_pw@localhost:5433/aegis
+
+# Query the lake with DuckDB:
+uv run aegis datalake query "SELECT platform, COUNT(*) FROM signals GROUP BY 1"
+
+# List registered tables:
+uv run aegis datalake list-tables
+uv run aegis datalake list-tables --layer bronze
+
+# Retention management (dry-run by default):
+uv run aegis datalake retention silver
+uv run aegis datalake retention silver --apply  # actually deletes
+
+# Local filesystem mode (for testing, no MinIO needed):
+uv run aegis datalake doctor --local-root /tmp/aegis-lake --json-out
+```
+
+### 12. Phase 11 LLM CLI
+
+```bash
+# Provider health check (shows latency + circuit state for all configured providers):
+uv run aegis llm health
+uv run aegis llm health --json-out
+
+# One-shot completion (uses gateway fallback chain):
+uv run aegis llm complete "Summarise the latest AI chip news in 3 bullets"
+uv run aegis llm complete "..." --provider groq --model llama-3.3-70b-versatile
+
+# Embedding (defaults to Ollama bge-m3 or Gemini fallback):
+uv run aegis llm embed "text to embed"
+
+# List all registered models with capability tags:
+uv run aegis llm models
+uv run aegis llm models --provider ollama
+
+# Pull Ollama model (wraps `ollama pull`):
+uv run aegis llm pull llama3.2:3b
+uv run aegis llm pull bge-m3
+
+# Cost summary (prints estimated USD spend from in-process metrics):
+uv run aegis llm cost
+
+# Run nightly eval against golden-answer fixture set:
+uv run aegis llm eval
+uv run aegis llm eval --fixture-dir src/aegis/llm/eval/golden/
+```
+
+### 13. Stack lifecycle
 
 ```bash
 uv run aegis up               # start all services (detached)
@@ -269,7 +385,7 @@ uv run python -m pytest aegis-phase4/tests/ -q -p no:hypothesis
 
 ---
 
-## Phase status — verified 2026-05-19
+## Phase status — verified 2026-05-22
 
 | Phase | Status | Notes |
 |-------|--------|-------|
@@ -279,6 +395,8 @@ uv run python -m pytest aegis-phase4/tests/ -q -p no:hypothesis
 | Phase 3 — Predict | ✅ Green | Heuristic-first ML core; 663 tests pass; 4/4 integration tests pass; coverage 82.79% |
 | Phase 4 — Execute | ✅ Green | Alert pipeline + killswitch + SSE; 161 tests pass; execute-api :8200 |
 | Phase 5 — Autonomous Scale | ✅ Green | OLS velocity + PCA denoising + confidence gate + SwarmOrchestrator multi-wave parallel harvest + topic intelligence routing + `aegis swarm` CLI; 1051 tests pass; coverage 78.00% |
+| Phase 10 — Data Lake | ✅ Green | Bronze/Silver/Gold medallion over Parquet on MinIO; DuckDB query engine; Prefect 3 orchestration; `aegis datalake` CLI; 160 unit tests pass; 0 ruff violations; integrated into main package at `src/aegis/datalake/` |
+| Phase 11 — LLM Orchestration | ✅ Green | LLMGateway with circuit breaker + health-based selector; Ollama→Groq→OpenRouter→Gemini fallback; SemanticRouter; GuardrailsValidator; InstructorAdapter; 167 unit tests pass; `aegis llm` CLI; integrated at `src/aegis/llm/` |
 | Dashboard | ✅ Green | Command Center on :8300; SSE live feed; ops console; system health; signal stats; agent intelligence view |
 | Orchestration | ✅ Green | `aegis analyze` / `aegis topic` / `aegis daily` / `aegis swarm` → full pipeline → Phase 4 stream |
 | Code quality | ✅ Green | 0 ruff violations across all phases |
@@ -330,6 +448,10 @@ Or just run `aegis daily` which does all of the above automatically.
 | aegis-execute-api | 8200 | Phase 4 FastAPI alert + SSE server |
 | aegis-execute-drain | — | Phase 4 outbox drain worker (no exposed port) |
 | aegis-dashboard | 8300 | Command Center web UI (aggregates all phases) |
+| aegis-prefect | 4200 | Phase 10 Prefect 3 orchestration UI (optional) |
+| ollama | 11434 | Phase 11 local LLM runtime (OpenAI-compat `/v1/chat/completions`) |
+| ollama-init | — | One-shot: pulls `bge-m3` + `llama3.2:3b` into Ollama on first start |
+| litellm | 8080 | Phase 11 LiteLLM proxy (profile: `llm-proxy`; optional) |
 | aegis-prometheus | 9091 | Metrics scrape |
 | aegis-grafana | 3001 | Dashboards (admin/aegis_dev_admin_pw) |
 | aegis-jaeger | 16687 | Distributed traces |
@@ -368,6 +490,29 @@ Redis: `redis://localhost:6380/0`
 - **Phase 5 velocity regression**: `aegis.scrape.analytics.compute_velocity_slope()` runs per-cluster in `detect_patterns()`. OLS slope > `HIGH_PRIORITY_SLOPE` (2.0 signals/hour) AND R² > 0.3 → `PatternCluster.is_high_priority=True`. High-priority clusters sort first in the output list. The threshold is configurable via `AEGIS_SCRAPE_VELOCITY_HIGH_PRIORITY_SLOPE`.
 - **Phase 5 PCA denoising**: `pca_denoise_vectors()` is called on TF-IDF vectors in `detect_patterns()` before clustering. Falls back to identity (no-op) when numpy is absent or corpus < 3 signals. Retains 90% of variance by default.
 - **Phase 5 `data_confidence` field**: the Phase 2 → Phase 4 stream payload now includes `data_confidence: float` (0–1). Populated from `TopicScrapeResult.batch_confidence` when `scrape_topic()` feeds `run_trend()`. Defaults to 1.0 for pipelines that bypass the scrape layer.
+- **Phase 10 module path**: `aegis.datalake` lives at `src/aegis/datalake/` — a subpackage of the main `aegis` namespace. **Not** a separate workspace member. Import as `from aegis.datalake import DataLake`.
+- **Phase 10 storage layout**: `{bucket}/{layer}/{table}/dt=YYYY-MM-DD/tenant_id={uuid}/{batch_id}.parquet` + `_manifest.json`. Both S3/MinIO and local-filesystem backends honour this layout. Use `DataLakeSettings(use_local_filesystem=True)` for offline dev and tests (no MinIO needed).
+- **Phase 10 idempotent writes**: every Parquet batch has a content-addressable `batch_id` (sha256 of canonical JSON). Re-running the same data produces the same `batch_id` — safe to replay without duplicates.
+- **Phase 10 catalog**: SQLite file at `~/.aegis/datalake/catalog.sqlite3` (configurable). Tracks registered tables and partitions. Run `aegis datalake migrate` after first install to create the schema.
+- **Phase 10 DuckDB**: embedded in-process engine. Memory limit 2 GB, 4 threads (configurable). Tables are registered as views pointing to Parquet globs in the storage layer. Query timeout 30 s by default.
+- **Phase 10 NaN check idiom**: `v != v` (and `f != f`) in `silver/builder.py` is the intentional IEEE-754 NaN check — suppressed with `# noqa: PLR0124`. Do not replace with `math.isnan()` as that raises on non-float types.
+- **Phase 10 Prefect**: flows degrade gracefully — `prefect` is an optional extra. When absent, the decorator stubs return identity functions so the flow code imports and runs without a Prefect server. Install with `uv sync --extra datalake-orchestration`.
+- **Phase 10 `os.replace` in LocalStorageBackend**: kept intentionally (not replaced with `Path.replace()`) so the unit test can monkeypatch `os.replace` to simulate atomic-rename failure. Suppressed with `# noqa: PTH105`.
+- **Phase 10 dependencies**: `pyarrow>=17`, `duckdb>=1.1,<1.2`, `boto3>=1.34` are in the `datalake` extra. `prefect>=3,<4` is in `datalake-orchestration`. All core ingest (asyncpg, redis) is already in root deps.
+- **Phase 11 module path**: `aegis.llm` lives at `src/aegis/llm/` — a top-level subpackage of the main `aegis` namespace. **Not** a workspace member. Import as `from aegis.llm import LLMGateway`.
+- **Phase 11 backward compat**: `src/aegis/agents/llm/` (`LLMRouter`) is fully preserved. The `__init__.py` there re-exports `get_gateway`/`complete_for_agent` from `aegis.llm.bridge.agents_bridge` when Phase 11 is installed; gracefully falls back to `None` when absent. Agent nodes need no import changes.
+- **Phase 11 provider priority order**: `ollama(0) → vllm(1) → groq(2) → openrouter(3) → gemini(4) → anthropic(5) → openai(6)`. Lower number = tried first. `ProviderSelector` skips unhealthy providers based on TTL-cached health checks (60 s TTL).
+- **Phase 11 circuit breaker**: each `BaseProvider` has a per-instance `_CircuitState`. After `CIRCUIT_BREAKER_FAILURE_THRESHOLD` (5) consecutive failures the circuit opens. Auto-recovers after `CIRCUIT_BREAKER_RECOVERY_S` (60 s). Raises `CircuitOpen` immediately when open.
+- **Phase 11 SemanticRouter**: pure-Python cosine similarity (no external library). Falls back gracefully when no routes match (`threshold=0.75` default). Short-circuits the LLM call entirely on a match — zero latency, zero tokens.
+- **Phase 11 guardrails**: `GuardrailsValidator` runs on every LLM output. Max length 8192 chars, PII regex (email/phone/SSN/Aadhaar/PAN), toxic-pattern blocklist. Raises `GuardrailBlock` (AEGIS-LLM-0003). `PIIScrubber` runs on *input* side and redacts before sending to any provider.
+- **Phase 11 InstructorAdapter**: extracts typed Pydantic models from raw LLM text. Injects a JSON schema instruction into the system prompt; parses with `model_validate_json()`; on failure, sends the error back to the LLM for self-correction (1 retry). Per-node schemas are in `aegis.llm.instructor.schemas`.
+- **Phase 11 LLM cache**: key = SHA256(provider + model + messages + temperature). Bypassed when `temperature > 0.5`. In-process LRU (default 512 entries) + optional Redis layer. Cache hit returns instantly without provider call.
+- **Phase 11 PromptRegistry**: Jinja2 templates with YAML front-matter (`name`, `version`, `required_vars`, `description`). `autoescape=False` is intentional — these are LLM text prompts, not HTML. All renders are logged to `_audit_log` for reproducibility.
+- **Phase 11 bridge pattern**: `agents_bridge` holds the process-singleton `_gateway`; `complete_for_agent(node_name, messages)` is the one call agent nodes should use — it goes through the full circuit-breaker + cache + guardrails stack. `phase3_bridge` and `phase4_bridge` provide deterministic fallback strings when the gateway is unavailable.
+- **Phase 11 Ollama**: `http2=False` (same rule as reddit-rss — Ollama's HTTP server doesn't support HTTP/2). Health check hits `/api/tags`. Model pull is via `/api/pull` (streaming). Set `AEGIS_DISABLE_OLLAMA=1` to skip in tests.
+- **Phase 11 LiteLLM**: optional proxy behind Docker Compose profile `llm-proxy`. Start with `docker compose --profile llm-proxy up -d litellm`. Provides a unified OpenAI-compat endpoint aggregating all providers. Config: `config/litellm_config.yaml`.
+- **Phase 11 dependencies**: `sentence-transformers>=3` is in the `llm` extra (for SemanticRouter embeddings). `tiktoken>=0.7` is in `llm-tokenizer` extra (for accurate token counting). All provider HTTP clients use `httpx` which is already a root dep.
+- **Phase 11 Prometheus metrics**: `aegis.llm.metrics` defines counters/histograms for requests, latency, token usage, guardrail blocks, cache hits. Falls back to `_NoOpMetric` stubs when `prometheus_client` is absent — import never fails.
 
 ---
 
@@ -382,8 +527,9 @@ AEGIS_REDIS_URL=redis://127.0.0.1:6379/15
 ```
 
 Tests run in `asyncio_mode = auto` with `asyncio_default_fixture_loop_scope = "function"`.  
-Coverage floor: 78% (`--cov-fail-under=78`). Current: 79.75% (775 tests).  
-Phase 4 tests run separately: 161 tests, no coverage threshold (standalone pytest config).
+Coverage floor: 78% (`--cov-fail-under=78`). Current: ~79% (1389+ tests including Phase 11).  
+Phase 4 tests run separately: 161 tests, no coverage threshold (standalone pytest config).  
+Phase 11 provider adapters excluded from coverage (infrastructure-dependent; need live Ollama/Groq/etc.).
 
 ---
 
@@ -403,6 +549,13 @@ Phase 4 tests run separately: 161 tests, no coverage threshold (standalone pytes
 - **Dashboard stream key**: dashboard reads `entry_data.get("body")` (not `"payload"`) from `aegis:phase2:graph_results`. The `"body"` field contains a JSON-encoded string of the full result payload.
 - **`google-news` and `bing-news`** are available as `--source` options in `aegis scrape` as of 2026-05-18. They pass `--query` as the search term.
 - **`scrape_topic()` vs individual `scrape`**: `scrape_topic` (used by `aegis topic`) runs up to ~30 parallel adapter tasks simultaneously. It uses its own per-task adapter instances and does NOT go through the CLI's `_build_adapter` path. Both paths are valid but separate code flows.
+- **Phase 11 `agents.llm` shim**: `src/aegis/agents/llm/__init__.py` re-exports `get_gateway`/`complete_for_agent` from `aegis.llm.bridge.agents_bridge`. The `_phase11_available` flag (lowercase) is `True` when Phase 11 is installed. If you see `None` for those names, the `llm` extra is not installed.
+- **Phase 11 Ollama http2=False**: `OllamaProvider` forces `http2=False` — Ollama's embedded HTTP server does not support HTTP/2 and will return `RemoteProtocolError` if `h2` is installed and negotiated.
+- **Phase 11 OpenRouter 429 rotation**: on rate-limit, `OpenRouterProvider._next_free_model()` rotates through `OPENROUTER_FREE_MODELS` list and raises `RuntimeError` to trigger the gateway retry loop. The next retry picks the new model automatically.
+- **Phase 11 Gemini message format**: Gemini does not use OpenAI `messages` format. `GeminiProvider` converts `[{"role": "user", "content": "…"}]` to Gemini `contents=[{"role": "user", "parts": [{"text": "…"}]}]` internally. System messages are prepended as a `user` turn.
+- **Phase 11 `TokenUsage.cost_usd`**: this is a regular method (not a `@property`) because it takes `input_cost_per_1m` and `output_cost_per_1m` as arguments. Do not add `@property` — PLR0206 forbids properties with parameters.
+- **Phase 11 PromptRegistry `autoescape=False`**: suppressed with `# noqa: S701`. These are LLM text templates, not HTML — autoescape would corrupt prompt content with HTML entities.
+- **Phase 11 `_JINJA_AVAILABLE` in prompt_registry**: Pyright flags ALL_CAPS bool assigned in `try/except` as constant-redefinition. This is a known Pyright false positive; the code is correct Python. Do not rename the flag — just suppress or ignore the Pyright diagnostic.
 
 ---
 

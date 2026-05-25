@@ -2032,5 +2032,38 @@ def swarm_agents() -> None:
     click.echo()
 
 
+# ---------------------------------------------------------------------
+# Data Lake command group (Phase 10)
+# ---------------------------------------------------------------------
+
+
+@main.group("datalake")
+def datalake_group() -> None:
+    """Data Lake — Bronze/Silver/Gold analytics over Parquet on MinIO."""
+
+
+try:
+    from aegis.datalake.cli.main import cli as _datalake_cli
+
+    for _cmd in _datalake_cli.commands.values():
+        datalake_group.add_command(_cmd)
+except Exception:  # lake optional-deps may be absent
+    pass
+
+
+@main.group("llm")
+def llm_group() -> None:
+    """Phase 11 — Local LLM Orchestration (Ollama · Groq · OpenRouter · Gemini)."""
+
+
+try:
+    from aegis.llm.cli.commands import llm_group as _llm_cli
+
+    for _cmd in _llm_cli.commands.values():
+        llm_group.add_command(_cmd)
+except Exception:  # llm optional-deps (sentence-transformers) may be absent
+    pass
+
+
 if __name__ == "__main__":  # pragma: no cover
     main()

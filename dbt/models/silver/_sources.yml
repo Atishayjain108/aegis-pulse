@@ -1,0 +1,50 @@
+version: 2
+
+sources:
+  - name: silver
+    description: "Silver layer — typed, conformed tables from the AEGIS Pulse lake."
+    meta:
+      owner: "data-engineering"
+    tables:
+      - name: signals
+        description: "Cleaned per-signal records with platform tier classification."
+        identifier: silver_signals
+        columns:
+          - name: signal_id
+            description: "Stable upstream identifier."
+            tests:
+              - not_null
+          - name: tenant_id
+            description: "RLS scoping key."
+            tests:
+              - not_null
+          - name: platform
+            description: "Lower-cased source platform."
+            tests:
+              - not_null
+          - name: platform_tier
+            description: "TIER_1_INTENT / TIER_2_COMMERCE / TIER_3_SEARCH / TIER_4_OTHER."
+            tests:
+              - accepted_values:
+                  values: ['TIER_1_INTENT', 'TIER_2_COMMERCE', 'TIER_3_SEARCH', 'TIER_4_OTHER']
+          - name: captured_at
+            description: "UTC timestamp of capture."
+            tests:
+              - not_null
+          - name: engagement_total
+            description: "Sum of views, likes, comments, shares, saves."
+
+      - name: predictions
+        description: "Cleaned per-prediction records from Phase 3."
+        identifier: silver_predictions
+        columns:
+          - name: prediction_id
+            tests:
+              - not_null
+              - unique
+          - name: p_breakout
+            description: "Clipped to [0,1]."
+          - name: p_decline
+            description: "Clipped to [0,1]."
+          - name: confidence
+            description: "Clipped to [0,1]."

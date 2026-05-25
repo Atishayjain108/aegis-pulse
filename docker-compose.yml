@@ -364,6 +364,132 @@ services:
     networks:
       - aegis
 
+  # -----------------------------------------------------------------
+  # Phase 10 — Prefect 3 orchestration server (optional UI)
+  # The lake itself runs as a library inside the main Python process.
+  # Prefect is only needed if you want the flow-run UI at :4200.
+  # -----------------------------------------------------------------
+  prefect:
+    image: prefecthq/prefect:3-latest
+    container_name: aegis-prefect
+    restart: unless-stopped
+    command: prefect server start --host 0.0.0.0
+    environment:
+      PREFECT_HOME: /opt/prefect
+      PREFECT_API_URL: http://localhost:4200/api
+      PREFECT_SERVER_API_HOST: 0.0.0.0
+      PREFECT_LOGGING_LEVEL: INFO
+    ports:
+      - "127.0.0.1:4200:4200"
+    volumes:
+      - aegis_prefect_data:/opt/prefect
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:4200/api/health').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - aegis
+
+  # -----------------------------------------------------------------
+  # Phase 11 — Ollama local inference server (primary LLM path)
+  # Zero cost, fully private, no internet required.
+  # Models are pulled on first boot by aegis-ollama-init.
+  # GPU passthrough commented out — uncomment if NVIDIA GPU is present.
+  # -----------------------------------------------------------------
+  ollama:
+    image: ollama/ollama:0.4.7
+    container_name: aegis-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - aegis_ollama_models:/root/.ollama
+    environment:
+      OLLAMA_HOST: "0.0.0.0:11434"
+      OLLAMA_ORIGINS: "*"
+      OLLAMA_NUM_CTX: "32768"
+      OLLAMA_MAX_LOADED_MODELS: "2"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:11434/api/version"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+    networks:
+      - aegis
+
+  # -----------------------------------------------------------------
+  # Phase 11 — Ollama model bootstrap (one-shot init container)
+  # Pulls the embedding model (bge-m3) and fast chat model (llama3.2:3b)
+  # on first start. Exits cleanly once done; safe to re-run.
+  # Heavy models (qwen2.5:14b) are pulled manually: aegis llm pull qwen2.5:14b
+  # -----------------------------------------------------------------
+  ollama-init:
+    image: curlimages/curl:8.10.1
+    container_name: aegis-ollama-init
+    restart: "no"
+    depends_on:
+      ollama:
+        condition: service_healthy
+    entrypoint: >
+      sh -c "
+        echo '[ollama-init] Pulling bge-m3 embedding model...' &&
+        curl -sf -X POST http://aegis-ollama:11434/api/pull
+          -H 'Content-Type: application/json'
+          -d '{\"name\":\"bge-m3\"}' &&
+        echo '[ollama-init] Pulling llama3.2:3b fast chat model...' &&
+        curl -sf -X POST http://aegis-ollama:11434/api/pull
+          -H 'Content-Type: application/json'
+          -d '{\"name\":\"llama3.2:3b\"}' &&
+        echo '[ollama-init] Bootstrap complete.'
+      "
+    networks:
+      - aegis
+
+  # -----------------------------------------------------------------
+  # Phase 11 — LiteLLM proxy (optional OpenAI-compatible gateway)
+  # Exposes all providers behind a single OpenAI-format endpoint.
+  # Useful when external tools (LangChain, Flowise) need AEGIS providers.
+  # Start separately: docker compose --profile llm-proxy up aegis-litellm
+  # -----------------------------------------------------------------
+  litellm:
+    image: ghcr.io/berriai/litellm:main-v1.52.9
+    container_name: aegis-litellm
+    restart: unless-stopped
+    profiles: ["llm-proxy"]
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config/litellm_config.yaml:/app/config.yaml:ro
+    command: ["--config", "/app/config.yaml", "--port", "8080"]
+    environment:
+      AEGIS_OLLAMA_BASE_URL: "http://aegis-ollama:11434"
+      AEGIS_GROQ_API_KEY: "${AEGIS_GROQ_API_KEY:-}"
+      AEGIS_OPENROUTER_API_KEY: "${AEGIS_OPENROUTER_API_KEY:-}"
+      AEGIS_GEMINI_API_KEY: "${AEGIS_GEMINI_API_KEY:-}"
+      AEGIS_LITELLM_MASTER_KEY: "${AEGIS_LITELLM_MASTER_KEY:-sk-litellm-dev-key-not-for-prod}"
+      AEGIS_PG_DSN: "${AEGIS_PG_DSN:-}"
+    depends_on:
+      ollama:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    networks:
+      - aegis
+
 # ---------------------------------------------------------------------
 # Volumes
 # ---------------------------------------------------------------------
@@ -378,6 +504,10 @@ volumes:
     name: aegis_prometheus_data
   aegis_grafana_data:
     name: aegis_grafana_data
+  aegis_prefect_data:
+    name: aegis_prefect_data
+  aegis_ollama_models:
+    name: aegis_ollama_models
 
 # ---------------------------------------------------------------------
 # Networks

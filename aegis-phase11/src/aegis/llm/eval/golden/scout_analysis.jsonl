@@ -1,0 +1,12 @@
+# Golden answer cases for scout_analysis template
+# Format: one JSON object per line
+# Fields:
+#   input_vars: dict of template variables
+#   expected_contains: strings that MUST appear in the output (case-insensitive)
+#   expected_not_contains: strings that must NOT appear
+
+{"input_vars": {"trend_title": "AI-powered sleep trackers", "signal_count": 850, "platforms": ["reddit", "tiktok", "amazon"], "velocity_1h": 42.5, "sentiment": 0.72, "commercial_intent": 0.81}, "expected_contains": ["PROCEED", "commercial"], "expected_not_contains": ["BLOCK"]}
+
+{"input_vars": {"trend_title": "Discontinued product hype", "signal_count": 12, "platforms": ["reddit"], "velocity_1h": 0.3, "sentiment": -0.1, "commercial_intent": 0.05}, "expected_contains": ["BLOCK", "weak"], "expected_not_contains": ["PROCEED"]}
+
+{"input_vars": {"trend_title": "Viral fitness band", "signal_count": 320, "platforms": ["tiktok", "instagram"], "velocity_1h": 18.0, "sentiment": 0.55, "commercial_intent": 0.65}, "expected_contains": ["opportunity", "risk"], "expected_not_contains": []}

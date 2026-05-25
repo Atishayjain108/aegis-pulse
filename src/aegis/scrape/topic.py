@@ -492,6 +492,7 @@ async def scrape_topic(
     dedup_threshold: float = 0.82,
     dedup_lookback_hours: int = 72,
     detect_patterns: bool = True,
+    stream_client: Any | None = None,
 ) -> TopicScrapeResult:
     """The single entry-point for topic-based intelligence scraping.
 
@@ -717,6 +718,17 @@ async def scrape_topic(
             _log.error("topic.insert_failed", error=str(exc))
     elif dry_run:
         result.total_inserted = 0
+
+    # ── Real-time stream bridge (best-effort, non-blocking) ──────────
+    if stream_client is not None and unique_signals:
+        from aegis.scrape.stream_bridge import emit_to_stream
+
+        await emit_to_stream(
+            stream_client,
+            [s.model_dump(mode="json") for s in unique_signals],
+            topic=topic,
+            tenant_id=str(tenant_id) if tenant_id is not None else "default",
+        )
 
     result.finished_at = datetime.now(UTC)
     _log.info(
