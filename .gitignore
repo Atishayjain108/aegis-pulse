@@ -41,6 +41,8 @@ aegis-support-*.zip
 # OS
 .DS_Store
 Thumbs.db
+# Windows Zone.Identifier alternate data streams (WSL downloads)
+*:Zone.Identifier
 
 # ChromaDB local data
 chroma/
