@@ -1,7 +1,9 @@
 """tests/unit/llm/test_routing.py — routing layer unit tests"""
 
 from __future__ import annotations
+
 from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 
 

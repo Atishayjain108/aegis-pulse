@@ -396,7 +396,7 @@ async def test_swarm_persistence_no_op_without_pool() -> None:
 async def test_make_adapter_fn_import_error_returns_empty() -> None:
     from aegis.scrape.swarm import _make_adapter_fn  # type: ignore[attr-defined]
 
-    fn = _make_adapter_fn("nonexistent.module.xyz", "NonexistentAdapter", None)
+    fn = _make_adapter_fn("test", "nonexistent.module.xyz", "NonexistentAdapter", None)
     result = await fn(None, None, 5)
     assert result == []
 
@@ -503,7 +503,7 @@ async def test_make_adapter_fn_success_model_dump() -> None:
     mock_mod.MockCfg = MockCfg
 
     with patch("aegis.scrape.swarm.importlib.import_module", return_value=mock_mod):
-        fn = _make_adapter_fn("fake.module", "MockCls", "MockCfg")
+        fn = _make_adapter_fn("test", "fake.module", "MockCls", "MockCfg")
         result = await fn(None, None, 5)
 
     assert len(result) == 1
@@ -535,7 +535,7 @@ async def test_make_adapter_fn_success_dict_signal() -> None:
     mock_mod.MockCls = MagicMock(return_value=mock_adapter)
 
     with patch("aegis.scrape.swarm.importlib.import_module", return_value=mock_mod):
-        fn = _make_adapter_fn("fake.module", "MockCls", None)
+        fn = _make_adapter_fn("test", "fake.module", "MockCls", None)
         result = await fn(None, None, 5)
 
     assert sig_dict in result
@@ -563,7 +563,12 @@ async def test_swarm_persistence_publish_redis_sends() -> None:
         wave_stats=[],
     )
     await persistence.publish_redis(result)
-    mock_redis.xadd.assert_called_once()
+    mock_redis.xadd.assert_called_once_with(
+        "aegis:swarm:results",
+        {"body": result.model_dump_json()},
+        maxlen=10_000,
+        approximate=True,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -731,7 +736,7 @@ async def test_make_adapter_fn_instantiation_error_returns_empty() -> None:
     mock_mod.BrokenCls = MagicMock(side_effect=RuntimeError("init failed"))
 
     with patch("aegis.scrape.swarm.importlib.import_module", return_value=mock_mod):
-        fn = _make_adapter_fn("fake.module", "BrokenCls", None)
+        fn = _make_adapter_fn("test", "fake.module", "BrokenCls", None)
         result = await fn(None, None, 5)
 
     assert result == []
@@ -754,7 +759,7 @@ async def test_make_adapter_fn_setup_exception_returns_empty() -> None:
     mock_mod.Cls = MagicMock(return_value=mock_adapter)
 
     with patch("aegis.scrape.swarm.importlib.import_module", return_value=mock_mod):
-        fn = _make_adapter_fn("fake.module", "Cls", None)
+        fn = _make_adapter_fn("test", "fake.module", "Cls", None)
         result = await fn(None, None, 5)
 
     assert result == []
@@ -784,7 +789,7 @@ async def test_make_adapter_fn_multiple_signals() -> None:
     mock_mod.Cls = MagicMock(return_value=mock_adapter)
 
     with patch("aegis.scrape.swarm.importlib.import_module", return_value=mock_mod):
-        fn = _make_adapter_fn("fake.module", "Cls", None)
+        fn = _make_adapter_fn("test", "fake.module", "Cls", None)
         result = await fn(None, None, 5)
 
     assert len(result) == 3

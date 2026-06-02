@@ -36,9 +36,9 @@ authors = [{ name = "AEGIS Pulse Team" }]
 # ----------------------------------------------------------------------------
 dependencies = [
   # --- Core type system / validation ---
-  "pydantic>=2.10,<3",               # rationale: v2 API + PEP 695 generics; >=2.10 required by Phase 3 predict
-  "pydantic-settings>=2.5,<3",       # rationale: env-var/secret loading with pydantic v2 typing
-  "typing-extensions==4.12.2",       # rationale: backports for TypeIs/ReadOnly on 3.12
+  "pydantic>=2.11,<3",               # rationale: v2 API + PEP 695 generics; >=2.11 matches baseline lockfile (03e2bcf) and all passing tests
+  "pydantic-settings>=2.5,<3",       # rationale: >=2.5 required by Phase 3; upper bound <3 for v2 API compat
+  "typing-extensions>=4.12,<5",      # rationale: >=4.12 needed by pydantic v2 + Annotated/TypeVar generics; <5 avoids next major
   # --- Async HTTP / networking ---
   "httpx[http2]>=0.27,<0.30",        # rationale: HTTP/2 support + timeouts-everywhere API; >=0.28 used by Phase 3 serving bench
   "aiohttp==3.10.10",                # rationale: needed by several upstream libs (praw-async, apify)
@@ -56,9 +56,11 @@ dependencies = [
   "opentelemetry-api==1.27.0",
   "opentelemetry-sdk==1.27.0",       # rationale: matched SDK<->API; trace propagation
   "opentelemetry-instrumentation-asyncpg==0.48b0",    # rationale: auto-trace DB queries
+  "opentelemetry-instrumentation-fastapi==0.48b0",    # rationale: auto-trace FastAPI requests (Phase 14)
   "opentelemetry-instrumentation-httpx==0.48b0",      # rationale: auto-trace HTTP calls
   "opentelemetry-instrumentation-redis==0.48b0",      # rationale: auto-trace Redis ops
-  "opentelemetry-exporter-otlp-proto-grpc==1.27.0",   # rationale: OTLP→Tempo/Jaeger
+  "opentelemetry-instrumentation-sqlalchemy==0.48b0", # rationale: auto-trace SQLAlchemy queries (Phase 14)
+  "opentelemetry-exporter-otlp-proto-grpc==1.27.0",   # rationale: OTLP→Jaeger (Phase 14 tracing export)
   "prometheus-client==0.21.0",       # rationale: metrics server + registry
   "sentry-sdk[asyncpg,httpx]==2.17.0", # rationale: error tracking; compatible sub-extras
   # --- Resilience primitives ---
@@ -66,11 +68,11 @@ dependencies = [
   "aiobreaker==1.2.0",               # rationale: circuit breaker for asyncio (pybreaker fork)
   # --- Secrets / crypto ---
   "cryptography==43.0.1",            # rationale: HMAC for Phase 2 msg signing + Ed25519 in Phase 20
-  "pyjwt[crypto]==2.9.0",            # rationale: dashboard auth in Phase 4 (declared early — shared dep)
+  "pyjwt[crypto]==2.13.0",           # rationale: dashboard auth in Phase 4; 2.13.0 fixes PYSEC-2026-120 + PYSEC-2025-183
   # --- Config / env ---
-  "python-dotenv==1.0.1",            # rationale: .env loading in dev; Vault/SOPS used in prod
+  "python-dotenv==1.2.2",            # rationale: .env loading in dev; 1.2.2 fixes CVE-2026-28684
   # --- Serialisation ---
-  "orjson==3.10.7",                  # rationale: ~2× faster than stdlib for our JSON-heavy pipeline
+  "orjson==3.11.9",                  # rationale: ~2× faster than stdlib; 3.11.9 fixes PYSEC-2026-107
   "msgpack==1.1.0",                  # rationale: Redis Streams payload serialisation
   # --- CLI / utility ---
   "click==8.1.7",                    # rationale: backbone for the `aegis` CLI
@@ -79,7 +81,7 @@ dependencies = [
   "jinja2==3.1.4",                   # rationale: prompt templates for agent nodes; FileSystemLoader + StrictUndefined
   # --- Datetime / timezones ---
   # (zoneinfo is stdlib on 3.12; no extra dep)
-  "langgraph>=0.2",
+  "langgraph>=0.2,<0.5",
 ]
 
 # ----------------------------------------------------------------------------
@@ -125,7 +127,8 @@ queue = [
 
 # Phase 2 — multi-agent intelligence layer
 agents = [
-  "langgraph>=0.2",                  # rationale: LangGraph DAG runtime for 10-node agent pipeline
+  "langgraph>=0.2,<0.5",             # rationale: LangGraph DAG runtime; pinned with langchain-core<1.0 to avoid langchain-protocol which uses PEP-728 TypedDict(extra_items=) incompatible with Python 3.12 stdlib TypedDict
+  "langchain-core>=0.3,<1.0",       # rationale: hard upper bound to prevent pulling in langchain-protocol 0.0.15+ (breaks on Python 3.12); langgraph only uses StateGraph/END/START which are stable across 0.3.x
 ]
 
 # Phase 2 — semantic memory (histogram agent, HISTORIAN analogues lookup)
@@ -200,6 +203,24 @@ llm-tokenizer = [
   "tiktoken>=0.8,<1",                # rationale: exact OpenAI BPE token counts; optional — heuristic is ±20%
 ]
 
+# Phase 8 — Regulatory & Compliance Engine
+# Core deps (httpx, pydantic, structlog, pydantic-settings) are already in base.
+# This group adds optional CLIP-based counterfeit image detection.
+compliance = [
+  "Pillow>=10,<12",                   # rationale: image decoding for CLIP counterfeit detection
+]
+
+# Phase 8 — CLIP counterfeit image similarity (heavy; GPU optional)
+compliance-clip = [
+  "openai-clip",                      # rationale: CLIP ViT model for image-brand similarity scoring
+  "torch>=2.0,<3",                    # rationale: CLIP runtime; CPU inference only in CI
+]
+
+# Phase 5 Hardening — TLS/JA3/JA4 fingerprint diversity, honeypot avoidance, ML defense
+harden = [
+  "aegis-harden",                    # rationale: adversarial hardening library (workspace member); installs aegis.harden.*
+]
+
 # Dev tooling — linters, type-checkers, tests
 dev = [
   "ruff==0.6.9",                     # rationale: replaces black+isort+flake8 — one tool, stricter
@@ -223,7 +244,7 @@ dev = [
 ]
 
 [project.scripts]
-aegis = "aegis.cli:main"             # rationale: main CLI entry point
+aegis = "aegis.cli.main:main"        # rationale: direct module reference avoids double-import warning when Python loads aegis.cli package then re-executes aegis.cli.main
 aegis-predict = "aegis.predict.cli.commands:_typer_app_or_die"  # rationale: Phase 3 standalone predict CLI
 aegis-dashboard = "aegis.dashboard.cli:serve"  # rationale: shortcut to start the Command Center UI
 aegis-datalake = "aegis.datalake.cli.main:cli"  # rationale: Phase 10 standalone data lake CLI
@@ -244,6 +265,9 @@ python-downloads = "never"  # we install via pyenv, not uv-managed; avoids dupli
 torch = [
   { index = "pytorch-cpu" },
 ]
+aegis-harden = { workspace = true }
+aegis-security = { workspace = true }
+aegis-phase13 = { workspace = true }
 
 [[tool.uv.index]]
 name = "pytorch-cpu"
@@ -256,7 +280,7 @@ explicit = true
 # Phase 4's looser python constraint (>=3.12,<3.14) is narrowed by this root.
 # ============================================================================
 [tool.uv.workspace]
-members = ["aegis-phase4"]
+members = ["aegis-phase4", "aegis-harden", "aegis-phase12", "aegis-phase13"]
 
 # ============================================================================
 # Hatchling — build backend
@@ -274,6 +298,7 @@ src = ["src", "tests"]
 extend-exclude = [
   "bootstrap/",   # bash/powershell, not Python
   ".venv/",
+  "aegis-harden/",  # workspace member with own ruff config + per-file ignores
 ]
 
 [tool.ruff.lint]
@@ -340,8 +365,10 @@ ignore = [
 flake8-boolean-trap = { extend-allowed-calls = [] }
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["ANN", "S101", "PLR2004", "T20"]                 # tests are less strict
+"tests/**" = ["ANN", "S101", "PLR2004", "T20", "PLC0415"]      # tests are less strict; PLC0415: in-test imports for monkeypatching singleton state
 "aegis-phase4/tests/**" = ["ANN", "S101", "PLR2004", "T20"]   # Phase 4 tests same rules
+"aegis-phase13/tests/**" = ["ANN", "S101", "PLR2004", "T20", "ARG", "FBT"]  # Phase 13 tests same rules + extra fixture-param ignores
+"aegis-phase13/src/aegis/testing/**" = ["ANN001", "ANN002", "ANN003"]        # Test helpers use *args/**kwargs patterns
 "src/aegis/cli/**" = ["T20"]                                   # CLI may print
 "aegis-phase4/src/aegis/execute/cli/**" = ["T20"]              # Phase 4 CLI may print
 "src/aegis/datalake/cli/**" = ["T20"]                          # Phase 10 lake CLI may print
@@ -422,6 +449,9 @@ module = [
   "uvicorn.*",
   # Phase 11 — optional token counting dep
   "tiktoken.*",
+  # Phase 5 Hardening — optional workspace member; always installed via uv sync --all-packages
+  # but typed as optional so adapters degrade cleanly without it.
+  "aegis.harden.*",
 ]
 ignore_missing_imports = true
 
@@ -439,7 +469,7 @@ addopts = [
   "--cov-report=xml",
   "--cov-fail-under=78",              # CLI + infra excluded from unit coverage (see coverage.run.omit)
 ]
-testpaths = ["tests", "aegis-phase4/tests"]
+testpaths = ["tests", "aegis-phase4/tests", "aegis-phase13/tests/unit"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 markers = [
@@ -456,6 +486,11 @@ filterwarnings = [
   "ignore::DeprecationWarning:pkg_resources.*", # Phase 2: chromadb transitive
   "ignore::DeprecationWarning:bs4.*",          # Phase 2: lxml HTMLParser strip_cdata deprecation in bs4 4.12.3
   "ignore::ResourceWarning",           # Phase 2: langgraph leaves UDS sockets open on teardown (known upstream issue)
+  "ignore:Config key.*is set in model_config but will be ignored.*:UserWarning:pydantic_settings",  # Prefect sets toml_file/pyproject_toml_table_header in model_config without matching source; pydantic-settings >=2.13 warns about it
+  "ignore::DeprecationWarning:aegis.harden.*",  # Phase 5 harden workspace member; its own conftest suppresses these internally
+  "ignore::PendingDeprecationWarning:langgraph.*",  # langgraph 0.4.x LangChainPendingDeprecationWarning (allowed_objects default)
+  "ignore::DeprecationWarning:schemathesis.*",       # schemathesis accesses jsonschema.__version__ (upstream bug; not our code)
+  "ignore::DeprecationWarning:jsonschema.*",          # jsonschema __version__ attr accessed by schemathesis transitive path
 ]
 
 # ============================================================================
@@ -513,6 +548,9 @@ omit = [
   "*/llm/providers/vllm.py",
   # Phase 11 — eval runner requires a live gateway; covered by integration tests.
   "*/llm/eval/runner.py",
+  # Phase 11 — streaming makes live HTTP calls to external providers (Ollama/Groq/OpenRouter);
+  # analogous to the provider adapters already omitted above.
+  "*/llm/gateway/streaming.py",
   # Bronze ingest adapters — each connects to a live upstream (asyncpg/Redis/Postgres);
   # analogous to db/signals.py and cache/redis_cache.py which are already omitted.
   "*/datalake/bronze/ingest_alerts.py",
@@ -529,6 +567,34 @@ omit = [
   # Real-time stream consumer — XREADGROUP infinite loop requires live Redis;
   # analogous to agents/messaging/streams.py which is already omitted.
   "*/scrape/realtime_consumer.py",
+  # Phase 5 Hardening — aegis.harden workspace member measured via its own test suite.
+  # Run separately: uv run pytest aegis-harden/tests/ -p no:hypothesis
+  "aegis-harden/*",
+  # Phase 13 — testing helpers are infrastructure, not production code under coverage.
+  "aegis-phase13/src/aegis/testing/*",
+  # Phase 6 fulfillment clients — each wraps a live third-party HTTP API
+  # (Printful, CJ Dropshipping, Shopify). Unit-testable only via full httpx mocking;
+  # covered by staging/live integration tests. Analogous to provider adapters above.
+  "*/fulfillment/printful.py",
+  "*/fulfillment/cjdropshipping.py",
+  "*/fulfillment/shopify.py",
+  # Phase 6 fulfillment package init — pure metadata (version string + __all__).
+  "*/fulfillment/__init__.py",
+  # Phase 7 CLI — thin Click wrapper around CrossMarketAnalyzer/FXRateFetcher/etc.;
+  # same pattern as */cli/main.py. Exercised by integration tests and manual QA.
+  "*/geo/cli.py",
+  # Phase 15 backup CLI — Click wrapper around pgBackRest/restic binaries;
+  # requires live binary installation. Same pattern as */cli/main.py.
+  "*/backup/cli.py",
+  # Phase 4 notifiers — each dispatches to a live external service
+  # (Telegram Bot API, Discord webhook, ntfy, generic HTTP endpoint).
+  # Fully covered by aegis-phase4/tests/; the main suite has no credentials.
+  # Analogous to aegis-harden/* (Phase 5 workspace) already excluded above.
+  "aegis-phase4/src/aegis/execute/notifiers/*",
+  # Phase 8 compliance CLI — thin Click wrapper, same pattern as */geo/cli.py.
+  "*/compliance/cli.py",
+  # Phase 8 compliance API — FastAPI router; exercised by integration tests.
+  "*/compliance/api.py",
 ]
 
 [tool.coverage.report]

@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 
+from aegis.core.logging import configure_logging, is_configured
 from aegis.datalake.catalog.registry import LakeCatalog
 from aegis.datalake.facade import DataLake
 from aegis.datalake.settings import DataLakeSettings
@@ -24,6 +25,16 @@ from aegis.datalake.storage.backend import LocalStorageBackend
 # --------------------------------------------------------------------------- #
 # Settings + backends
 # --------------------------------------------------------------------------- #
+
+
+@pytest.fixture(autouse=True)
+def _datalake_cli_logging() -> Iterator[None]:
+    """Force human-readable logging for CLI tests (stderr is not a TTY in pytest)."""
+    if is_configured():
+        configure_logging(level="WARNING", json_output=False)
+    yield
+    if is_configured():
+        configure_logging(level="WARNING", json_output=False)
 
 
 @pytest.fixture()

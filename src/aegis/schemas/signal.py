@@ -79,10 +79,11 @@ TagString = Annotated[
         to_lower=True,
         min_length=1,
         max_length=128,
-        pattern=r"^[a-z0-9_\-\.]+$",
+        pattern=r"^[a-z0-9_\-\.\+#@]+$",
     ),
 ]
-"""Hashtag / keyword. Lowercased, limited charset for cross-platform dedup."""
+"""Hashtag / keyword. Lowercased, limited charset for cross-platform dedup.
+Allows + and # so that language tags like c++, c#, f# are preserved."""
 
 Currency = Annotated[
     str,

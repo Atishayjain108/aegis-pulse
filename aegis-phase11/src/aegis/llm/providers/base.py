@@ -218,7 +218,7 @@ class BaseProvider(abc.ABC):
                 )
                 return response
 
-            except asyncio.TimeoutError as exc:
+            except TimeoutError:
                 self._circuit.record_failure()
                 self._circuit.evaluate(self.name)
                 _log.warning(

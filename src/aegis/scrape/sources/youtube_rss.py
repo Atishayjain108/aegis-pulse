@@ -321,4 +321,4 @@ class YouTubeRSSAdapter(SourceAdapter[dict[str, Any]]):
             return None
 
 
-__all__ = ["YouTubeRSSAdapter", "YouTubeRSSConfig", "SCRAPER_VERSION"]
+__all__ = ["SCRAPER_VERSION", "YouTubeRSSAdapter", "YouTubeRSSConfig"]

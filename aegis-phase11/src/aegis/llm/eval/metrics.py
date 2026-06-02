@@ -34,7 +34,7 @@ class LatencyMetrics:
     mean_ms: float
 
     @classmethod
-    def from_results(cls, results: list["EvalResult"]) -> "LatencyMetrics":
+    def from_results(cls, results: list[EvalResult]) -> LatencyMetrics:
         latencies = sorted(r.latency_ms for r in results)
         if not latencies:
             return cls(0, 0, 0, 0, 0, 0)
@@ -63,7 +63,7 @@ class CoverageMetrics:
     coverage_pct: float
 
     @classmethod
-    def from_report(cls, report: "EvalReport") -> "CoverageMetrics":
+    def from_report(cls, report: EvalReport) -> CoverageMetrics:
         templates = {r.case.template_name for r in report.results}
         return cls(
             total_templates=len(templates),
@@ -94,11 +94,11 @@ class RegressionResult:
     @classmethod
     def compare(
         cls,
-        baseline: "EvalReport",
-        current: "EvalReport",
+        baseline: EvalReport,
+        current: EvalReport,
         *,
         threshold: float = 0.05,
-    ) -> "RegressionResult":
+    ) -> RegressionResult:
         delta = current.pass_rate - baseline.pass_rate
         return cls(
             baseline_pass_rate=baseline.pass_rate,
@@ -123,25 +123,25 @@ class EvalMetricsCollector:
         print(f"p99 latency: {latency.p99_ms}ms")
     """
 
-    def latency(self, report: "EvalReport") -> LatencyMetrics:
+    def latency(self, report: EvalReport) -> LatencyMetrics:
         """Compute latency statistics from a report."""
         return LatencyMetrics.from_results(report.results)
 
-    def coverage(self, report: "EvalReport") -> CoverageMetrics:
+    def coverage(self, report: EvalReport) -> CoverageMetrics:
         """Compute template coverage from a report."""
         return CoverageMetrics.from_report(report)
 
     def regression(
         self,
-        baseline: "EvalReport",
-        current: "EvalReport",
+        baseline: EvalReport,
+        current: EvalReport,
         *,
         threshold: float = 0.05,
     ) -> RegressionResult:
         """Compare current run against a baseline for regressions."""
         return RegressionResult.compare(baseline, current, threshold=threshold)
 
-    def failed_cases(self, report: "EvalReport") -> list[dict[str, object]]:
+    def failed_cases(self, report: EvalReport) -> list[dict[str, object]]:
         """Return a list of failed case summaries for debugging."""
         return [
             {
@@ -154,7 +154,7 @@ class EvalMetricsCollector:
             if not r.passed
         ]
 
-    def summary_dict(self, report: "EvalReport") -> dict[str, object]:
+    def summary_dict(self, report: EvalReport) -> dict[str, object]:
         """Return a complete metrics summary as a plain dict."""
         latency = self.latency(report)
         coverage = self.coverage(report)

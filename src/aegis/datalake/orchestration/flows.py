@@ -36,7 +36,10 @@ try:  # pragma: no cover - import-time branch
     from prefect import task as _prefect_task
 
     PREFECT_AVAILABLE = True
-except ImportError:  # pragma: no cover
+except Exception:  # pragma: no cover
+    # Catches ImportError (Prefect not installed) AND pydantic ValidationError
+    # that Prefect 3.x raises during settings init on Pydantic >=2.11 due to
+    # deprecated model_fields instance access in LoggingToAPISettings.
     PREFECT_AVAILABLE = False
 
     def _prefect_flow(*args: Any, **kwargs: Any) -> Any:

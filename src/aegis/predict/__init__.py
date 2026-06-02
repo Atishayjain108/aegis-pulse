@@ -68,11 +68,11 @@ Phase:   3 (Predictive Apex)
 from __future__ import annotations
 
 __all__ = [
-    "PHASE",
-    "MODELS",
-    "FEATURE_NAMES",
-    "DEFAULT_HORIZONS",
     "DEFAULT_FEATURE_WINDOW",
+    "DEFAULT_HORIZONS",
+    "FEATURE_NAMES",
+    "MODELS",
+    "PHASE",
 ]
 
 PHASE: str = "3"

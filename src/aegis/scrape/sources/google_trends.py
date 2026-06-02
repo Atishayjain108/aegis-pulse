@@ -253,4 +253,4 @@ class GoogleTrendsAdapter(SourceAdapter[dict[str, Any]]):
             return None
 
 
-__all__ = ["GoogleTrendsAdapter", "GoogleTrendsConfig", "SCRAPER_VERSION"]
+__all__ = ["SCRAPER_VERSION", "GoogleTrendsAdapter", "GoogleTrendsConfig"]

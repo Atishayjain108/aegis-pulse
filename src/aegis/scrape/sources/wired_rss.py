@@ -26,4 +26,4 @@ class WiredRSSAdapter(RSSAdapter):
         return "wired"
 
 
-__all__ = ["WiredRSSAdapter", "RSSAdapterConfig", "SCRAPER_VERSION"]
+__all__ = ["SCRAPER_VERSION", "RSSAdapterConfig", "WiredRSSAdapter"]

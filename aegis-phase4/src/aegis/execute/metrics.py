@@ -159,9 +159,9 @@ class _ExecuteMetrics:
         "compose_latency_ms",
         "deliveries_total",
         "delivery_latency_ms",
-        "outbox_pending",
-        "killswitch_tripped",
         "gate_blocks_total",
+        "killswitch_tripped",
+        "outbox_pending",
         "registry",
     )
 

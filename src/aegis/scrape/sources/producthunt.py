@@ -299,4 +299,4 @@ class ProductHuntAdapter(SourceAdapter[dict[str, Any]]):
             return None
 
 
-__all__ = ["ProductHuntAdapter", "ProductHuntConfig", "SCRAPER_VERSION", "_PAGE_DELAY_S"]
+__all__ = ["SCRAPER_VERSION", "_PAGE_DELAY_S", "ProductHuntAdapter", "ProductHuntConfig"]

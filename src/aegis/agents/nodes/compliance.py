@@ -1,36 +1,29 @@
 """
 COMPLIANCE agent — mandatory legal / regulatory gate.
 
-This is a *gate* agent: every candidate must pass through it before
-the supervisor permits a P0 alert. The heuristic delegates to the
-`compliance_check` tool, which runs three regex tables:
+Verdict computation is delegated to the Phase 8 ``aegis.comply`` engine:
+a deterministic, network-free, multi-jurisdiction rule engine with trademark
+screening and counterfeit detection.  If Phase 8 is not installed the node
+falls back to the legacy ``compliance_check`` tool (regex-only).
 
-    * trademark fingerprints  (Nike, Apple, Disney, Marvel, ...)
-    * regulated claims        (FTC: "guaranteed earnings", FDA: drug claims)
-    * due-diligence categories (children, cosmetics, electronics, ...)
+Verdict mapping (fail-closed):
+    CLEAR  → PROCEED
+    FLAG   → HOLD / escalate
+    BLOCK  → BLOCK
+    error  → HOLD (confidence 0.30) — gate must never fail open
 
-Verdict mapping:
-    trademark hit              → BLOCK  (counterfeit risk)
-    regulated claim            → BLOCK  (legal exposure)
-    due-diligence category     → HOLD   (paperwork required)
-    clean                      → PROCEED
+The HEDGE and RED_TEAM agents both treat ``compliance_passed=False`` as a hard
+veto. The supervisor uses ``compliance_flags`` for the alert payload.
 
-The HEDGE and RED_TEAM agents both treat `compliance_passed=False`
-as a hard veto. The supervisor uses `compliance_flags` for the alert
-payload so downstream consumers know exactly what tripped.
-
-We deliberately don't run an LLM here. Compliance is a domain where
-"the model said it's probably fine" is far worse than a regex false
-positive — so we never let an LLM weaken a flag. We do, however,
-optionally let the LLM *append a human-readable summary* on HOLD
-verdicts (so an operator reviewing flags has prose context).
-
-Author: AEGIS Pulse core team
+LLM augmentation is fail-closed: the model may only *append* reasoning or
+escalate a verdict — it cannot clear a blocked item.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
+
+import structlog
 
 from ..llm import prompts
 from ..schemas import AgentDecision, AgentVerdict, TrendCandidate
@@ -40,7 +33,26 @@ from .base import AgentNode
 if TYPE_CHECKING:
     from ..state import GraphState
 
-# Map of tool verdict → agent verdict.
+_log = structlog.get_logger("aegis.agents.nodes.compliance")
+
+# Phase 8 bridge (optional — degrades gracefully to legacy tool when absent)
+try:
+    from aegis.comply.bridge.agents_bridge import evaluate_for_compliance_node as _p8_evaluate
+
+    _PHASE8_AVAILABLE = True
+except (ImportError, ModuleNotFoundError):
+    _PHASE8_AVAILABLE = False
+    _p8_evaluate = None  # type: ignore[assignment]
+
+# Phase 2 verdict vocabulary → AgentVerdict
+_P2_VERDICT_MAP: dict[str, AgentVerdict] = {
+    "proceed": AgentVerdict.PROCEED,
+    "hold": AgentVerdict.HOLD,
+    "escalate": AgentVerdict.HOLD,   # Phase 8 uses "escalate"; Phase 2 calls it HOLD
+    "block": AgentVerdict.BLOCK,
+}
+
+# Legacy tool verdict map (fallback path)
 _TOOL_VERDICT_MAP: dict[str, AgentVerdict] = {
     "block": AgentVerdict.BLOCK,
     "hold": AgentVerdict.HOLD,
@@ -58,15 +70,77 @@ class ComplianceAgent(AgentNode):
         candidate: TrendCandidate,
         state: GraphState,
     ) -> AgentDecision:
-        # Pull a price hint from the auditor / sourcer if present.
-        # `detected_price` lets the counterfeit-risk heuristic fire
-        # (low price + brand mention = likely counterfeit).
+        if _PHASE8_AVAILABLE and _p8_evaluate is not None:
+            return self._decide_via_phase8(candidate, state)
+        return await self._decide_legacy(candidate, state)
+
+    # ------------------------------------------------------------------
+    # Phase 8 path (deterministic multi-jurisdiction engine)
+    # ------------------------------------------------------------------
+
+    def _decide_via_phase8(
+        self,
+        candidate: TrendCandidate,
+        state: GraphState,
+    ) -> AgentDecision:
+        """Run the Phase 8 compliance engine (sync, network-free)."""
         detected_price: float | None = None
         supplier = state.get("sourcer_supplier")
         if isinstance(supplier, dict):
             uc = supplier.get("unit_cost")
             if isinstance(uc, int | float) and uc > 0:
-                # Synthesised supplier estimates retail at ~4× cost.
+                detected_price = float(uc) * 4.0
+
+        payload: dict[str, Any] = candidate.model_dump()
+        if detected_price is not None:
+            payload["price"] = detected_price
+
+        decision_dict = _p8_evaluate(payload)  # type: ignore[call-arg]
+
+        verdict = _P2_VERDICT_MAP.get(str(decision_dict.get("verdict", "hold")), AgentVerdict.HOLD)
+        score = float(decision_dict.get("score", 0.5))
+        confidence = float(decision_dict.get("confidence", 0.75))
+        reasoning = str(decision_dict.get("reasoning", ""))
+
+        comply = decision_dict.get("compliance", {})
+        details: dict[str, Any] = {
+            "compliance_passed": verdict is AgentVerdict.PROCEED,
+            "compliance_flags": comply.get("blocking_reasons", []),
+            "remedy": comply.get("remediation", []),
+            "rule_ids": comply.get("rule_ids", []),
+            "trademarks": comply.get("trademarks", []),
+            "counterfeit": comply.get("counterfeit", []),
+            "risk_score": comply.get("risk_score", 0.0),
+            "content_id": comply.get("content_id", ""),
+            "engine_version": comply.get("engine_version", ""),
+            "phase8": True,
+        }
+
+        return AgentDecision(
+            agent=self.name,
+            trend_id=candidate.trend_id,
+            correlation_id=candidate.correlation_id,
+            verdict=verdict,
+            score=score,
+            confidence=confidence,
+            reasoning=reasoning,
+            details=details,
+        )
+
+    # ------------------------------------------------------------------
+    # Legacy path (regex-only compliance_check tool)
+    # ------------------------------------------------------------------
+
+    async def _decide_legacy(
+        self,
+        candidate: TrendCandidate,
+        state: GraphState,
+    ) -> AgentDecision:
+        detected_price: float | None = None
+        supplier = state.get("sourcer_supplier")
+        if isinstance(supplier, dict):
+            uc = supplier.get("unit_cost")
+            if isinstance(uc, int | float) and uc > 0:
                 detected_price = float(uc) * 4.0
 
         result = await compliance_check(
@@ -77,7 +151,6 @@ class ComplianceAgent(AgentNode):
         )
 
         if not result.ok or not isinstance(result.data, dict):
-            # Tool failure → fail safe: HOLD with a tool-error flag.
             return AgentDecision(
                 agent=self.name,
                 trend_id=candidate.trend_id,
@@ -100,18 +173,7 @@ class ComplianceAgent(AgentNode):
 
         verdict = _TOOL_VERDICT_MAP.get(tool_verdict, AgentVerdict.HOLD)
         compliance_passed = verdict is AgentVerdict.PROCEED
-
-        # Score: 1.0 means "fully clean", 0.0 means "block-level violation".
-        if verdict is AgentVerdict.PROCEED:
-            score = 1.0
-        elif verdict is AgentVerdict.HOLD:
-            score = 0.5
-        else:
-            score = 0.0
-
-        # Confidence: regex matching is high-confidence by nature; we
-        # trust hits more than misses (false negatives are likely on
-        # obfuscated brand names like "Ⓝike"). 0.85 fixed.
+        score = 1.0 if verdict is AgentVerdict.PROCEED else (0.5 if verdict is AgentVerdict.HOLD else 0.0)
         confidence = 0.85
 
         details: dict[str, Any] = {
@@ -126,7 +188,6 @@ class ComplianceAgent(AgentNode):
         }
 
         if counterfeit_risk:
-            # Force BLOCK on counterfeit even if the verdict was HOLD.
             verdict = AgentVerdict.BLOCK
             score = 0.0
             details["compliance_passed"] = False
@@ -150,16 +211,16 @@ class ComplianceAgent(AgentNode):
             details=details,
         )
 
+    # ------------------------------------------------------------------
+    # LLM augmentation (fail-closed — may only escalate, never clear)
+    # ------------------------------------------------------------------
+
     async def _augment_with_llm(
         self,
         candidate: TrendCandidate,
         state: GraphState,
         heuristic: AgentDecision,
     ) -> AgentDecision | None:
-        # LLM gets to add human-readable context ONLY on HOLD. We
-        # never let the LLM downgrade a BLOCK or upgrade a HOLD to
-        # PROCEED — that's the whole point of having a deterministic
-        # compliance gate.
         if heuristic.verdict is not AgentVerdict.HOLD:
             return None
         try:
@@ -168,9 +229,10 @@ class ComplianceAgent(AgentNode):
                 title=candidate.title,
                 summary=(candidate.summary or "")[:400],
                 flags=", ".join(heuristic.details.get("compliance_flags", [])[:8]),
-                tool_reason=heuristic.details.get("tool_reason", ""),
+                tool_reason=heuristic.details.get("tool_reason", heuristic.reasoning),
             )
-        except Exception:
+        except Exception as exc:
+            _log.debug("compliance.llm_input_build_failed", error=str(exc))
             return None
         system_text = (
             "You are COMPLIANCE. Provide an operator-friendly note. "
@@ -178,7 +240,6 @@ class ComplianceAgent(AgentNode):
         )
         resp = await self._llm_complete(system=system_text, user=user_text)
         augmented = self._llm_apply(heuristic, resp)
-        # Defensive: never let the LLM accidentally invert verdict.
         if augmented is not None and augmented.verdict is not heuristic.verdict:
             return heuristic
         return augmented

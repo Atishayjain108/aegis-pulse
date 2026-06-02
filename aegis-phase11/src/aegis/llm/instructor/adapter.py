@@ -31,7 +31,6 @@ from typing import TYPE_CHECKING, Any, TypeVar
 import structlog
 from pydantic import BaseModel, ValidationError
 
-from aegis.llm.constants import ERR_INSTRUCTOR_PARSE
 from aegis.llm.errors import InstructorParseError
 
 if TYPE_CHECKING:
@@ -102,7 +101,7 @@ class InstructorAdapter:
 
     def __init__(
         self,
-        gateway: "LLMGateway",
+        gateway: LLMGateway,
         *,
         max_retries: int = _MAX_RETRIES,
     ) -> None:

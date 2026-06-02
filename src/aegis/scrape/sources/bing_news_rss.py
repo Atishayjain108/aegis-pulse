@@ -155,7 +155,7 @@ class BingNewsRSSAdapter(SourceAdapter[dict[str, Any]]):
             return
 
         try:
-            root = ET.fromstring(xml_bytes)  # noqa: S314 — same risk profile as google_news_rss.py
+            root = ET.fromstring(xml_bytes)  # noqa: S314
         except ET.ParseError as e:
             log.warning("bing_news_rss.xml_parse_error", error=str(e), query=query)
             return
@@ -207,10 +207,10 @@ class BingNewsRSSAdapter(SourceAdapter[dict[str, Any]]):
                 try:
                     _dt: datetime = parsedate_to_datetime(pub_date_str)  # type: ignore[assignment]
                     posted_at = _dt if _dt.tzinfo is not None else _dt.replace(tzinfo=UTC)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    log.debug("bing_news.date_parse_failed", pub_date=pub_date_str, error=str(exc))
 
-            external_id = hashlib.sha1(  # noqa: S324 — non-security use
+            external_id = hashlib.sha1(  # noqa: S324
                 guid.encode("utf-8", errors="replace")
             ).hexdigest()[:24]
 
@@ -269,4 +269,4 @@ def _text(element: ET.Element, tag: str) -> str:
     return (child.text or "").strip()
 
 
-__all__ = ["BingNewsRSSAdapter", "BingNewsRSSConfig", "SCRAPER_VERSION"]
+__all__ = ["SCRAPER_VERSION", "BingNewsRSSAdapter", "BingNewsRSSConfig"]

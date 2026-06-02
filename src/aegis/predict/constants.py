@@ -127,6 +127,31 @@ HEURISTIC_DECLINING_VELOCITY_24H: float = -0.5
 HEURISTIC_CONFIDENCE_CEILING: float = 0.75
 
 # =============================================================================
+# Trend analysis — EMA / OLS / momentum (Phase 3.1 upgrade)
+# =============================================================================
+
+# rationale: 3-bucket short EMA captures intra-day momentum spikes;
+# 12-bucket long EMA captures the half-day trend direction.
+# Ratio short/long > 1.0 is the classic golden-cross indicator.
+EMA_SHORT_PERIOD: int = 3
+EMA_LONG_PERIOD: int = 12
+
+# rationale: EMA cross above/below this delta triggers a bullish/bearish
+# momentum bonus in the confidence score.
+MOMENTUM_BULLISH_THRESHOLD: float = 0.15   # short EMA > long EMA by 15 %
+MOMENTUM_BEARISH_THRESHOLD: float = -0.15  # short EMA < long EMA by 15 %
+
+# rationale: only trust the OLS trend line when R² exceeds this floor.
+# Below 0.40 the relationship between time and count is too noisy to
+# use for velocity extrapolation; revert to the EMA-decay path.
+OLS_STRONG_R2: float = 0.40
+
+# rationale: OLS horizon cap — beyond 24 h the trend line extrapolation
+# diverges; blend it out entirely for h > 24 to avoid over-confident
+# long-range calls.
+OLS_HORIZON_CAP_HOURS: int = 24
+
+# =============================================================================
 # Backtest
 # =============================================================================
 

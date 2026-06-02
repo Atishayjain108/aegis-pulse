@@ -73,7 +73,7 @@ class ProviderSelector:
 
     def __init__(
         self,
-        providers: dict[str, "BaseProvider"],
+        providers: dict[str, BaseProvider],
         *,
         priority_override: dict[str, int] | None = None,
     ) -> None:
@@ -91,7 +91,7 @@ class ProviderSelector:
         *,
         require_providers: list[str] | None = None,
         exclude_providers: list[str] | None = None,
-    ) -> list["BaseProvider"]:
+    ) -> list[BaseProvider]:
         """
         Return an ordered list of healthy providers to try.
 
@@ -150,7 +150,7 @@ class ProviderSelector:
             for name in self._providers
         }
 
-    def register(self, name: str, provider: "BaseProvider") -> None:
+    def register(self, name: str, provider: BaseProvider) -> None:
         """Register a new provider at runtime (hot-plug)."""
         self._providers[name] = provider
         _log.info("provider_selector.registered", provider=name)

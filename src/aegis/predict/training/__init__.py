@@ -32,9 +32,9 @@ __all__ = [
     "Dataset",
     "LabelledSample",
     "SignalDataset",
-    "build_dataset",
-    "TrainingResult",
     "TrainerConfig",
-    "train_temporal",
+    "TrainingResult",
+    "build_dataset",
     "export_to_onnx",
+    "train_temporal",
 ]

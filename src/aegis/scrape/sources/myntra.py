@@ -14,7 +14,8 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
-from dataclasses import dataclass
+import os
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from math import log1p
 from typing import TYPE_CHECKING, Any
@@ -39,6 +40,7 @@ from aegis.schemas.signal import (
 )
 from aegis.scrape.base import AdapterConfig, ScrapeContext, SourceAdapter
 from aegis.scrape.ecommerce_utils import flaresolverr_get, random_ua
+from aegis.scrape.playwright_fetcher import fetch_page_html as _playwright_fetch
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -199,6 +201,10 @@ def _parse_myntra_html(html: str) -> list[dict[str, Any]]:
     return items
 
 
+def _flaresolverr_default() -> str:
+    return os.environ.get("AEGIS_SCRAPE_FLARESOLVERR_URL", "http://localhost:8191/v1")
+
+
 @dataclass(frozen=True, slots=True)
 class MyntraConfig(AdapterConfig):
     """Myntra adapter configuration."""
@@ -208,7 +214,7 @@ class MyntraConfig(AdapterConfig):
     timeout_seconds: float = 30.0
     max_retries: int = 2
     use_cloudflare_bypass: bool = True
-    flaresolverr_url: str = "http://localhost:8191/v1"
+    flaresolverr_url: str = field(default_factory=_flaresolverr_default)
 
 
 class MyntraAdapter(SourceAdapter[dict[str, Any]]):
@@ -263,7 +269,7 @@ class MyntraAdapter(SourceAdapter[dict[str, Any]]):
         self._record_request_metric(method="json_api")
         items: list[dict[str, Any]] = []
         try:
-            resp = await self._client.get(_JSON_URL)
+            resp = await self._client.get(_JSON_URL, headers={"User-Agent": random_ua()})
             if resp.status_code == 403:
                 _log.warning("myntra.json_api.forbidden")
             else:
@@ -284,6 +290,15 @@ class MyntraAdapter(SourceAdapter[dict[str, Any]]):
                 items = _parse_myntra_html(html)
             else:
                 _log.warning("myntra.flaresolverr.no_html")
+
+        # --- Playwright stealth fallback ---
+        if not items:
+            _log.info("myntra.trying_playwright")
+            pw_html = await _playwright_fetch(_HTML_URL)
+            if pw_html:
+                items = _parse_myntra_html(pw_html)
+            else:
+                _log.warning("myntra.playwright.no_html")
 
         for item in items[:limit]:
             if self.is_cancelled:
@@ -356,9 +371,9 @@ class MyntraAdapter(SourceAdapter[dict[str, Any]]):
 
 
 __all__ = [
+    "SCRAPER_VERSION",
     "MyntraAdapter",
     "MyntraConfig",
-    "SCRAPER_VERSION",
     "_extract_json_products",
     "_parse_myntra_html",
 ]

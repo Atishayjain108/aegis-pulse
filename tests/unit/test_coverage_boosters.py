@@ -519,7 +519,7 @@ async def test_dashboard_swarm_latest_no_data() -> None:
     mock_r.get = AsyncMock(return_value=None)
     mock_r.aclose = AsyncMock()
 
-    with patch("aegis.dashboard.app.aioredis.from_url", return_value=mock_r):
+    with patch("aegis.dashboard.app._get_redis", return_value=mock_r):
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"
         ) as client:
@@ -556,7 +556,7 @@ async def test_dashboard_swarm_latest_with_data() -> None:
     mock_r.get = AsyncMock(return_value=swarm.model_dump_json())
     mock_r.aclose = AsyncMock()
 
-    with patch("aegis.dashboard.app.aioredis.from_url", return_value=mock_r):
+    with patch("aegis.dashboard.app._get_redis", return_value=mock_r):
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"
         ) as client:
@@ -580,7 +580,7 @@ async def test_dashboard_swarm_latest_redis_error() -> None:
     mock_r.get = AsyncMock(side_effect=RuntimeError("redis down"))
     mock_r.aclose = AsyncMock()
 
-    with patch("aegis.dashboard.app.aioredis.from_url", return_value=mock_r):
+    with patch("aegis.dashboard.app._get_redis", return_value=mock_r):
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"
         ) as client:
@@ -602,7 +602,7 @@ async def test_dashboard_swarm_agents_no_data() -> None:
     mock_r.hgetall = AsyncMock(return_value={})
     mock_r.aclose = AsyncMock()
 
-    with patch("aegis.dashboard.app.aioredis.from_url", return_value=mock_r):
+    with patch("aegis.dashboard.app._get_redis", return_value=mock_r):
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"
         ) as client:
@@ -628,7 +628,7 @@ async def test_dashboard_swarm_agents_with_data() -> None:
     mock_r.hgetall = AsyncMock(return_value=agent_data)
     mock_r.aclose = AsyncMock()
 
-    with patch("aegis.dashboard.app.aioredis.from_url", return_value=mock_r):
+    with patch("aegis.dashboard.app._get_redis", return_value=mock_r):
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"
         ) as client:

@@ -44,6 +44,7 @@ from aegis.schemas.signal import (
 )
 from aegis.scrape.base import AdapterConfig, ScrapeContext, SourceAdapter
 from aegis.scrape.ecommerce_utils import random_ua
+from aegis.scrape.playwright_fetcher import fetch_page_html as _playwright_fetch
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -69,11 +70,28 @@ _JSON_HEADERS = {
     "Referer": _TRADE_INTEL_URL,
 }
 
-# HTML selectors for trade intelligence page
-_CATEGORY_SEL = ".category-card, .trending-category, [class*='categoryCard'], .trd-ctg"
-_CATEGORY_NAME_SEL = "h3, h4, .category-name, [class*='categoryTitle']"
+# HTML selectors for trade intelligence page — prefer semantic/structural over
+# fragile class names; last selector targets any card-like container with a heading.
+_CATEGORY_SEL = (
+    ".category-card, .trending-category, [class*='categoryCard'], .trd-ctg, "
+    "article, [class*='trending'], [class*='category'], li.card"
+)
+_CATEGORY_NAME_SEL = "h2, h3, h4, .category-name, [class*='categoryTitle'], [class*='name']"
 
 _MAX_CATEGORIES = 8
+
+# Evergreen B2B categories used as last-resort fallback when both httpx and
+# Playwright fail to parse the trade-intelligence page.
+_FALLBACK_CATEGORIES = [
+    "Industrial Machinery",
+    "Electronics Components",
+    "Textile & Fabric",
+    "Agriculture Products",
+    "Chemical Compounds",
+    "Building Materials",
+    "Packaging Materials",
+    "Auto Parts",
+]
 
 
 def _extract_categories_html(html: str) -> list[str]:
@@ -94,7 +112,7 @@ def _extract_categories_html(html: str) -> list[str]:
                 name = name_el.get_text(strip=True) if name_el else ""
                 if name and name not in categories:
                     categories.append(name)
-            except Exception:
+            except Exception:  # known-fragile scraper; skip malformed cards
                 continue
 
         if not categories:
@@ -204,17 +222,34 @@ class IndiaMartAdapter(SourceAdapter[dict[str, Any]]):
             self._client = None
 
     async def _fetch_categories(self) -> list[str]:
+        """Fetch trending B2B categories via httpx → Playwright → hardcoded fallback."""
         if self._client is None:
-            return []
+            return _FALLBACK_CATEGORIES
         await self._rate_limit()
         self._record_request_metric(method="trade_intel_html")
+
+        # --- httpx path ---
+        categories: list[str] = []
         try:
             resp = await self._client.get(_TRADE_INTEL_URL)
             resp.raise_for_status()
-            return _extract_categories_html(resp.text)
+            categories = _extract_categories_html(resp.text)
         except Exception as e:
-            _log.warning("indiamart.categories.failed", error=str(e))
-            return []
+            _log.warning("indiamart.categories.httpx_failed", error=str(e))
+
+        # --- Playwright fallback when httpx returns nothing ---
+        if not categories:
+            _log.info("indiamart.categories.trying_playwright")
+            html = await _playwright_fetch(_TRADE_INTEL_URL)
+            if html:
+                categories = _extract_categories_html(html)
+
+        # --- Hardcoded evergreen fallback ---
+        if not categories:
+            _log.info("indiamart.categories.using_fallback_list")
+            categories = _FALLBACK_CATEGORIES
+
+        return categories
 
     async def _search_category(self, category: str) -> list[dict[str, Any]]:
         if self._client is None:
@@ -324,9 +359,9 @@ class IndiaMartAdapter(SourceAdapter[dict[str, Any]]):
 
 
 __all__ = [
+    "SCRAPER_VERSION",
     "IndiaMartAdapter",
     "IndiaMartConfig",
-    "SCRAPER_VERSION",
     "_extract_categories_html",
     "_extract_search_results",
 ]

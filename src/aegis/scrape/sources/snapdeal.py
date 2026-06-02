@@ -312,9 +312,9 @@ class SnapdealAdapter(SourceAdapter[dict[str, Any]]):
 
 
 __all__ = [
+    "SCRAPER_VERSION",
     "SnapdealAdapter",
     "SnapdealConfig",
-    "SCRAPER_VERSION",
     "_parse_rss_feed",
     "_parse_snapdeal_html",
 ]

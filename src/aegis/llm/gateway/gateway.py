@@ -37,7 +37,7 @@ from aegis.llm.constants import (
     PROVIDER_COST_PER_1M_INPUT,
     PROVIDER_COST_PER_1M_OUTPUT,
 )
-from aegis.llm.errors import AllProvidersFailed
+from aegis.llm.errors import AllProvidersFailed, GuardrailBlock
 from aegis.llm.gateway.response import LLMResponse, TokenUsage
 from aegis.llm.guardrails.validator import GuardrailsValidator
 from aegis.llm.providers.base import BaseProvider
@@ -296,6 +296,10 @@ class LLMGateway:
                 )
                 return response
 
+            except GuardrailBlock:
+                # Blocked content must not be retried on other providers —
+                # the same prompt would produce the same violation.
+                raise
             except Exception as exc:
                 _log.warning(
                     "gateway.provider_failed",
@@ -368,7 +372,8 @@ class LLMGateway:
         """
         if provider == "ollama" and "ollama" in self._providers:
             p = self._providers["ollama"]
-            assert isinstance(p, OllamaProvider)
+            if not isinstance(p, OllamaProvider):
+                raise TypeError(f"Expected OllamaProvider, got {type(p).__name__}")
             return await p.embed(texts)
 
         # Fallback: sentence-transformers (CPU, no server needed)

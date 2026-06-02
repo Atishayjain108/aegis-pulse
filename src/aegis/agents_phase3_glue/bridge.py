@@ -221,4 +221,9 @@ async def _enrich(
     decision = inference_to_agent_decision(
         result, agent_name=agent_name, primary_horizon=primary_horizon
     )
-    return {**state, "phase3_decision": decision, "phase3_result": result}
+    # Strip the full bundle/audit objects from the state-carried dict.
+    # They inflate LangGraph state significantly; the full data lives in
+    # phase3_result for any caller that needs the complete audit trail.
+    _STATE_STRIP = {"phase3_bundle", "phase3_audit"}
+    compact_decision = {k: v for k, v in decision.items() if k not in _STATE_STRIP}
+    return {**state, "phase3_decision": compact_decision, "phase3_result": result}

@@ -1,5 +1,6 @@
 """tests/unit/llm/test_cache.py — LLMCache tests"""
 from __future__ import annotations
+
 import pytest
 
 

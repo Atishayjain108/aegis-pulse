@@ -21,7 +21,7 @@ from typing import Annotated, Any, TypedDict
 # All types used in GraphState field annotations must be runtime imports.
 # LangGraph calls get_type_hints(GraphState) at StateGraph construction time,
 # which evaluates forward references; TYPE_CHECKING-only imports cause NameError.
-from aegis.scrape.swarm_result import SwarmResult
+from aegis.schemas import SwarmResult
 
 from .schemas import AgentDecision, AgentVerdict, Priority, TrendCandidate
 

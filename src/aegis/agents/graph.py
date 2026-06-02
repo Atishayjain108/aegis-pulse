@@ -115,29 +115,27 @@ def _post_discovery_join(state: GraphState) -> str:
 
 
 def _post_historian_route(state: GraphState) -> str:
-    """If SCOUT was strong enough, source. Otherwise jump to compliance.
-    We always run COMPLIANCE so the candidate has a full decision trail."""
+    """If SCOUT was strong enough, proceed to sourcer. Otherwise bypass
+    sourcer+auditor but still run SENTINEL (saturation check) before
+    COMPLIANCE, so exit signals are never silently skipped."""
     scout_score = float(state.get("scout_score", 0.0) or 0.0)
     scout_verdict = state.get("scout_verdict")
 
     if scout_verdict is AgentVerdict.BLOCK:
-        return "compliance"
+        return "sentinel"
     if scout_score >= _SOURCER_GATE:
         return "sourcer"
-    return "compliance"
+    return "sentinel"
 
 
 def _post_sourcer_route(state: GraphState) -> str:
-    """If sourcer produced a supplier, audit. Else proceed to compliance.
-
-    Note: a sourcer BLOCK (categorically blocked product) takes a
-    short-circuit to compliance; the supervisor will treat the BLOCK
-    correctly when computing the final verdict.
-    """
+    """If sourcer produced a supplier, audit. Otherwise skip auditor but
+    still run SENTINEL so exit signals are not missed even when no supplier
+    was found. COMPLIANCE is always reached via the sentinel→compliance edge."""
     supplier = state.get("sourcer_supplier")
     if isinstance(supplier, dict) and supplier:
         return "auditor"
-    return "compliance"
+    return "sentinel"
 
 
 def _post_auditor_route(state: GraphState) -> str:
@@ -249,12 +247,12 @@ def build_graph(
     builder.add_conditional_edges(
         "historian",
         _post_historian_route,
-        {"sourcer": "sourcer", "compliance": "compliance"},
+        {"sourcer": "sourcer", "sentinel": "sentinel"},
     )
     builder.add_conditional_edges(
         "sourcer",
         _post_sourcer_route,
-        {"auditor": "auditor", "compliance": "compliance"},
+        {"auditor": "auditor", "sentinel": "sentinel"},
     )
     builder.add_edge("auditor", "sentinel")
     builder.add_edge("sentinel", "compliance")

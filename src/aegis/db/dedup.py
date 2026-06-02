@@ -43,11 +43,7 @@ _SWEEP_COMPARE_WINDOW = 500
 
 # Stopwords stripped before similarity comparison — they add noise to Jaccard.
 _STOPWORDS = frozenset(
-    "a an the is are was were be been being have has had do does did will would could should"
-    " may might shall can need dare used to of in on at by for with about against between"
-    " into through during before after above below to from up down out off over under again"
-    " further then once here there when where why how all both each few more most other"
-    " some such no nor not only same so than too very just".split()
+    ["a", "an", "the", "is", "are", "was", "were", "be", "been", "being", "have", "has", "had", "do", "does", "did", "will", "would", "could", "should", "may", "might", "shall", "can", "need", "dare", "used", "to", "of", "in", "on", "at", "by", "for", "with", "about", "against", "between", "into", "through", "during", "before", "after", "above", "below", "to", "from", "up", "down", "out", "off", "over", "under", "again", "further", "then", "once", "here", "there", "when", "where", "why", "how", "all", "both", "each", "few", "more", "most", "other", "some", "such", "no", "nor", "not", "only", "same", "so", "than", "too", "very", "just"]
 )
 
 

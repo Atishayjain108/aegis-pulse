@@ -34,19 +34,21 @@ class TestPostHistorianRoute:
         state["scout_verdict"] = AgentVerdict.PROCEED  # type: ignore[typeddict-item]
         assert _post_historian_route(state) == "sourcer"
 
-    def test_weak_scout_skips_to_compliance(self, trend_factory) -> None:
+    def test_weak_scout_routes_to_sentinel(self, trend_factory) -> None:
+        # Weak scout bypasses sourcer/auditor but still runs sentinel
+        # for saturation detection before compliance.
         state = initial_state(trend_factory())
         state["scout_score"] = 0.20  # type: ignore[typeddict-item]
         state["scout_verdict"] = AgentVerdict.HOLD  # type: ignore[typeddict-item]
-        assert _post_historian_route(state) == "compliance"
+        assert _post_historian_route(state) == "sentinel"
 
-    def test_blocked_scout_skips_to_compliance(self, trend_factory) -> None:
+    def test_blocked_scout_routes_to_sentinel(self, trend_factory) -> None:
         state = initial_state(trend_factory())
         state["scout_score"] = 0.9  # type: ignore[typeddict-item]
         state["scout_verdict"] = AgentVerdict.BLOCK  # type: ignore[typeddict-item]
         # Even with a high numeric score, BLOCK verdict short-circuits
-        # to compliance so we record the trail without sourcing.
-        assert _post_historian_route(state) == "compliance"
+        # to sentinel (then compliance) without sourcing.
+        assert _post_historian_route(state) == "sentinel"
 
     def test_borderline_scout_at_threshold(self, trend_factory) -> None:
         state = initial_state(trend_factory())
@@ -56,9 +58,9 @@ class TestPostHistorianRoute:
         assert _post_historian_route(state) == "sourcer"
 
     def test_missing_scout_score_defaults_low(self, trend_factory) -> None:
-        # No scout fields in state → 0.0 default → compliance.
+        # No scout fields in state → 0.0 default → sentinel (saturation check).
         state = initial_state(trend_factory())
-        assert _post_historian_route(state) == "compliance"
+        assert _post_historian_route(state) == "sentinel"
 
 
 class TestPostSourcerRoute:
@@ -73,22 +75,23 @@ class TestPostSourcerRoute:
         }
         assert _post_sourcer_route(state) == "auditor"
 
-    def test_no_supplier_skips_to_compliance(self, trend_factory) -> None:
+    def test_no_supplier_routes_to_sentinel(self, trend_factory) -> None:
+        # No supplier → bypass auditor but still run sentinel before compliance.
         state = initial_state(trend_factory())
         state["sourcer_supplier"] = None  # type: ignore[typeddict-item]
-        assert _post_sourcer_route(state) == "compliance"
+        assert _post_sourcer_route(state) == "sentinel"
 
     def test_empty_dict_supplier_treated_as_no_supplier(self, trend_factory) -> None:
         state = initial_state(trend_factory())
         state["sourcer_supplier"] = {}  # type: ignore[typeddict-item]
-        # Empty dict → falsy → compliance.
-        assert _post_sourcer_route(state) == "compliance"
+        # Empty dict → falsy → sentinel.
+        assert _post_sourcer_route(state) == "sentinel"
 
-    def test_non_dict_supplier_falls_back_to_compliance(self, trend_factory) -> None:
+    def test_non_dict_supplier_falls_back_to_sentinel(self, trend_factory) -> None:
         state = initial_state(trend_factory())
         # Defensive: somehow the field got set to a string.
         state["sourcer_supplier"] = "something invalid"  # type: ignore[typeddict-item]
-        assert _post_sourcer_route(state) == "compliance"
+        assert _post_sourcer_route(state) == "sentinel"
 
 
 class TestPostComplianceRoute:

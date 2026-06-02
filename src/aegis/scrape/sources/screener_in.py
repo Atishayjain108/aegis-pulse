@@ -359,9 +359,9 @@ class ScreenerInAdapter(SourceAdapter[dict[str, Any]]):
 
 
 __all__ = [
+    "SCRAPER_VERSION",
     "ScreenerInAdapter",
     "ScreenerInConfig",
-    "SCRAPER_VERSION",
-    "_parse_search_results",
     "_parse_explore_html",
+    "_parse_search_results",
 ]

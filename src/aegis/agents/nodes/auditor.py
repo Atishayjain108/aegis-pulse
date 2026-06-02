@@ -24,6 +24,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+import structlog
+
 from ..llm import prompts
 from ..schemas import AgentDecision, AgentVerdict, TrendCandidate
 from ..tools.monte_carlo import MarginPriors, simulate
@@ -31,6 +33,8 @@ from .base import AgentNode
 
 if TYPE_CHECKING:
     from ..state import GraphState
+
+_log = structlog.get_logger("aegis.agents.nodes.auditor")
 
 # Default sell-price assumption for the simulation. The real number
 # comes from a marketplace pricing API in Phase 4. For now we use a
@@ -197,7 +201,8 @@ class AuditorAgent(AgentNode):
                 sell_price=heuristic.details.get("sell_price", 0.0),
                 unit_cost=heuristic.details.get("unit_cost", 0.0),
             )
-        except Exception:
+        except Exception as exc:
+            _log.debug("auditor.llm_input_build_failed", error=str(exc))
             return None
         system_text = (
             "You are AUDITOR, the unit-economics gate. Reply with JSON only: "

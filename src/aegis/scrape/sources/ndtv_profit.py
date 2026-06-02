@@ -27,4 +27,4 @@ class NDTVProfitAdapter(RSSAdapter):
         return "ndtv_profit"
 
 
-__all__ = ["NDTVProfitAdapter", "RSSAdapterConfig", "SCRAPER_VERSION"]
+__all__ = ["SCRAPER_VERSION", "NDTVProfitAdapter", "RSSAdapterConfig"]

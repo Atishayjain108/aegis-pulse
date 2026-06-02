@@ -23,13 +23,16 @@ from fastapi.staticfiles import StaticFiles
 from aegis.execute import __version__ as PHASE4_VERSION  # noqa: N812
 from aegis.execute.api.middleware import RequestIdMiddleware
 from aegis.execute.api.routes import alerts as alerts_routes
+from aegis.execute.api.routes import capital as capital_routes
 from aegis.execute.api.routes import dashboard as dashboard_routes
 from aegis.execute.api.routes import health as health_routes
 from aegis.execute.api.routes import killswitch as killswitch_routes
 from aegis.execute.api.routes import stream as stream_routes
+from aegis.execute.approval import ApprovalBroker
 from aegis.execute.bus import EventBus
 from aegis.execute.config import ExecuteSettings, get_execute_settings
 from aegis.execute.dashboard import STATIC_DIR as _STATIC_DIR
+from aegis.execute.engine import ExecutionEngine
 from aegis.execute.killswitch.switch import KillSwitch
 from aegis.execute.store.repository import AlertRepository
 
@@ -44,6 +47,8 @@ def build_app(
     bus: EventBus | None = None,
     killswitch: KillSwitch | None = None,
     repo: AlertRepository | None = None,
+    capital_engine: ExecutionEngine | None = None,
+    approval_broker: ApprovalBroker | None = None,
 ) -> FastAPI:
     """Build a fully wired FastAPI app.
 
@@ -56,6 +61,12 @@ def build_app(
         redis_client=redis_client,
         key=settings.killswitch_key,
         fail_closed=redis_client is not None,
+    )
+    _engine = capital_engine or ExecutionEngine(settings)
+    _broker = approval_broker or ApprovalBroker(
+        bot_token=settings.telegram_token,
+        chat_id=settings.telegram_chat_id,
+        timeout_s=settings.approval_timeout_s,
     )
 
     @asynccontextmanager
@@ -73,6 +84,9 @@ def build_app(
         app.state.repo = _repo
         app.state.killswitch = _killswitch
         app.state.audit_pool = pool
+        app.state.capital_engine = _engine
+        app.state.approval_broker = _broker
+        app.state.plan_store = {}
         try:
             yield
         finally:
@@ -93,6 +107,9 @@ def build_app(
     app.state.repo = _repo
     app.state.killswitch = _killswitch
     app.state.audit_pool = pool
+    app.state.capital_engine = _engine
+    app.state.approval_broker = _broker
+    app.state.plan_store = {}
 
     # Middleware
     app.add_middleware(RequestIdMiddleware)
@@ -103,6 +120,7 @@ def build_app(
     app.include_router(dashboard_routes.router)
     app.include_router(stream_routes.router)
     app.include_router(killswitch_routes.router)
+    app.include_router(capital_routes.router)
 
     # Root info
     @app.get("/", include_in_schema=False)

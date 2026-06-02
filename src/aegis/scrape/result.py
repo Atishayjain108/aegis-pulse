@@ -71,4 +71,4 @@ class AdapterCapabilities:
     currency: str = "USD"
 
 
-__all__ = ["AdapterStatus", "AdapterRun", "AgentHealth", "AdapterCapabilities"]
+__all__ = ["AdapterCapabilities", "AdapterRun", "AdapterStatus", "AgentHealth"]

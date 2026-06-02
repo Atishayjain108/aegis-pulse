@@ -1,6 +1,8 @@
 """tests/unit/llm/test_bridge.py — Bridge layer tests"""
 from __future__ import annotations
+
 from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 
 

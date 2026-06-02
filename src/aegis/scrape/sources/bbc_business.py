@@ -35,4 +35,4 @@ class BBCBusinessAdapter(RSSAdapter):
         return "bbc_news"
 
 
-__all__ = ["BBCBusinessAdapter", "RSSAdapterConfig", "SCRAPER_VERSION"]
+__all__ = ["SCRAPER_VERSION", "BBCBusinessAdapter", "RSSAdapterConfig"]

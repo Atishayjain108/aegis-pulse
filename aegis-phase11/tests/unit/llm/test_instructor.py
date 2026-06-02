@@ -1,13 +1,12 @@
 """tests/unit/llm/test_instructor.py — InstructorAdapter + schemas tests"""
 from __future__ import annotations
-from unittest.mock import AsyncMock, MagicMock
+
 import pytest
-from pydantic import BaseModel
 
 
 class TestInstructorSchemas:
     def test_scout_output_verdict_values(self):
-        from aegis.llm.instructor.schemas import ScoutOutput, Verdict, Priority
+        from aegis.llm.instructor.schemas import Priority, ScoutOutput, Verdict
         out = ScoutOutput(
             verdict=Verdict.PROCEED,
             confidence=0.85,
@@ -21,7 +20,8 @@ class TestInstructorSchemas:
 
     def test_confidence_validation_bounds(self):
         from pydantic import ValidationError
-        from aegis.llm.instructor.schemas import ScoutOutput, Verdict, Priority
+
+        from aegis.llm.instructor.schemas import Priority, ScoutOutput, Verdict
         with pytest.raises(ValidationError):
             ScoutOutput(
                 verdict=Verdict.PROCEED, confidence=1.5,  # out of bounds
@@ -30,7 +30,7 @@ class TestInstructorSchemas:
             )
 
     def test_auditor_output_schema(self):
-        from aegis.llm.instructor.schemas import AuditorOutput, Verdict, RiskLevel
+        from aegis.llm.instructor.schemas import AuditorOutput, RiskLevel, Verdict
         out = AuditorOutput(
             verdict=Verdict.HOLD,
             estimated_margin_pct=22.5,
@@ -45,6 +45,7 @@ class TestInstructorSchemas:
 
     def test_red_team_confidence_adjustment_bounds(self):
         from pydantic import ValidationError
+
         from aegis.llm.instructor.schemas import RedTeamOutput, Verdict
         with pytest.raises(ValidationError):
             RedTeamOutput(

@@ -440,6 +440,23 @@ def expand_topic(topic: str) -> TopicExpansion:
 # ---------------------------------------------------------------------------
 
 
+_HTTP_MAX_CONCURRENCY: int = 8
+"""Maximum number of adapter HTTP tasks that may run concurrently inside scrape_topic().
+Keeps the outbound connection pool bounded; prevents thundering-herd timeouts."""
+
+
+async def _semaphore_guarded(
+    sem: asyncio.Semaphore,
+    source_name: str,
+    adapter: Any,
+    run_kwargs: dict[str, Any],
+) -> tuple[str, list[ProductSignal], str | None]:
+    """Acquire *sem* before delegating to _scrape_source so that at most
+    _HTTP_MAX_CONCURRENCY adapter tasks issue HTTP requests simultaneously."""
+    async with sem:
+        return await _scrape_source(source_name, adapter, run_kwargs)
+
+
 async def _scrape_source(
     source_name: str,
     adapter: Any,
@@ -516,6 +533,23 @@ async def scrape_topic(
     expansion = expand_topic(topic)
     result = TopicScrapeResult(topic=topic, expansion=expansion)
 
+    # Bind a time-seeded HardenShim for this session so all parallel adapter
+    # tasks share one advancing RNG sequence — avoids every task repeating
+    # the same default-seed fingerprint pattern.
+    _shim_token = None
+    try:
+        import time as _time
+
+        from aegis.scrape.harden_shim import HardenShim as _HardenShim
+        from aegis.scrape.harden_shim import set_session_shim as _set_session_shim
+
+        _shim_token = _set_session_shim(
+            _HardenShim(rng_seed=_time.time_ns() & 0xFFFF_FFFF)
+        )
+    except Exception:
+        pass
+
+    _sem = asyncio.Semaphore(_HTTP_MAX_CONCURRENCY)
     tasks: list[asyncio.Task[tuple[str, list[ProductSignal], str | None]]] = []
 
     # ── HackerNews: search top terms ──────────────────────────────────
@@ -526,7 +560,8 @@ async def scrape_topic(
         adapter_hn = HackerNewsAdapter(HackerNewsConfig(search_by_date=True))
         tasks.append(
             asyncio.create_task(
-                _scrape_source(
+                _semaphore_guarded(
+                    _sem,
                     f"hacker_news:{term[:30]}",
                     adapter_hn,
                     {"query": term, "limit": limit_per_source},
@@ -542,7 +577,8 @@ async def scrape_topic(
         adapter_gn = GoogleNewsRSSAdapter(GoogleNewsRSSConfig())
         tasks.append(
             asyncio.create_task(
-                _scrape_source(
+                _semaphore_guarded(
+                    _sem,
                     f"google_news:{term[:30]}",
                     adapter_gn,
                     {"query": term, "limit": limit_per_source},
@@ -558,7 +594,8 @@ async def scrape_topic(
         adapter_bn = BingNewsRSSAdapter(BingNewsRSSConfig())
         tasks.append(
             asyncio.create_task(
-                _scrape_source(
+                _semaphore_guarded(
+                    _sem,
                     f"bing_news:{term[:30]}",
                     adapter_bn,
                     {"query": term, "limit": limit_per_source},
@@ -573,7 +610,8 @@ async def scrape_topic(
         adapter_r = RedditRSSAdapter(RedditRSSConfig(subreddits=(sub,), listing="hot"))
         tasks.append(
             asyncio.create_task(
-                _scrape_source(
+                _semaphore_guarded(
+                    _sem,
                     f"reddit:{sub}",
                     adapter_r,
                     {"subreddit": sub, "limit": limit_per_source},
@@ -602,7 +640,8 @@ async def scrape_topic(
         adapter_gh = GitHubTrendingAdapter(GitHubTrendingConfig())
         tasks.append(
             asyncio.create_task(
-                _scrape_source(
+                _semaphore_guarded(
+                    _sem,
                     "github_trending",
                     adapter_gh,
                     {"limit": limit_per_source},
@@ -617,7 +656,8 @@ async def scrape_topic(
         adapter_amz = AmazonAdapter(AmazonConfig())
         tasks.append(
             asyncio.create_task(
-                _scrape_source(
+                _semaphore_guarded(
+                    _sem,
                     "amazon",
                     adapter_amz,
                     {"query": topic, "limit": limit_per_source},
@@ -655,7 +695,7 @@ async def scrape_topic(
         from aegis.scrape.confidence import score_batch
 
         _threshold = settings().scrape.confidence_threshold
-        conf = score_batch(all_signals, threshold=_threshold)
+        conf = await asyncio.to_thread(score_batch, all_signals, threshold=_threshold)
         result.batch_confidence = conf.overall_score
         if not conf.passed:
             _log.warning(
@@ -685,7 +725,9 @@ async def scrape_topic(
     else:
         from aegis.db.dedup import deduplicate_batch
 
-        unique_signals, dropped = deduplicate_batch(all_signals, threshold=dedup_threshold)
+        unique_signals, dropped = await asyncio.to_thread(
+            deduplicate_batch, all_signals, threshold=dedup_threshold
+        )
 
     result.total_unique = len(unique_signals)
     result.duplicates_dropped = dropped + (result.total_fetched - len(all_signals))
@@ -696,7 +738,9 @@ async def scrape_topic(
         try:
             import importlib
             _pat_mod = importlib.import_module("aegis.scrape.patterns")
-            clusters: list[Any] = _pat_mod.detect_patterns(unique_signals, min_cluster_size=2)
+            clusters: list[Any] = await asyncio.to_thread(
+                _pat_mod.detect_patterns, unique_signals, min_cluster_size=2
+            )
             result.patterns = clusters
             _log.info(
                 "topic.patterns_detected",

@@ -32,4 +32,4 @@ class BusinessStandardRSSAdapter(RSSAdapter):
         return "business_standard"
 
 
-__all__ = ["BusinessStandardRSSAdapter", "RSSAdapterConfig", "SCRAPER_VERSION"]
+__all__ = ["SCRAPER_VERSION", "BusinessStandardRSSAdapter", "RSSAdapterConfig"]

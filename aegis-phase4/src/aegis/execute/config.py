@@ -17,6 +17,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from aegis.execute.constants import (
     ALLOWED_MODES,
+    APPROVAL_TIMEOUT_S,
+    CAPITAL_DAILY_LOSS_LIMIT_USD,
+    CAPITAL_KELLY_FRACTION,
+    CAPITAL_MAX_RISK_USD,
     KILLSWITCH_KEY_DEFAULT,
     MODE_ADVISORY,
     NOTIFY_TIMEOUT_S,
@@ -70,6 +74,40 @@ class ExecuteSettings(BaseSettings):
     discord_webhook_url: str = Field(default="")
 
     generic_webhook_url: str = Field(default="")
+
+    # ----- B2B / Vyapar integration ------------------------------------------
+    vyapar_webhook_url: str = Field(
+        default="",
+        description="Vyapar Intelligent Order webhook URL. Empty = disabled.",
+    )
+
+    # ----- Phase 6: Capital Execution Engine ---------------------------------
+    capital_max_risk_usd: float = Field(
+        default=CAPITAL_MAX_RISK_USD, gt=0.0,
+        description="Maximum USD at risk per execution plan.",
+    )
+    capital_daily_loss_limit_usd: float = Field(
+        default=CAPITAL_DAILY_LOSS_LIMIT_USD, gt=0.0,
+        description="Daily drawdown ceiling; engine halts if breached.",
+    )
+    capital_kelly_fraction: float = Field(
+        default=CAPITAL_KELLY_FRACTION, gt=0.0, le=1.0,
+        description="Fractional Kelly safety factor (0.25 = 25% of optimal).",
+    )
+    approval_timeout_s: int = Field(
+        default=APPROVAL_TIMEOUT_S, gt=0,
+        description="Seconds to wait for operator approval before auto-reject.",
+    )
+    auto_execute_p0: bool = Field(
+        default=False,
+        description="Auto-execute P0 alerts without human approval.",
+    )
+
+    # Fulfillment API keys (empty = disabled / mock mode).
+    printful_api_key: str = Field(default="", description="Printful API key.")
+    cjdropship_api_key: str = Field(default="", description="CJ Dropshipping API key.")
+    shopify_shop_domain: str = Field(default="", description="Shopify store domain.")
+    shopify_access_token: str = Field(default="", description="Shopify Admin API token.")
 
     # ----- Optional API auth -------------------------------------------------
     api_bearer_token: str = Field(default="")  # empty = no auth

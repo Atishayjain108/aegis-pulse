@@ -21,10 +21,7 @@ Author: AEGIS Engineering
 
 from __future__ import annotations
 
-import asyncio
-import json
-from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from pydantic import BaseModel
@@ -577,7 +574,6 @@ class TestLLMGateway:
 
     @pytest.mark.asyncio()
     async def test_complete_returns_response_from_provider(self):
-        from aegis.llm.gateway.gateway import LLMGateway
 
         mock_p = MagicMock()
         mock_p.name = "mock"
@@ -596,7 +592,6 @@ class TestLLMGateway:
     @pytest.mark.asyncio()
     async def test_complete_raises_when_no_providers(self):
         from aegis.llm.errors import AllProvidersFailed
-        from aegis.llm.gateway.gateway import LLMGateway
 
         gw = self._make_gateway()
         with pytest.raises(AllProvidersFailed):
@@ -605,7 +600,6 @@ class TestLLMGateway:
     @pytest.mark.asyncio()
     async def test_guardrail_block_propagates(self):
         from aegis.llm.errors import AllProvidersFailed, GuardrailBlock
-        from aegis.llm.gateway.gateway import LLMGateway
 
         mock_p = MagicMock()
         mock_p.name = "mock"
@@ -634,7 +628,6 @@ class TestLLMGateway:
 
     @pytest.mark.asyncio()
     async def test_health_returns_dict(self):
-        from aegis.llm.gateway.gateway import LLMGateway
 
         gw = self._make_gateway()
         health = await gw.health()

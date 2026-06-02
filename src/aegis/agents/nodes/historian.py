@@ -24,6 +24,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+import structlog
+
 from ..llm import prompts
 from ..schemas import AgentDecision, AgentVerdict, TrendCandidate
 from ..tools.historical import find_analogues
@@ -34,6 +36,8 @@ if TYPE_CHECKING:  # pragma: no cover
     from ..memory.chroma_store import ChromaMemoryStore
     from ..state import GraphState
 
+
+_log = structlog.get_logger("aegis.agents.nodes.historian")
 
 _DEFAULT_K = 5
 _DEFAULT_MIN_SCORE = 0.55
@@ -92,7 +96,8 @@ class HistorianAgent(AgentNode):
                 if result.ok and isinstance(result.data, list):
                     analogues = list(result.data)
                     considered = int(result.metadata.get("considered", len(analogues)))
-            except Exception:  # pragma: no cover
+            except Exception as exc:  # pragma: no cover
+                _log.debug("historian.chroma_query_failed", error=str(exc))
                 analogues = []
 
         if analogues:
@@ -153,7 +158,8 @@ class HistorianAgent(AgentNode):
                 summary=(candidate.summary or "")[:400],
                 analogues=sample,
             )
-        except Exception:
+        except Exception as exc:
+            _log.debug("historian.llm_input_build_failed", error=str(exc))
             return None
         system_text = (
             "You are HISTORIAN. Connect the current candidate to past analogues. "

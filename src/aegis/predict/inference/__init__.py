@@ -19,10 +19,10 @@ from .runner import (
 )
 
 __all__ = [
-    "InferenceConfig",
-    "InferenceRunner",
-    "InferenceResult",
-    "predict_for_trend",
     "AuditRecord",
+    "InferenceConfig",
+    "InferenceResult",
+    "InferenceRunner",
     "make_audit",
+    "predict_for_trend",
 ]

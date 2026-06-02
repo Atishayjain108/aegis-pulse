@@ -85,10 +85,10 @@ def fingerprint_response(data: dict[str, Any] | list[Any], platform: str) -> str
 
 
 __all__ = [
-    "REQUIRED_SIGNAL_FIELDS",
-    "NULLABLE_SIGNAL_FIELDS",
     "ALL_SIGNAL_FIELDS",
-    "validate_signal",
-    "validate_batch",
+    "NULLABLE_SIGNAL_FIELDS",
+    "REQUIRED_SIGNAL_FIELDS",
     "fingerprint_response",
+    "validate_batch",
+    "validate_signal",
 ]

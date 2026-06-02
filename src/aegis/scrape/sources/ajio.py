@@ -250,8 +250,8 @@ class AjioAdapter(SourceAdapter[dict[str, Any]]):
 
 
 __all__ = [
+    "SCRAPER_VERSION",
     "AjioAdapter",
     "AjioConfig",
-    "SCRAPER_VERSION",
     "_extract_ajio_products",
 ]

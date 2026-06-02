@@ -312,4 +312,4 @@ class MoneycontrolAdapter(SourceAdapter[dict[str, Any]]):
             return None
 
 
-__all__ = ["MoneycontrolAdapter", "MoneycontrolConfig", "SCRAPER_VERSION", "_parse_movers_html"]
+__all__ = ["SCRAPER_VERSION", "MoneycontrolAdapter", "MoneycontrolConfig", "_parse_movers_html"]

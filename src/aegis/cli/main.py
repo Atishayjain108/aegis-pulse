@@ -106,6 +106,37 @@ def _docker_compose() -> list[str]:
     sys.exit(2)
 
 
+def _docker_ps_via_socket() -> list[dict[str, Any]] | None:
+    """Query Docker Engine API via Unix socket — no docker binary needed.
+
+    Works inside containers where the docker CLI is absent but
+    /var/run/docker.sock is mounted.  Returns None when the socket is
+    unreachable so callers can fall back to the CLI path.
+    """
+    import http.client
+    import socket as _socket
+
+    sock_path = Path("/var/run/docker.sock")
+    if not sock_path.exists():
+        return None
+
+    class _UnixConn(http.client.HTTPConnection):
+        def connect(self) -> None:
+            s = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+            s.connect(str(sock_path))
+            self.sock = s  # type: ignore[assignment]
+
+    try:
+        conn = _UnixConn("localhost")
+        conn.request("GET", "/containers/json?all=true")
+        resp = conn.getresponse()
+        if resp.status != 200:
+            return None
+        return json.loads(resp.read())  # type: ignore[return-value]
+    except Exception:
+        return None
+
+
 # ---------------------------------------------------------------------
 # Top-level group
 # ---------------------------------------------------------------------
@@ -181,6 +212,22 @@ def down(volumes: bool) -> None:
 @main.command()
 def status() -> None:
     """Show the health status of every service."""
+    # Try the Docker socket API first — works inside containers where the
+    # docker binary is absent (e.g. the dashboard ops console).
+    containers = _docker_ps_via_socket()
+    if containers is not None:
+        if not containers:
+            click.echo("No containers running. Try `aegis up`.", err=True)
+            return
+        click.echo(f"{'NAME':<32} {'STATE':<12} STATUS")
+        for c in containers:
+            name = c.get("Names", ["?"])[0].lstrip("/")
+            state = c.get("State", "?")
+            status_str = c.get("Status", "?")
+            click.echo(f"{name:<32} {state:<12} {status_str}")
+        return
+
+    # Fall back to `docker compose ps` on the host (socket unavailable).
     cmd = [*_docker_compose(), "ps", "--format", "json"]
     result = subprocess.run(cmd, cwd=_repo_root(), capture_output=True, text=True, check=False)
     if result.returncode != 0:
@@ -199,7 +246,6 @@ def status() -> None:
         try:
             rows.append(json.loads(line))
         except json.JSONDecodeError:
-            # Some versions emit a JSON array; try that.
             try:
                 rows.extend(json.loads(line))
             except json.JSONDecodeError:
@@ -387,7 +433,7 @@ def scrape(
 
 def _build_adapter(source: str, adapter_cls: Any, *, limit: int) -> Any:
     """Construct the right adapter + config for *source* using settings()."""
-    from uuid import UUID as _UUID  # noqa: F401 (used below for clarity)
+    from uuid import UUID as _UUID  # noqa: F401
 
     cfg = settings()
 
@@ -1118,18 +1164,14 @@ async def _topic_async(
         pool = PgPool(dsn=cfg.pg_dsn_str)
         await pool.start()
 
-    try:
-        result = await scrape_topic(
-            topic,
-            pool=pool,
-            tenant_id=tenant_uuid if pool else None,
-            limit_per_source=limit,
-            dry_run=dry_run,
-            dedup_threshold=dedup_threshold,
-        )
-    finally:
-        if pool is not None:
-            await pool.close()
+    result = await scrape_topic(
+        topic,
+        pool=pool,
+        tenant_id=tenant_uuid if pool else None,
+        limit_per_source=limit,
+        dry_run=dry_run,
+        dedup_threshold=dedup_threshold,
+    )
 
     # Print scrape summary
     click.echo()
@@ -1175,6 +1217,8 @@ async def _topic_async(
             click.echo(f"  [{plat:15s}] {title}  ↑{score}")
 
     if not run_analyze or result.total_unique == 0:
+        if pool is not None:
+            await pool.close()
         click.echo("=" * 68)
         return
 
@@ -1199,20 +1243,17 @@ async def _topic_async(
         ]
     else:
         # Re-fetch from DB to get enriched rows with computed columns
-        from aegis.db.pool import PgPool as _PgPool
         from aegis.db.signals import fetch_recent_signals
 
-        pool2 = _PgPool(dsn=cfg.pg_dsn_str)
-        await pool2.start()
-        try:
-            db_rows = await fetch_recent_signals(
-                pool2, tenant_id=tenant_uuid, limit=result.total_unique + 20
-            )
-            rows_as_dicts = [dict(r) for r in db_rows]
-        finally:
-            await pool2.close()
+        # Reuse the pool from the scraping phase — no second connect/close cycle.
+        db_rows = await fetch_recent_signals(
+            pool, tenant_id=tenant_uuid, limit=result.total_unique + 20
+        )
+        rows_as_dicts = [dict(r) for r in db_rows]
 
     if not rows_as_dicts:
+        if pool is not None:
+            await pool.close()
         click.echo("  No rows available for analysis.", err=True)
         click.echo("=" * 66)
         return
@@ -1266,6 +1307,8 @@ async def _topic_async(
             f"  {dec.agent:<16} {dec.verdict.value:<10} {dec.score:>6.3f}  "
             f"{dec.confidence:>6.3f}  {(dec.reasoning or '')[:50]}"
         )
+    if pool is not None:
+        await pool.close()
     click.echo("=" * 68)
 
 
@@ -1610,10 +1653,11 @@ async def _daily_async(*, subreddit: str, limit: int) -> None:
     except Exception:
         db_total = 0
     finally:
-        try:  # noqa: SIM105
+        try:
             await pool.close()
-        except Exception:
-            pass
+        except Exception as _pool_exc:
+            import logging as _stdlib_log
+            _stdlib_log.getLogger("aegis.cli").warning("pool.close() failed during daily cmd: %s", _pool_exc)
 
     if not rows:
         click.echo("  No signals in database.", err=False)
@@ -2047,7 +2091,7 @@ try:
 
     for _cmd in _datalake_cli.commands.values():
         datalake_group.add_command(_cmd)
-except Exception:  # lake optional-deps may be absent
+except (ImportError, ModuleNotFoundError):  # datalake optional-deps may be absent
     pass
 
 
@@ -2061,7 +2105,65 @@ try:
 
     for _cmd in _llm_cli.commands.values():
         llm_group.add_command(_cmd)
-except Exception:  # llm optional-deps (sentence-transformers) may be absent
+except (ImportError, ModuleNotFoundError):  # llm optional-deps (sentence-transformers) may be absent
+    pass
+
+
+@main.group("backup")
+def backup_group() -> None:
+    """Phase 15 — Disaster Recovery & Business Continuity."""
+
+
+try:
+    from aegis.backup.cli import backup_group as _backup_cli
+
+    for _cmd in _backup_cli.commands.values():
+        backup_group.add_command(_cmd)
+except (ImportError, ModuleNotFoundError):
+    pass
+
+
+@main.group("dr")
+def dr_group() -> None:
+    """Phase 15 — DR orchestrator (backup/restore/drill/status/runbook)."""
+
+
+try:
+    from aegis.dr.cli import dr_group as _dr_cli  # type: ignore[import-not-found]
+
+    for _cmd in _dr_cli.commands.values():
+        dr_group.add_command(_cmd)
+except (ImportError, ModuleNotFoundError):
+    pass
+
+
+@main.group("geo")
+def geo_group() -> None:
+    """Phase 7 — Geospatial Intelligence & Cross-Market Arbitrage."""
+
+
+try:
+    from aegis.geo.cli import geo_group as _geo_cli
+
+    for _cmd in _geo_cli.commands.values():
+        geo_group.add_command(_cmd)
+except (ImportError, ModuleNotFoundError):
+    pass
+
+
+@main.group("comply")
+def comply_group() -> None:
+    """Phase 8 — Regulatory & Compliance Engine (check / rules / brands / doctor)."""
+
+
+try:
+    from aegis.comply.cli import app as _comply_typer_app
+    import typer.main as _typer_main
+
+    _comply_click = _typer_main.get_command(_comply_typer_app)
+    for _cmd in _comply_click.commands.values():  # type: ignore[union-attr]
+        comply_group.add_command(_cmd)
+except (ImportError, ModuleNotFoundError):
     pass
 
 

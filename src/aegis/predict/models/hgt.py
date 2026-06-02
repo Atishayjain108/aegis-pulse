@@ -287,4 +287,4 @@ class HGTPredictor(Predictor):
             return self._net(h, edge_index, trend_idx)
 
 
-__all__ = ["HGTPredictor", "_HAS_TORCH", "_HAS_PYG"]
+__all__ = ["_HAS_PYG", "_HAS_TORCH", "HGTPredictor"]

@@ -21,7 +21,6 @@ import structlog
 from aegis.llm.constants import (
     PROVIDER_COST_PER_1M_INPUT,
     PROVIDER_COST_PER_1M_OUTPUT,
-    PROVIDER_PRIORITY,
 )
 from aegis.llm.routing.selector import ProviderSelector
 
@@ -61,7 +60,7 @@ class CostAwareRouter(ProviderSelector):
 
     def __init__(
         self,
-        providers: dict[str, "BaseProvider"],
+        providers: dict[str, BaseProvider],
         *,
         max_cost_usd_per_call: float | None = None,
     ) -> None:
@@ -74,7 +73,7 @@ class CostAwareRouter(ProviderSelector):
         require_providers: list[str] | None = None,
         exclude_providers: list[str] | None = None,
         estimated_tokens: int = 1000,
-    ) -> list["BaseProvider"]:  # type: ignore[override]
+    ) -> list[BaseProvider]:  # type: ignore[override]
         """
         Select providers ordered by cost.
 
@@ -92,7 +91,7 @@ class CostAwareRouter(ProviderSelector):
         if not self._max_cost:
             return all_ordered
 
-        filtered: list["BaseProvider"] = []
+        filtered: list[BaseProvider] = []
         for p in all_ordered:
             in_cost = PROVIDER_COST_PER_1M_INPUT.get(p.name, 0.0)
             out_cost = PROVIDER_COST_PER_1M_OUTPUT.get(p.name, 0.0)

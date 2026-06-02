@@ -29,8 +29,8 @@ import pytest
 # minimal-test environment.
 pytest.importorskip("langgraph")
 
-from aegis.agents import runner  # noqa: E402
-from aegis.agents.schemas import AgentVerdict, GraphResult, Priority  # noqa: E402
+from aegis.agents import runner
+from aegis.agents.schemas import AgentVerdict, GraphResult, Priority
 
 
 class TestRunnerHappyPath:
@@ -98,11 +98,13 @@ class TestRunnerHappyPath:
 
 
 class TestRunnerComplianceVeto:
-    async def test_trademark_blocks(self, trend_factory) -> None:
+    async def test_regulatory_block_halts_pipeline(self, trend_factory) -> None:
+        # Phase 8 engine: FDA supplement disease claim → BLOCK → "blocked_by_compliance"
+        # Trademark alone no longer auto-blocks (→ FLAG/HOLD for human review).
         candidate = trend_factory(
-            trend_id="trademark-fail",
-            title="Custom Nike sneakers limited edition",
-            summary="Knockoff Nike sneakers from overseas",
+            trend_id="fda-block-fail",
+            title="Dietary supplement cures cancer prevents diabetes",
+            summary="vitamin supplement that treats and reverses disease",
             velocity_1h=300.0,
             velocity_6h=1500.0,
             velocity_24h=4000.0,
@@ -115,16 +117,17 @@ class TestRunnerComplianceVeto:
         result = await runner.run_trend(candidate, use_llm=False)
         assert result.final_verdict is AgentVerdict.BLOCK
         assert result.halt_reason == "blocked_by_compliance"
-        # Decision trail should include compliance with BLOCK.
         compliance_decisions = [d for d in result.decisions if d.agent == "compliance"]
         assert len(compliance_decisions) >= 1
         assert compliance_decisions[-1].verdict is AgentVerdict.BLOCK
 
     async def test_compliance_short_circuits_red_team(self, trend_factory) -> None:
-        # If compliance fails, red_team and hedge should not even run.
+        # When compliance BLOCKs, red_team and hedge must NOT run.
+        # Use an FDA disease claim (→ BLOCK); trademark alone now gives HOLD (→ continues).
         candidate = trend_factory(
             trend_id="compliance-shortcircuit",
-            title="Genuine Disney mug",
+            title="Vitamin supplement prevents and cures diabetes",
+            summary="dietary supplement reverses disease",
             velocity_1h=200.0,
             velocity_6h=1000.0,
             velocity_24h=3000.0,
@@ -135,7 +138,6 @@ class TestRunnerComplianceVeto:
         result = await runner.run_trend(candidate, use_llm=False)
         assert result.halt_reason == "blocked_by_compliance"
         agent_names = [d.agent for d in result.decisions]
-        # Red team and hedge should NOT appear.
         assert "red_team" not in agent_names
         assert "hedge" not in agent_names
 

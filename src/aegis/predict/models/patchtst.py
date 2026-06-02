@@ -398,4 +398,4 @@ class PatchTSTPredictor(Predictor):
         return out
 
 
-__all__ = ["PatchTSTPredictor", "_HAS_TORCH"]
+__all__ = ["_HAS_TORCH", "PatchTSTPredictor"]

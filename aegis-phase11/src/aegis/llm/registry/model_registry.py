@@ -256,7 +256,7 @@ class ModelRegistry:
     # ------------------------------------------------------------------
 
     @classmethod
-    def default(cls) -> "ModelRegistry":
+    def default(cls) -> ModelRegistry:
         """Return a pre-populated registry with all well-known models."""
         registry = cls()
         registry.register_many([

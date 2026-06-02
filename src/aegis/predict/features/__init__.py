@@ -24,10 +24,10 @@ from .graph import CreatorGraph, build_creator_graph
 from .velocity import VelocityWindow, compute_velocities
 
 __all__ = [
-    "VelocityWindow",
-    "compute_velocities",
     "CreatorGraph",
+    "VelocityWindow",
     "build_creator_graph",
     "build_feature_window",
     "build_window_from_rows",
+    "compute_velocities",
 ]

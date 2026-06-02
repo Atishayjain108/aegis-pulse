@@ -1,6 +1,8 @@
 """tests/unit/llm/test_eval.py"""
 from __future__ import annotations
+
 from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 
 
@@ -26,9 +28,10 @@ class TestEvalRunner:
 
     @pytest.mark.asyncio()
     async def test_run_all_passes_with_matching_output(self, tmp_path):
+        import json
+
         from aegis.llm.eval.runner import EvalRunner
         from aegis.llm.registry.prompt_registry import PromptRegistry
-        import json
 
         # Create a template
         tpl = tmp_path / "my_tpl.jinja2"
@@ -54,9 +57,10 @@ class TestEvalRunner:
 
     @pytest.mark.asyncio()
     async def test_run_all_fails_on_missing_phrase(self, tmp_path):
+        import json
+
         from aegis.llm.eval.runner import EvalRunner
         from aegis.llm.registry.prompt_registry import PromptRegistry
-        import json
 
         tpl = tmp_path / "tpl2.jinja2"
         tpl.write_text("---\nname: tpl2\nversion: 1\nrequired_vars: [x]\ndescription: t\n---\n{{ x }}")
@@ -80,7 +84,7 @@ class TestEvalRunner:
 
 class TestEvalMetrics:
     def _make_report(self, pass_rate: float = 1.0):
-        from aegis.llm.eval.runner import EvalReport, EvalResult, EvalCase
+        from aegis.llm.eval.runner import EvalCase, EvalReport, EvalResult
         case = EvalCase("test", {})
         results = [EvalResult(case=case, passed=True, latency_ms=100.0, output="ok")]
         total = len(results)

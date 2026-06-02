@@ -349,7 +349,8 @@ class WalkForwardBacktester:
 
             _check_no_lookahead(train_chunk, test_chunk, purge_s)
 
-            assert self.train_fn is not None
+            if self.train_fn is None:
+                raise RuntimeError("WalkForwardBacktester.train_fn must be set before run()")
             await self.train_fn(train_chunk)
 
             fold_preds: list[Prediction] = []

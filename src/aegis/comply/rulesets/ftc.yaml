@@ -1,0 +1,76 @@
+ruleset: ftc
+version: "2026.05"
+jurisdiction: US
+# US Federal Trade Commission advertising heuristics. Operator orientation only;
+# not legal advice. Citations are approximate pointers to the relevant authority.
+rules:
+  - id: FTC-DISCLOSURE-001
+    name: Endorsement without material-connection disclosure
+    description: An endorsement/sponsorship is present but no #ad / paid-partnership disclosure is detected.
+    severity: warn
+    category: advertising
+    citation: "16 CFR Part 255 (Endorsement Guides)"
+    remediation: "Add a clear and conspicuous disclosure such as '#ad' or 'Paid partnership'."
+    match:
+      all_of:
+        - field: endorsement_present
+          op: eq
+          value: true
+        - field: disclosure_present
+          op: eq
+          value: false
+
+  - id: FTC-HEALTH-001
+    name: Unsubstantiated health or cure claim
+    description: Disease, cure, or guaranteed-result language without competent scientific evidence.
+    severity: block
+    category: advertising
+    citation: "15 U.S.C. 45; 15 U.S.C. 52 (FTC Act)"
+    remediation: "Remove disease/cure/guaranteed-result claims or substantiate with competent and reliable scientific evidence."
+    match:
+      any_of:
+        - field: text
+          op: contains_any
+          value:
+            - "cures"
+            - "treats disease"
+            - "prevents disease"
+            - "miracle cure"
+            - "clinically proven to cure"
+            - "guaranteed weight loss"
+            - "fda approved"
+            - "detoxes your body"
+
+  - id: FTC-EARNINGS-001
+    name: Unrealistic earnings or income claim
+    description: Guaranteed-income or get-rich language that may require an earnings-claim disclosure.
+    severity: warn
+    category: advertising
+    citation: "16 CFR Part 437 (Business Opportunity Rule)"
+    remediation: "Avoid guaranteed-income language or provide a substantiated earnings disclosure statement."
+    match:
+      any_of:
+        - field: text
+          op: regex_any
+          value:
+            - "guaranteed (income|profit|returns)"
+            - "make \\$[0-9,]+ ?(a|per)? ?day"
+            - "passive income guaranteed"
+            - "get rich"
+
+  - id: FTC-FAKE-SCARCITY-001
+    name: Potentially deceptive scarcity / urgency claim
+    description: High-pressure scarcity cues that may be deceptive if not truthful.
+    severity: info
+    category: advertising
+    citation: "16 CFR Part 465 (Consumer Reviews and Testimonials context)"
+    remediation: "Ensure scarcity/urgency claims are truthful and verifiable."
+    match:
+      any_of:
+        - field: text
+          op: contains_any
+          value:
+            - "only 1 left"
+            - "only 2 left"
+            - "selling out fast"
+            - "last chance ever"

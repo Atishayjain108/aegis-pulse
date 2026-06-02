@@ -20,8 +20,9 @@ from __future__ import annotations
 import asyncio
 import time
 from collections import deque
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
-from typing import Any, Callable, Coroutine
+from typing import Any
 
 import structlog
 

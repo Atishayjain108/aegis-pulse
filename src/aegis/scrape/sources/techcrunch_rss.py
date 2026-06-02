@@ -26,4 +26,4 @@ class TechCrunchRSSAdapter(RSSAdapter):
         return "techcrunch"
 
 
-__all__ = ["TechCrunchRSSAdapter", "RSSAdapterConfig", "SCRAPER_VERSION"]
+__all__ = ["SCRAPER_VERSION", "RSSAdapterConfig", "TechCrunchRSSAdapter"]

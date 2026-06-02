@@ -110,7 +110,7 @@ class LLMGateway:
         settings: LLMSettings | None = None,
         *,
         semantic_router: SemanticRouter | None = None,
-    ) -> "LLMGateway":
+    ) -> LLMGateway:
         """
         Build a fully configured ``LLMGateway`` from settings.
 

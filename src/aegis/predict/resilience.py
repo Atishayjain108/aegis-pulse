@@ -210,7 +210,8 @@ async def resilient_call(
         _log.info("resilient_call.fallback", name=name)
         return await _maybe_await(fallback)
 
-    assert last_exc is not None
+    if last_exc is None:
+        raise RuntimeError("resilient_call exhausted retries but captured no exception — this is a bug")
     raise last_exc
 
 
@@ -225,6 +226,6 @@ __all__ = [
     "CircuitBreaker",
     "decorrelated_jitter",
     "get_breaker",
-    "resilient_call",
     "reset_all_breakers",
+    "resilient_call",
 ]

@@ -33,9 +33,9 @@ from .policy import (
 __all__ = [
     "ArbitrageEnv",
     "EnvConfig",
-    "PortfolioState",
     "HeuristicPolicy",
     "KellyAction",
     "PolicyDecision",
+    "PortfolioState",
     "decide",
 ]

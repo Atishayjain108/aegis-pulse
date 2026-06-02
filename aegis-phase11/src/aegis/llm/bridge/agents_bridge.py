@@ -41,11 +41,11 @@ if TYPE_CHECKING:
 
 _log = structlog.get_logger("aegis.llm.bridge.agents")
 
-_gateway: "LLMGateway | None" = None
+_gateway: LLMGateway | None = None
 _lock = asyncio.Lock()
 
 
-async def get_gateway() -> "LLMGateway":
+async def get_gateway() -> LLMGateway:
     """
     Return the process-level ``LLMGateway`` singleton.
 
@@ -76,7 +76,7 @@ async def get_gateway() -> "LLMGateway":
                 "agents_bridge.gateway_created",
                 providers=settings.enabled_providers(),
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             _log.error(
                 "agents_bridge.gateway_create_failed",
                 error=str(exc),
@@ -88,7 +88,7 @@ async def get_gateway() -> "LLMGateway":
     return _gateway
 
 
-def set_gateway(gw: "LLMGateway") -> None:
+def set_gateway(gw: LLMGateway) -> None:
     """
     Inject a gateway for testing or custom configuration.
 

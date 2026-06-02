@@ -261,7 +261,7 @@ class RSSAdapter(SourceAdapter[dict[str, Any]]):
 __all__ = [
     "RSSAdapter",
     "RSSAdapterConfig",
+    "_entry_to_raw",
     "clean_url",
     "fetch_feed_entries",
-    "_entry_to_raw",
 ]

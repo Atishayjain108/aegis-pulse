@@ -101,8 +101,8 @@ def count_tokens(text: str, *, model: str = "gpt-4") -> int:
         try:
             enc = _tiktoken.encoding_for_model(model)
             return len(enc.encode(text))
-        except Exception:
-            pass  # Fall through to heuristic
+        except Exception as exc:
+            _log.debug("tokenizer.tiktoken_encode_failed", model=model, error=str(exc))
 
     # Heuristic mode
     if _has_cjk(text):
@@ -265,8 +265,8 @@ def token_stats(text: str) -> dict[str, Any]:
         try:
             enc = _tiktoken.encoding_for_model("gpt-4")
             tiktoken_count = len(enc.encode(text))
-        except Exception:
-            pass
+        except Exception as exc:
+            _log.debug("tokenizer.tiktoken_encode_failed", model="gpt-4", error=str(exc))
     return {
         "char_count": len(text),
         "heuristic_tokens": heuristic,

@@ -294,4 +294,4 @@ class GitHubPublicAdapter(SourceAdapter[dict[str, Any]]):
             return None
 
 
-__all__ = ["GitHubPublicAdapter", "GitHubPublicConfig", "SCRAPER_VERSION"]
+__all__ = ["SCRAPER_VERSION", "GitHubPublicAdapter", "GitHubPublicConfig"]

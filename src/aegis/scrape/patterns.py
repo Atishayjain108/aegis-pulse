@@ -28,12 +28,7 @@ from aegis.scrape.analytics import compute_velocity_slope, pca_denoise_vectors
 
 # Stopwords — stripped before TF-IDF so they don't dilute topic signals
 _STOPWORDS = frozenset(
-    "a an the is are was were be been being have has had do does did will would "
-    "could should may might shall can of in on at by for with about against between "
-    "into through during before after above below to from up down out off over under "
-    "again further then once here there when where why how all both each few more "
-    "most other some such no nor not only same so than too very just also now new "
-    "says said report says according sources amid amid amid amid amid amid amid".split()
+    ["a", "an", "the", "is", "are", "was", "were", "be", "been", "being", "have", "has", "had", "do", "does", "did", "will", "would", "could", "should", "may", "might", "shall", "can", "of", "in", "on", "at", "by", "for", "with", "about", "against", "between", "into", "through", "during", "before", "after", "above", "below", "to", "from", "up", "down", "out", "off", "over", "under", "again", "further", "then", "once", "here", "there", "when", "where", "why", "how", "all", "both", "each", "few", "more", "most", "other", "some", "such", "no", "nor", "not", "only", "same", "so", "than", "too", "very", "just", "also", "now", "new", "says", "said", "report", "says", "according", "sources", "amid", "amid", "amid", "amid", "amid", "amid", "amid"]
 )
 
 

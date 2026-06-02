@@ -194,7 +194,7 @@ def score_batch(
         full_hints = list(_REMEDIATION.values())
         result = ConfidenceResult(
             overall_score=0.0,
-            dimensions={k: 0.0 for k in _WEIGHTS},
+            dimensions=dict.fromkeys(_WEIGHTS, 0.0),
             remediation_hints=full_hints,
             signal_count=0,
             passed=False,
@@ -205,7 +205,7 @@ def score_batch(
             overall_score=0.0,
             threshold=threshold,
             signal_count=0,
-            action="self_healing_triggered",
+            action="advisory_empty_batch",
             remediation_hints=full_hints,
             note="Batch is empty — all remediation hints apply",
         )
@@ -267,6 +267,8 @@ def score_batch(
     )
 
     if not passed:
+        stale_only = hints == ["STALE_DATA: Most signals are older than 24 hours. "
+                               "Increase lookback window, trigger a re-scrape, or check adapter health."]
         _log.warning(
             "confidence.gate_failed",
             overall_score=overall,
@@ -274,7 +276,7 @@ def score_batch(
             dimensions=dimensions,
             remediation_hints=hints,
             signal_count=n,
-            action="self_healing_triggered",
+            action="advisory_stale_data" if stale_only else "advisory_gate_failed",
         )
     else:
         _log.debug(

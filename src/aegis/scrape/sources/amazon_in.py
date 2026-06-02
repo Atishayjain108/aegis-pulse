@@ -312,8 +312,8 @@ class AmazonINAdapter(SourceAdapter[dict[str, Any]]):
 
 
 __all__ = [
+    "SCRAPER_VERSION",
     "AmazonINAdapter",
     "AmazonINConfig",
-    "SCRAPER_VERSION",
     "_parse_amazon_in_page",
 ]

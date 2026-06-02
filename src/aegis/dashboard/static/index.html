@@ -342,6 +342,14 @@ select:hover,input:hover,select:focus,input:focus{border-color:var(--cyan);color
 .spinning{animation:spin 1s linear infinite;display:inline-block}
 @keyframes spin{to{transform:rotate(360deg)}}
 
+/* ── Watchlist topic cards ───────────────────────────────── */
+.wl-card{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:14px 16px;display:flex;align-items:center;gap:12px;transition:border-color .2s}
+.wl-card:hover{border-color:var(--border2)}
+.wl-verdict-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.wl-topic{font-size:14px;font-weight:600;color:var(--text0);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wl-meta{font-size:11px;color:var(--text3);font-family:var(--font-mono);white-space:nowrap}
+.wl-score{font-size:14px;font-weight:700;font-family:var(--font-mono);min-width:42px;text-align:right}
+.wl-run-btn{padding:5px 12px;font-size:11px}
 /* ── Responsive ──────────────────────────────────────────── */
 @media(max-width:900px){
   .grid-4{grid-template-columns:1fr 1fr}
@@ -349,6 +357,91 @@ select:hover,input:hover,select:focus,input:focus{border-color:var(--cyan);color
   .grid-3{grid-template-columns:1fr}
   .grid-2{grid-template-columns:1fr}
 }
+
+/* ── Research: step timeline ─────────────────────────────── */
+.rs-timeline{display:flex;align-items:center;justify-content:center;padding:20px 0;flex-wrap:wrap;gap:0}
+.rs-step{display:flex;flex-direction:column;align-items:center;gap:6px;min-width:80px}
+.rs-step-icon{width:38px;height:38px;border-radius:50%;border:2px solid var(--border2);background:var(--bg2);display:flex;align-items:center;justify-content:center;font-size:15px;transition:all .3s;color:var(--text3)}
+.rs-step-label{font-size:9px;color:var(--text3);font-family:var(--font-mono);letter-spacing:.1em;text-transform:uppercase}
+.rs-step.active .rs-step-icon{border-color:var(--cyan);color:var(--cyan);box-shadow:0 0 14px rgba(0,212,255,.4);animation:spin 1.5s linear infinite}
+.rs-step.active .rs-step-label{color:var(--cyan)}
+.rs-step.done .rs-step-icon{border-color:var(--green2);background:rgba(0,230,118,.1);color:var(--green);animation:none}
+.rs-step.done .rs-step-label{color:var(--green2)}
+.rs-step-line{flex:1;height:2px;background:var(--border);min-width:28px;max-width:70px;transition:background .4s;align-self:center;margin-bottom:20px}
+.rs-step-line.done{background:var(--green2)}
+/* ── Research: feature chips ─────────────────────────────── */
+.feat-chip{display:inline-flex;flex-direction:column;align-items:center;gap:3px;padding:8px 14px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);min-width:90px}
+.feat-chip-lbl{font-size:9px;color:var(--text3);letter-spacing:.1em;text-transform:uppercase}
+.feat-chip-val{font-size:15px;font-weight:700;font-family:var(--font-mono);color:var(--text0)}
+/* ── Research: agent reasoning modal ─────────────────────── */
+#rs-agent-modal{position:fixed;inset:0;z-index:400;background:rgba(0,0,0,.78);align-items:center;justify-content:center}
+.rs-modal-box{background:var(--bg2);border:1px solid var(--border2);border-radius:10px;width:min(92vw,700px);max-height:84vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 8px 40px rgba(0,0,0,.6)}
+.rs-modal-hdr{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);flex-shrink:0}
+.rs-modal-body{padding:20px;overflow-y:auto;flex:1;font-size:12px;color:var(--text1);line-height:1.75;white-space:pre-wrap;font-family:var(--font-mono)}
+/* ── Research: history chips ─────────────────────────────── */
+.rs-hist-chip{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:16px;border:1px solid var(--border);background:var(--bg2);cursor:pointer;font-size:11px;color:var(--text2);font-family:var(--font-mono);transition:all .15s;white-space:nowrap}
+.rs-hist-chip:hover{border-color:var(--cyan2);color:var(--text0);background:var(--bg3)}
+
+/* ═══════════════════════════════════════════════════════════
+   PHASE 4 — Professional Market Intelligence Upgrades
+═══════════════════════════════════════════════════════════ */
+
+/* ── Trend arrows ────────────────────────────────────────── */
+.trend-up2{color:var(--green);font-size:13px;font-weight:700}
+.trend-up1{color:var(--green2);font-size:12px}
+.trend-dn2{color:var(--red);font-size:13px;font-weight:700}
+.trend-dn1{color:#cc2a3e;font-size:12px}
+.trend-flat{color:var(--text3);font-size:11px}
+.stat-card{position:relative;overflow:hidden}
+.stat-card::after{content:'';position:absolute;inset:0;pointer-events:none;border-radius:8px;
+  background:linear-gradient(135deg,rgba(255,255,255,.018) 0%,transparent 60%)}
+.stat-trend{font-size:13px;position:absolute;top:14px;right:14px;opacity:.85}
+
+/* ── Market Pulse badge ──────────────────────────────────── */
+.market-pulse{
+  display:flex;align-items:center;gap:14px;
+  padding:12px 18px;border-radius:8px;
+  border:1px solid var(--border2);background:var(--bg3);
+  transition:all .3s;
+}
+.market-pulse.bullish{border-color:var(--green2);background:rgba(0,230,118,.06)}
+.market-pulse.bearish{border-color:var(--red);background:rgba(255,61,85,.06)}
+.market-pulse.mixed{border-color:var(--amber);background:rgba(255,179,0,.05)}
+.mp-icon{font-size:26px;line-height:1}
+.mp-label{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.12em;margin-bottom:2px}
+.mp-value{font-size:20px;font-weight:700;font-family:var(--font-mono);letter-spacing:.05em}
+.mp-sub{font-size:11px;color:var(--text2);margin-top:2px}
+
+/* ── Sparkline inline bar chart ──────────────────────────── */
+.sparkline-wrap{display:inline-flex;align-items:flex-end;gap:2px;height:22px;vertical-align:middle}
+.sparkline-bar{width:4px;border-radius:1px;min-height:2px;transition:height .3s}
+
+/* ── Confidence meter (horizontal) ──────────────────────── */
+.conf-meter{display:flex;align-items:center;gap:8px;margin-top:4px}
+.conf-meter-bar{flex:1;height:3px;background:var(--bg4);border-radius:2px;overflow:hidden}
+.conf-meter-fill{height:100%;border-radius:2px;transition:width .5s ease-out}
+.conf-meter-val{font-family:var(--font-mono);font-size:10px;color:var(--text2);min-width:32px;text-align:right}
+
+/* ── EMA annotation label ────────────────────────────────── */
+.ema-legend{display:flex;align-items:center;gap:6px;font-size:10px;color:var(--text3);font-family:var(--font-mono);margin-top:4px}
+.ema-legend-line{width:18px;height:2px;background:rgba(156,110,255,.7);border-radius:1px;flex-shrink:0}
+
+/* ── Momentum chip ───────────────────────────────────────── */
+.momentum-chip{
+  display:inline-flex;align-items:center;gap:5px;
+  padding:3px 9px;border-radius:4px;font-size:10px;font-family:var(--font-mono);font-weight:700;
+  letter-spacing:.06em;text-transform:uppercase;
+}
+.momentum-chip.bullish{background:rgba(0,230,118,.12);color:var(--green);border:1px solid rgba(0,184,90,.3)}
+.momentum-chip.bearish{background:rgba(255,61,85,.12);color:var(--red);border:1px solid rgba(255,61,85,.3)}
+.momentum-chip.neutral{background:var(--bg4);color:var(--text2);border:1px solid var(--border)}
+
+/* ── Platform metrics row ────────────────────────────────── */
+.plat-metric-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)}
+.plat-metric-row:last-child{border-bottom:none}
+.plat-metric-name{min-width:120px;font-size:11px;font-family:var(--font-mono);color:var(--text1)}
+.plat-metric-bars{flex:1;display:flex;flex-direction:column;gap:4px}
+.plat-metric-label{font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em}
 </style>
 </head>
 <body>
@@ -391,6 +484,12 @@ select:hover,input:hover,select:focus,input:focus{border-color:var(--cyan);color
   </div>
   <div class="nav-item" onclick="nav('pipeline')" id="nav-pipeline">
     <span class="nav-icon">◎</span> Agent Pipeline
+  </div>
+  <div class="nav-item" onclick="nav('research')" id="nav-research">
+    <span class="nav-icon">⬟</span> Research Topic
+  </div>
+  <div class="nav-item" onclick="nav('watchlist')" id="nav-watchlist">
+    <span class="nav-icon">☰</span> Watchlist <span id="wl-nav-count" style="margin-left:auto;font-size:10px;font-family:var(--font-mono);color:var(--text3)"></span>
   </div>
   <div class="nav-item" onclick="nav('intelligence')" id="nav-intelligence">
     <span class="nav-icon">◑</span> ML Intelligence
@@ -443,6 +542,7 @@ select:hover,input:hover,select:focus,input:focus{border-color:var(--cyan);color
       <div class="stat-label">Phase 0 — Scrape</div>
       <div class="stat-value" id="ov-p0-val">…</div>
       <div class="stat-sub" id="ov-p0-sub">signals in DB</div>
+      <span class="stat-trend" id="ov-p0-trend"></span>
     </div>
     <div class="stat-card green">
       <div class="stat-label">Phase 1 — Persist</div>
@@ -463,6 +563,29 @@ select:hover,input:hover,select:focus,input:focus{border-color:var(--cyan);color
       <div class="stat-label">Phase 4 — Execute</div>
       <div class="stat-value" id="ov-p4-val">…</div>
       <div class="stat-sub" id="ov-p4-sub">alert engine</div>
+    </div>
+  </div>
+
+  <!-- Market pulse + EMA legend row -->
+  <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+    <div style="flex:1;min-width:220px" id="ov-market-pulse">
+      <div class="market-pulse neutral">
+        <span class="mp-icon">📊</span>
+        <div><div class="mp-label">Market Pulse</div><div class="mp-value" style="color:var(--text2)">LOADING…</div></div>
+      </div>
+    </div>
+    <div style="flex:2;min-width:260px">
+      <div class="card" style="padding:12px 16px">
+        <div class="card-title" style="margin-bottom:8px">Signal Velocity</div>
+        <div style="display:flex;gap:20px;flex-wrap:wrap">
+          <div><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em">Last Hour</div>
+            <div style="font-size:18px;font-weight:700;font-family:var(--font-mono);color:var(--cyan)" id="ov-vel-1h">…</div></div>
+          <div><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em">Last 24h</div>
+            <div style="font-size:18px;font-weight:700;font-family:var(--font-mono);color:var(--text0)" id="ov-vel-24h">…</div></div>
+          <div><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em">Trend</div>
+            <div style="font-size:22px;font-weight:700;font-family:var(--font-mono)" id="ov-vel-trend">—</div></div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -494,6 +617,10 @@ select:hover,input:hover,select:focus,input:focus{border-color:var(--cyan);color
     <div class="card">
       <div class="card-title">24-Hour Ingestion Activity</div>
       <div class="chart-wrap"><canvas id="ov-activity-chart"></canvas></div>
+      <div class="ema-legend">
+        <div class="ema-legend-line"></div>
+        EMA trend line (5-bucket)
+      </div>
     </div>
   </div>
 </div>
@@ -591,6 +718,198 @@ select:hover,input:hover,select:focus,input:focus{border-color:var(--cyan);color
   <div class="card">
     <div class="card-title">Agent Decision Details</div>
     <div id="pl-decisions" style="display:flex;flex-direction:column;gap:12px;margin-top:4px"></div>
+  </div>
+</div>
+</template>
+
+<!-- ── RESEARCH TOPIC ─────────────────────────────────────────────────────── -->
+<template id="tmpl-research">
+<div>
+  <div class="section-header">
+    <div class="section-title">Research Topic</div>
+    <div class="section-sub">Full intelligence cycle — scrape → dedup → 10-node agent pipeline → structured verdict</div>
+  </div>
+
+  <!-- Research history chips (populated from sessionStorage) -->
+  <div id="rs-history-panel" style="display:none;margin-bottom:10px;align-items:center;gap:8px;flex-wrap:wrap">
+    <span style="font-size:10px;color:var(--text3);font-family:var(--font-mono);letter-spacing:.1em">RECENT:</span>
+    <div id="rs-history-chips" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+  </div>
+
+  <!-- Search input -->
+  <div class="card" style="margin-bottom:16px;background:rgba(0,212,255,.04);border-color:rgba(0,212,255,.25)">
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <input id="rs-topic-input" placeholder="Enter topic to research: e.g. 'AI chips', 'Flipkart sale', 'electric bikes'"
+             style="flex:1;min-width:240px;font-size:15px;padding:10px 14px"
+             onkeydown="if(event.key==='Enter')runResearch()">
+      <div style="display:flex;gap:8px;align-items:center">
+        <label style="font-size:12px;color:var(--text2);display:flex;align-items:center;gap:6px;cursor:pointer">
+          <input type="checkbox" id="rs-use-llm" checked style="accent-color:var(--cyan)"> LLM
+        </label>
+        <select id="rs-limit" style="font-size:12px;padding:4px 8px">
+          <option value="15">15 signals</option>
+          <option value="20" selected>20 signals</option>
+          <option value="30">30 signals</option>
+          <option value="50">50 signals</option>
+        </select>
+        <button class="btn primary" onclick="runResearch()" id="rs-run-btn" style="padding:10px 20px;font-size:13px">
+          ▶ Research
+        </button>
+      </div>
+    </div>
+    <div id="rs-status" style="margin-top:8px;font-size:12px;color:var(--text2);min-height:18px"></div>
+  </div>
+
+  <!-- Loading state: step timeline -->
+  <div id="rs-loading" style="display:none">
+    <div class="card" style="margin-bottom:16px">
+      <div class="rs-timeline">
+        <div class="rs-step" id="rs-step-expanding">
+          <div class="rs-step-icon">⬡</div>
+          <div class="rs-step-label">Expand</div>
+        </div>
+        <div class="rs-step-line" id="rs-line-1"></div>
+        <div class="rs-step" id="rs-step-scraping">
+          <div class="rs-step-icon">⬡</div>
+          <div class="rs-step-label">Scrape</div>
+        </div>
+        <div class="rs-step-line" id="rs-line-2"></div>
+        <div class="rs-step" id="rs-step-agents">
+          <div class="rs-step-icon">⬡</div>
+          <div class="rs-step-label">Agents</div>
+        </div>
+        <div class="rs-step-line" id="rs-line-3"></div>
+        <div class="rs-step" id="rs-step-done">
+          <div class="rs-step-icon">⬡</div>
+          <div class="rs-step-label">Complete</div>
+        </div>
+      </div>
+      <div style="text-align:center;font-size:13px;color:var(--cyan);font-family:var(--font-mono);padding-bottom:12px" id="rs-loading-msg">
+        Initialising intelligence cycle…
+      </div>
+    </div>
+  </div>
+
+  <!-- Result panel (hidden until first run) -->
+  <div id="rs-result" style="display:none">
+
+    <!-- Verdict + score hero -->
+    <div class="grid-4" style="margin-bottom:16px">
+      <div class="stat-card" id="rs-verdict-card" style="grid-column:span 1">
+        <div class="stat-label">Verdict</div>
+        <div id="rs-verdict-val" style="font-size:22px;font-weight:700;font-family:var(--font-mono);margin:4px 0">—</div>
+        <div class="stat-sub" id="rs-halt-reason">—</div>
+      </div>
+      <div class="stat-card cyan">
+        <div class="stat-label">Confidence Score</div>
+        <div class="stat-value" id="rs-score-val">—</div>
+        <div class="stat-sub" id="rs-confidence-val">confidence</div>
+      </div>
+      <div class="stat-card green">
+        <div class="stat-label">Signals Found</div>
+        <div class="stat-value" id="rs-signals-val">—</div>
+        <div class="stat-sub" id="rs-sources-val">sources hit</div>
+      </div>
+      <div class="stat-card amber">
+        <div class="stat-label">Analysis Time</div>
+        <div class="stat-value" id="rs-time-val">—</div>
+        <div class="stat-sub">seconds total</div>
+      </div>
+    </div>
+
+    <!-- Computed signal intelligence chips -->
+    <div class="card" style="margin-bottom:16px;background:rgba(156,110,255,.04);border-color:rgba(156,110,255,.2)">
+      <div class="card-title" style="margin-bottom:10px">Signal Intelligence <span id="rs-pulse-badge" style="font-size:11px;font-family:var(--font-mono);margin-left:10px;padding:2px 8px;border-radius:10px;background:rgba(255,179,0,.15);color:var(--amber)">NEUTRAL</span></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap" id="rs-features-row">
+        <div class="feat-chip"><div class="feat-chip-lbl">Sentiment</div><div class="feat-chip-val" id="fc-sentiment">—</div></div>
+        <div class="feat-chip"><div class="feat-chip-lbl">Commercial</div><div class="feat-chip-val" id="fc-commercial">—</div></div>
+        <div class="feat-chip"><div class="feat-chip-lbl">Novelty</div><div class="feat-chip-val" id="fc-novelty">—</div></div>
+        <div class="feat-chip"><div class="feat-chip-lbl">Coord Risk</div><div class="feat-chip-val" id="fc-coord">—</div></div>
+        <div class="feat-chip"><div class="feat-chip-lbl">Platforms</div><div class="feat-chip-val" id="fc-platforms">—</div></div>
+        <div class="feat-chip"><div class="feat-chip-lbl">Authors</div><div class="feat-chip-val" id="fc-authors">—</div></div>
+      </div>
+    </div>
+
+    <div class="grid-2" style="margin-bottom:16px">
+      <!-- Agent decisions (clickable for full reasoning) -->
+      <div class="card">
+        <div class="card-title">Agent Decisions <span style="font-size:10px;color:var(--text3);font-weight:400"> — click row for reasoning</span></div>
+        <div id="rs-decisions" style="margin-top:8px;display:flex;flex-direction:column;gap:4px"></div>
+      </div>
+
+      <!-- Top signals -->
+      <div class="card">
+        <div class="card-title">Top Signals Scraped</div>
+        <div id="rs-signals-list" style="margin-top:8px;display:flex;flex-direction:column;gap:6px;max-height:300px;overflow-y:auto"></div>
+      </div>
+    </div>
+
+    <div class="grid-2" style="margin-bottom:16px">
+      <!-- Patterns -->
+      <div class="card">
+        <div class="card-title">Emerging Patterns</div>
+        <div id="rs-patterns" style="margin-top:8px"></div>
+      </div>
+
+      <!-- Scrape detail + errors -->
+      <div class="card">
+        <div class="card-title">Scrape Summary</div>
+        <div id="rs-scrape-detail" style="margin-top:8px;font-size:12px;color:var(--text2)"></div>
+      </div>
+    </div>
+
+  </div><!-- /rs-result -->
+
+  <!-- Agent reasoning modal -->
+  <div id="rs-agent-modal" style="display:none" onclick="if(event.target===this)closeAgentModal()">
+    <div class="rs-modal-box">
+      <div class="rs-modal-hdr">
+        <div id="rs-modal-title" style="font-size:14px;font-weight:700;color:var(--text0)">Agent Reasoning</div>
+        <button onclick="closeAgentModal()" class="btn" style="padding:4px 10px;font-size:12px">✕ Close</button>
+      </div>
+      <div id="rs-modal-body" class="rs-modal-body">(no reasoning available)</div>
+    </div>
+  </div>
+
+</div>
+</template>
+
+<!-- ── WATCHLIST ───────────────────────────────────────────────────────────── -->
+<template id="tmpl-watchlist">
+<div>
+  <div class="section-header">
+    <div class="section-title">Watchlist</div>
+    <div class="section-sub">Persistent topic monitor — track markets, run batch analysis, push alerts</div>
+  </div>
+
+  <!-- Add topic -->
+  <div class="card" style="margin-bottom:16px;background:rgba(0,212,255,.04);border-color:rgba(0,212,255,.2)">
+    <div style="display:flex;gap:10px;align-items:center">
+      <input id="wl-add-input" placeholder="Add topic to watchlist: e.g. 'AI chips', 'Flipkart Big Sale'"
+             style="flex:1;font-size:14px;padding:9px 12px"
+             onkeydown="if(event.key==='Enter')wlAdd()">
+      <button class="btn primary" onclick="wlAdd()" style="padding:9px 16px;font-size:13px">＋ Add</button>
+      <button class="btn" onclick="wlRunAll()" id="wl-run-all-btn" style="padding:9px 16px;font-size:13px;border-color:var(--green2);color:var(--green)">▶ Run All</button>
+    </div>
+    <div id="wl-status" style="margin-top:6px;font-size:11px;color:var(--text2);min-height:16px"></div>
+  </div>
+
+  <!-- Progress bar for Run All -->
+  <div id="wl-progress" style="display:none;margin-bottom:16px">
+    <div class="card" style="padding:12px 16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div style="font-size:12px;color:var(--cyan);font-family:var(--font-mono)" id="wl-progress-msg">Running…</div>
+        <div style="font-size:12px;font-family:var(--font-mono)" id="wl-progress-count">0/0</div>
+      </div>
+      <div style="height:4px;background:var(--bg4);border-radius:2px;overflow:hidden">
+        <div id="wl-progress-bar" style="height:100%;width:0%;background:var(--cyan);border-radius:2px;transition:width .3s"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Topic list -->
+  <div id="wl-list" style="display:flex;flex-direction:column;gap:10px">
+    <div class="empty-state">Loading watchlist…</div>
   </div>
 </div>
 </template>
@@ -865,6 +1184,7 @@ const S = {
   signals: [],
   agents: [],
   swarm: null,
+  lastResearch: null,
   liveEvents: [],
   charts: {},
   refreshTimer: null,
@@ -896,7 +1216,7 @@ function platColor(p){return PLATFORM_COLORS[p]||'#6a9bbf'}
 // ── Clock ────────────────────────────────────────────────────────────────────
 function startClock(){
   const el=document.getElementById('clock');
-  const tick=()=>{el.textContent=new Date().toUTCString().replace(' GMT','Z')};
+  const tick=()=>{el.textContent=new Date().toLocaleString('en-GB',{timeZone:'Asia/Kolkata',hour12:false})+' IST'};
   tick();setInterval(tick,1000);
 }
 
@@ -1013,6 +1333,154 @@ async function loadAgents(){
 
 function filterSignals(){loadSignals()}
 
+// ── WATCHLIST ─────────────────────────────────────────────────────────────────
+let _wlData=[];
+
+async function _wlLoad(){
+  try{
+    const d=await api('/api/watchlist');
+    _wlData=d.watchlist||[];
+    const cnt=document.getElementById('wl-nav-count');
+    if(cnt)cnt.textContent=_wlData.length?_wlData.length:'';
+  }catch(_){_wlData=[];}
+}
+
+function _wlRender(){
+  const el=document.getElementById('wl-list');
+  if(!el)return;
+  if(!_wlData.length){
+    el.innerHTML='<div class="empty-state">No topics yet — add one above to start monitoring.</div>';
+    return;
+  }
+  el.innerHTML=_wlData.map((w,i)=>{
+    const vc=w.last_verdict||'';
+    const dotColor=vc==='proceed'?'var(--green)':vc==='block'?'var(--red)':vc==='hold'?'var(--amber)':'var(--text3)';
+    const scoreText=w.last_score!=null?((w.last_score||0)*100).toFixed(0)+'%':'—';
+    const scoreColor=vc==='proceed'?'var(--green)':vc==='block'?'var(--red)':'var(--text2)';
+    const ago=w.last_run_at?_timeAgo(w.last_run_at):'never run';
+    const runId='wl-run-'+i;
+    return `<div class="wl-card" id="wl-card-${i}">
+      <div class="wl-verdict-dot" style="background:${dotColor}"></div>
+      <div class="wl-topic" title="${w.topic}">${w.topic}</div>
+      ${vc?`<span class="verdict-chip ${vc}" style="flex-shrink:0">${vc}</span>`:'<span style="font-size:11px;color:var(--text3)">not run</span>'}
+      <div class="wl-score" style="color:${scoreColor}">${scoreText}</div>
+      <div class="wl-meta">${ago}</div>
+      <button class="btn primary wl-run-btn" id="${runId}" onclick="wlRunTopic(${i})" title="Research this topic now">▶</button>
+      <button class="btn wl-run-btn" onclick="wlRemove(${i})" style="color:var(--red);border-color:rgba(255,61,85,.3)" title="Remove from watchlist">✕</button>
+    </div>`;
+  }).join('');
+}
+
+function _timeAgo(iso){
+  try{
+    const diff=Date.now()-new Date(iso).getTime();
+    const m=Math.floor(diff/60000);
+    if(m<2)return 'just now';
+    if(m<60)return m+'m ago';
+    const h=Math.floor(m/60);
+    if(h<24)return h+'h ago';
+    return Math.floor(h/24)+'d ago';
+  }catch(_){return '';}
+}
+
+async function renderWatchlistSection(){
+  await _wlLoad();
+  _wlRender();
+}
+
+async function wlAdd(){
+  const inp=document.getElementById('wl-add-input');
+  const topic=(inp&&inp.value||'').trim();
+  if(!topic){toast('Enter a topic first','err');return}
+  const st=document.getElementById('wl-status');
+  if(st)st.textContent='Adding…';
+  try{
+    await api('/api/watchlist/add',{method:'POST',body:JSON.stringify({topic})});
+    if(inp)inp.value='';
+    if(st)st.textContent='';
+    await _wlLoad();_wlRender();
+    toast('Added: '+topic,'ok');
+  }catch(e){toast('Failed: '+e.message,'err');if(st)st.textContent='Error: '+e.message;}
+}
+
+async function wlRemove(idx){
+  const topic=(_wlData[idx]||{}).topic;
+  if(!topic)return;
+  try{
+    await api('/api/watchlist/remove',{method:'POST',body:JSON.stringify({topic})});
+    await _wlLoad();_wlRender();
+    toast('Removed: '+topic,'ok');
+  }catch(e){toast('Remove failed','err');}
+}
+
+async function wlRunTopic(idx){
+  const w=_wlData[idx];
+  if(!w)return;
+  const btn=document.getElementById('wl-run-'+idx);
+  const card=document.getElementById('wl-card-'+idx);
+  if(btn){btn.disabled=true;btn.textContent='…';}
+  try{
+    const startResp=await api('/api/topic/research',{method:'POST',body:JSON.stringify({topic:w.topic,limit:20,use_llm:true})});
+    const {job_id}=startResp;
+    await new Promise((resolve,reject)=>{
+      const es=new EventSource(`/api/topic/research/${job_id}/stream`);
+      es.onmessage=(e)=>{
+        try{
+          const evt=JSON.parse(e.data);
+          if(evt.type==='result'){
+            es.close();
+            const d=evt.data;
+            // update watchlist entry
+            const entry={..._wlData[idx],last_verdict:d.verdict,last_score:d.score,last_run_at:new Date().toISOString()};
+            api('/api/watchlist/remove',{method:'POST',body:JSON.stringify({topic:w.topic})}).then(()=>
+              api('/api/watchlist/add',{method:'POST',body:JSON.stringify({topic:w.topic})}).then(()=>{})
+            );
+            _wlData[idx]=entry;
+            _wlRender();
+            S.lastResearch=d;
+            resolve(d);
+          }else if(evt.type==='error'){es.close();reject(new Error(evt.detail));}
+        }catch(_){}
+      };
+      es.onerror=()=>{es.close();reject(new Error('SSE lost'));};
+    });
+    toast('Done: '+w.topic,'ok');
+  }catch(e){
+    toast('Research failed: '+e.message,'err');
+  }finally{
+    if(btn){btn.disabled=false;btn.textContent='▶';}
+  }
+}
+
+async function wlRunAll(){
+  if(!_wlData.length){toast('Watchlist is empty','err');return}
+  const btn=document.getElementById('wl-run-all-btn');
+  const prog=document.getElementById('wl-progress');
+  const progMsg=document.getElementById('wl-progress-msg');
+  const progCnt=document.getElementById('wl-progress-count');
+  const progBar=document.getElementById('wl-progress-bar');
+  const st=document.getElementById('wl-status');
+  if(btn)btn.disabled=true;
+  if(prog)prog.style.display='';
+  let done=0;
+  const total=_wlData.length;
+  const updateProg=()=>{
+    if(progCnt)progCnt.textContent=done+'/'+total;
+    if(progBar)progBar.style.width=(done/total*100)+'%';
+    if(progMsg)progMsg.textContent=done<total?`Running (${total-done} remaining)…`:'All done!';
+  };
+  updateProg();
+  // run sequentially to avoid hammering the pipeline
+  for(let i=0;i<_wlData.length;i++){
+    if(st)st.textContent=`Running ${i+1}/${total}: ${_wlData[i].topic}`;
+    try{await wlRunTopic(i);}catch(_){}
+    done++;updateProg();
+  }
+  if(btn)btn.disabled=false;
+  if(prog)setTimeout(()=>{if(prog)prog.style.display='none';},3000);
+  if(st)st.textContent=`Completed ${total} topic${total!==1?'s':''}.`;
+}
+
 // ── Section router ────────────────────────────────────────────────────────────
 function renderSection(sec){
   const main=document.getElementById('section-content');
@@ -1024,6 +1492,8 @@ function renderSection(sec){
   if(sec==='overview'){renderOverview();loadStats();loadAgents()}
   else if(sec==='signals'){renderSignalsSection();loadSignals();loadStats()}
   else if(sec==='pipeline'){renderPipelineSection();loadAgents()}
+  else if(sec==='research'){renderResearchSection()}
+  else if(sec==='watchlist'){renderWatchlistSection()}
   else if(sec==='intelligence'){renderIntelligenceSection()}
   else if(sec==='decisions'){renderDecisionsSection()}
   else if(sec==='swarm'){renderSwarm();loadSwarm()}
@@ -1085,11 +1555,41 @@ function renderOverview(){
     drawScoreRing('ov-score-ring',a.final_score||0,verdictColor(a.final_verdict||'unknown'));
   }
 
-  // Charts
+  // Charts — compute EMA from hourly counts for the trend overlay.
   const byPlatform=S.stats?.by_platform||S.system?.postgres?.by_platform||{};
   drawPlatformBar('ov-plat-chart',byPlatform);
-  drawActivityLine('ov-activity-chart',S.stats?.hourly_24h||[]);
+  const hourly=S.stats?.hourly_24h||[];
+  const counts=hourly.map(h=>h.count);
+  const emaValues=_computeEMA(counts,5);  // 5-bucket EMA for trend
+  drawActivityLine('ov-activity-chart',hourly,emaValues);
   updateLiveFeed();
+
+  // Velocity widget and trend arrow.
+  const l24=S.stats?.last_24h||0;
+  const l1=S.stats?.last_1h||0;
+  const velocity=l24>0?(l1*24/l24)-1:0;  // hourly rate vs 24h average
+  const trendEl=document.getElementById('ov-p0-trend');
+  if(trendEl)trendEl.innerHTML=trendArrow(velocity);
+  setEl('ov-vel-1h',l1.toLocaleString());
+  setEl('ov-vel-24h',l24.toLocaleString());
+  const velTrendEl=document.getElementById('ov-vel-trend');
+  if(velTrendEl)velTrendEl.innerHTML=trendArrow(velocity);
+
+  // Market pulse from latest swarm run (S.swarm.latest.data per loadSwarm structure).
+  const pulseEl=document.getElementById('ov-market-pulse');
+  if(pulseEl){
+    const ld=S.swarm?.latest?.data||null;
+    const pulse=(ld?.market_pulse||'neutral').toLowerCase();
+    const confidence=ld?.batch_confidence||0;
+    const nPlatforms=ld?.by_platform?Object.keys(ld.by_platform).length:0;
+    const momentum=nPlatforms/Math.max(10,nPlatforms)-0.5;
+    pulseEl.innerHTML=`${renderMarketPulseBadge(pulse)}
+      <div style="margin-top:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        ${momentumChip(momentum-0.5)}
+        <span style="font-size:11px;color:var(--text2)">Confidence: <span style="font-family:var(--font-mono);color:var(--text0)">${(confidence*100).toFixed(0)}%</span></span>
+        <span style="font-size:11px;color:var(--text3)">${ld?.unique_signals||0} unique signals</span>
+      </div>`;
+  }
 }
 
 // ── SIGNALS ───────────────────────────────────────────────────────────────────
@@ -1132,24 +1632,33 @@ function renderSignalsSection(){
     });
   }
 
-  // Platform metrics bars
+  // Platform metrics — upgraded with confidence meters + sparklines.
   const pmEl=document.getElementById('sf-platform-metrics');
   const pm=st.platform_metrics||{};
+  const bpCounts=Object.values(st.by_platform||{});
   if(pmEl){
-    pmEl.innerHTML=Object.keys(pm).slice(0,6).map(p=>`
-      <div style="margin-bottom:10px">
-        <div style="display:flex;justify-content:space-between;margin-bottom:4px">
-          <span class="platform ${p}">${p.replace(/_/g,' ')}</span>
-          <span style="font-size:10px;color:var(--text2)">${Math.round(pm[p].novelty*100)}% novelty</span>
-        </div>
-        <div style="display:flex;gap:4px;align-items:center">
-          <div style="flex:1;height:4px;background:var(--bg4);border-radius:2px;overflow:hidden">
-            <div style="width:${(pm[p].sentiment+1)/2*100}%;height:100%;background:${pm[p].sentiment>0?'var(--green)':'var(--red)'};border-radius:2px"></div>
+    pmEl.innerHTML=Object.keys(pm).slice(0,6).map((p,i)=>{
+      const m=pm[p];
+      const sntCol=m.sentiment>=0?'var(--green)':'var(--red)';
+      const sntNorm=(m.sentiment+1)/2;  // [-1,1] → [0,1]
+      return `<div class="plat-metric-row">
+        <div class="plat-metric-name"><span class="platform ${p}">${p.replace(/_/g,' ')}</span></div>
+        <div class="plat-metric-bars">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px">
+            <span class="plat-metric-label" style="min-width:56px">Sentiment</span>
+            ${confMeter(sntNorm,sntCol)}
           </div>
-          <span style="font-size:10px;color:var(--text2);min-width:50px">Snt ${pm[p].sentiment>0?'+':''}${pm[p].sentiment.toFixed(2)}</span>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px">
+            <span class="plat-metric-label" style="min-width:56px">Intent</span>
+            ${confMeter(m.commercial_intent,'var(--amber)')}
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span class="plat-metric-label" style="min-width:56px">Novelty</span>
+            ${confMeter(m.novelty,'var(--purple)')}
+          </div>
         </div>
-      </div>
-    `).join('');
+      </div>`;
+    }).join('');
   }
 
   renderSignalTable();
@@ -1529,6 +2038,359 @@ function renderDecisionsSection(){
   }).join('');
 }
 
+// ── RESEARCH TOPIC ────────────────────────────────────────────────────────────
+
+// Step timeline helpers
+const _RS_STEPS=['expanding','scraping','agents','done'];
+function _resetTimeline(){
+  _RS_STEPS.forEach((s,i)=>{
+    const el=document.getElementById('rs-step-'+s);
+    if(el){el.className='rs-step';const ic=el.querySelector('.rs-step-icon');if(ic)ic.textContent='⬡';}
+    const ln=document.getElementById('rs-line-'+(i+1));
+    if(ln)ln.classList.remove('done');
+  });
+}
+function _advanceTimeline(step){
+  const idx=_RS_STEPS.indexOf(step);
+  if(idx<0)return;
+  _RS_STEPS.forEach((s,i)=>{
+    const el=document.getElementById('rs-step-'+s);
+    if(!el)return;
+    const ic=el.querySelector('.rs-step-icon');
+    if(i<idx){el.className='rs-step done';if(ic)ic.textContent='✓';}
+    else if(i===idx){el.className='rs-step active';if(ic)ic.textContent='◈';}
+    const ln=document.getElementById('rs-line-'+(i+1));
+    if(ln){if(i<idx)ln.classList.add('done');else ln.classList.remove('done');}
+  });
+}
+
+// Agent reasoning modal
+function openAgentModal(agent,verdict,score,reasoning){
+  const modal=document.getElementById('rs-agent-modal');
+  if(!modal)return;
+  const title=document.getElementById('rs-modal-title');
+  const body=document.getElementById('rs-modal-body');
+  if(title)title.innerHTML=`<span style="font-family:var(--font-mono);color:var(--cyan)">${agent}</span> &nbsp;<span class="verdict-chip ${verdict}">${verdict}</span>&nbsp;<span style="font-size:11px;color:var(--text2)">${Math.round((score||0)*100)}% score</span>`;
+  if(body)body.textContent=reasoning||(AGENT_DESC[agent]||'No reasoning available.');
+  modal.style.display='flex';
+}
+function closeAgentModal(){
+  const modal=document.getElementById('rs-agent-modal');
+  if(modal)modal.style.display='none';
+}
+
+// Research history (sessionStorage)
+function _saveResearchHistory(data){
+  try{
+    const hist=JSON.parse(sessionStorage.getItem('aegis_rs_hist')||'[]');
+    hist.unshift({topic:data.topic,verdict:data.verdict,score:data.score,ts:data.started_at,data});
+    sessionStorage.setItem('aegis_rs_hist',JSON.stringify(hist.slice(0,5)));
+  }catch(_){}
+  _renderHistoryPanel();
+}
+function _renderHistoryPanel(){
+  try{
+    const hist=JSON.parse(sessionStorage.getItem('aegis_rs_hist')||'[]');
+    const panel=document.getElementById('rs-history-panel');
+    const chips=document.getElementById('rs-history-chips');
+    if(!panel||!chips)return;
+    if(!hist.length){panel.style.display='none';return;}
+    panel.style.display='flex';
+    chips.innerHTML=hist.map((h,i)=>{
+      const vc=h.verdict||'unknown';
+      return `<button class="rs-hist-chip" onclick="_loadHistoryEntry(${i})" title="${new Date(h.ts||'').toLocaleString()}">
+        <span style="color:${verdictColor(vc)}">●</span>${(h.topic||'').slice(0,22)}<span style="color:var(--text3)">${((h.score||0)*100).toFixed(0)}%</span>
+      </button>`;
+    }).join('');
+  }catch(_){}
+}
+function _loadHistoryEntry(idx){
+  try{
+    const hist=JSON.parse(sessionStorage.getItem('aegis_rs_hist')||'[]');
+    if(hist[idx]){S.lastResearch=hist[idx].data;_renderResearchResult(hist[idx].data);toast('Loaded: '+hist[idx].topic,'ok');}
+  }catch(_){}
+}
+
+function renderResearchSection(){
+  if(S.lastResearch)_renderResearchResult(S.lastResearch);
+  _renderHistoryPanel();
+}
+
+async function runResearch(){
+  const inp=document.getElementById('rs-topic-input');
+  const topic=(inp&&inp.value||'').trim();
+  if(!topic){toast('Enter a topic first','err');return}
+
+  const limit=parseInt(document.getElementById('rs-limit')?.value||'20',10);
+  const useLlm=document.getElementById('rs-use-llm')?.checked!==false;
+
+  const btn=document.getElementById('rs-run-btn');
+  const loading=document.getElementById('rs-loading');
+  const result=document.getElementById('rs-result');
+  const status=document.getElementById('rs-status');
+  const msg=document.getElementById('rs-loading-msg');
+
+  if(btn)btn.disabled=true;
+  if(loading)loading.style.display='';
+  if(result)result.style.display='none';
+  if(status)status.textContent=`Starting research for "${topic}"…`;
+  if(msg)msg.textContent='Connecting to pipeline…';
+  _resetTimeline();
+
+  let es=null;
+  try{
+    const startResp=await fetch('/api/topic/research',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({topic,limit,use_llm:useLlm}),
+    });
+    const startData=await startResp.json();
+    if(!startResp.ok){
+      toast('Research failed: '+(startData.detail||startResp.status),'err');
+      if(status)status.textContent='Error: '+(startData.detail||startResp.statusText);
+      return;
+    }
+    const {job_id}=startData;
+
+    await new Promise((resolve,reject)=>{
+      es=new EventSource(`/api/topic/research/${job_id}/stream`);
+      es.onmessage=(e)=>{
+        try{
+          const evt=JSON.parse(e.data);
+          if(evt.type==='progress'){
+            if(msg)msg.textContent=evt.msg;
+            if(status)status.textContent=evt.msg;
+            if(evt.step)_advanceTimeline(evt.step);
+          }else if(evt.type==='result'){
+            es.close();es=null;
+            _advanceTimeline('done');
+            S.lastResearch=evt.data;
+            _research_jobs_js[job_id]={topic:evt.data.topic};
+            _renderResearchResult(evt.data);
+            // wire job_id onto Push Alert button if rendered
+            const pab=document.getElementById('rs-push-alert-btn');
+            if(pab)pab.dataset.jobId=job_id;
+            _saveResearchHistory(evt.data);
+            if(status)status.textContent=`✓ Completed in ${evt.data.duration_s}s — ${evt.data.scrape?.total_unique||0} unique signals`;
+            toast('Research complete: '+(evt.data.verdict||'unknown').toUpperCase(),'ok');
+            resolve(evt.data);
+          }else if(evt.type==='error'){
+            es.close();es=null;
+            toast('Research failed: '+evt.detail,'err');
+            if(status)status.textContent='Error: '+evt.detail;
+            reject(new Error(evt.detail));
+          }
+        }catch(_){}
+      };
+      es.onerror=()=>{
+        if(es){es.close();es=null;}
+        reject(new Error('SSE connection lost — is the dashboard server running?'));
+      };
+    });
+  }catch(e){
+    if(es){es.close();es=null;}
+    toast('Research error: '+e.message,'err');
+    if(status)status.textContent='Error: '+e.message;
+  }finally{
+    if(btn)btn.disabled=false;
+    if(loading)loading.style.display='none';
+  }
+}
+
+function _renderResearchResult(data){
+  const result=document.getElementById('rs-result');
+  if(!result)return;
+  result.style.display='';
+
+  // Verdict hero
+  const vc=data.verdict||'unknown';
+  const scoreCard=document.getElementById('rs-verdict-card');
+  if(scoreCard){
+    scoreCard.className='stat-card';
+    if(vc==='proceed')scoreCard.style.cssText='background:rgba(0,230,118,.08);border-color:var(--green2)';
+    else if(vc==='block')scoreCard.style.cssText='background:rgba(255,61,85,.08);border-color:var(--red)';
+    else if(vc==='hold')scoreCard.style.cssText='background:rgba(255,179,0,.08);border-color:#806000';
+    else scoreCard.style.cssText='';
+  }
+  const vEl=document.getElementById('rs-verdict-val');
+  if(vEl){vEl.textContent=vc.toUpperCase();vEl.style.color=verdictColor(vc);}
+  setEl('rs-halt-reason',data.halt_reason||'');
+  setEl('rs-score-val',((data.score||0)*100).toFixed(1)+'%');
+  setEl('rs-confidence-val','confidence: '+((data.confidence||0)*100).toFixed(1)+'%');
+  setEl('rs-signals-val',(data.scrape?.total_unique||0).toLocaleString());
+  setEl('rs-sources-val',(data.scrape?.sources_hit||[]).length+' sources');
+  setEl('rs-time-val',(data.duration_s||0)+'s');
+
+  // Signal intelligence feature chips
+  const ft=data.features||{};
+  const pulse=ft.market_pulse||'neutral';
+  const pulseBadge=document.getElementById('rs-pulse-badge');
+  if(pulseBadge){
+    const pc=pulse==='bullish'?'var(--green)':pulse==='bearish'?'var(--red)':'var(--amber)';
+    pulseBadge.textContent=pulse.toUpperCase();
+    pulseBadge.style.cssText=`font-size:11px;font-family:var(--font-mono);margin-left:10px;padding:2px 8px;border-radius:10px;background:${pc}22;color:${pc}`;
+  }
+  const _pct=v=>((v||0)*100).toFixed(0)+'%';
+  const _setChip=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
+  _setChip('fc-sentiment',_pct(ft.sentiment));
+  _setChip('fc-commercial',_pct(ft.commercial_intent));
+  _setChip('fc-novelty',_pct(ft.novelty));
+  _setChip('fc-coord',_pct(ft.coordination_risk));
+  _setChip('fc-platforms',ft.platform_diversity??'—');
+  _setChip('fc-authors',ft.unique_authors??'—');
+
+  // Agent decisions — clickable rows
+  const decEl=document.getElementById('rs-decisions');
+  if(decEl){
+    if(!data.decisions||!data.decisions.length){
+      decEl.innerHTML='<div class="empty-state">No decisions recorded</div>';
+    }else{
+      decEl.innerHTML=data.decisions.map((d,di)=>{
+        const dvc=d.verdict||'unknown';
+        const bar=Math.round((d.score||0)*100);
+        const hasReasoning=!!(d.reasoning_full||d.reasoning);
+        return `<div style="display:flex;align-items:center;gap:8px;padding:6px 4px;border-bottom:1px solid var(--border);border-radius:4px;cursor:${hasReasoning?'pointer':'default'};transition:background .15s"
+          onmouseover="if(${hasReasoning})this.style.background='var(--bg3)'" onmouseout="this.style.background=''"
+          onclick="${hasReasoning?`openAgentModal('${d.agent}','${dvc}',${d.score||0},_rsDecisions[${di}])`:''}" >
+          <div style="min-width:90px;font-size:11px;font-family:var(--font-mono);color:var(--text1)">${d.agent}</div>
+          <span class="verdict-chip ${dvc}">${dvc}</span>
+          <div style="flex:1;height:6px;background:var(--bg4);border-radius:3px;overflow:hidden">
+            <div style="height:100%;width:${bar}%;background:${verdictColor(dvc)};border-radius:3px"></div>
+          </div>
+          <div style="min-width:32px;text-align:right;font-size:11px;font-family:var(--font-mono)">${bar}%</div>
+          ${hasReasoning?'<span style="font-size:10px;color:var(--text3)" title="Click to read reasoning">▸</span>':''}
+        </div>`;
+      }).join('');
+      // store reasoning strings for onclick access (avoids inline JSON escaping issues)
+      window._rsDecisions=(data.decisions||[]).map(d=>d.reasoning_full||d.reasoning||'');
+    }
+  }
+
+  // Top signals
+  const sigEl=document.getElementById('rs-signals-list');
+  if(sigEl){
+    if(!data.top_signals||!data.top_signals.length){
+      sigEl.innerHTML='<div class="empty-state">No signals scraped</div>';
+    }else{
+      sigEl.innerHTML=data.top_signals.map(s=>`
+        <div style="padding:6px 0;border-bottom:1px solid var(--border)">
+          <div style="font-size:12px;color:var(--text0);margin-bottom:2px">${s.title||'—'}</div>
+          <div style="display:flex;gap:8px">
+            <span style="font-size:10px;font-family:var(--font-mono);color:var(--cyan)">${s.platform||''}</span>
+            ${s.url?`<a href="${s.url}" target="_blank" style="font-size:10px;color:var(--text3);text-decoration:none" title="${s.url}">↗ link</a>`:''}
+          </div>
+        </div>`).join('');
+    }
+  }
+
+  // Patterns
+  const patEl=document.getElementById('rs-patterns');
+  if(patEl){
+    if(!data.patterns||!data.patterns.length){
+      patEl.innerHTML='<div class="empty-state" style="margin-top:8px">No pattern clusters detected</div>';
+    }else{
+      patEl.innerHTML=data.patterns.map(p=>`
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">
+          ${p.is_high_priority?'<span style="color:var(--amber);font-size:10px">★ HIGH</span>':'<span style="font-size:10px;color:var(--text3)">  </span>'}
+          <div style="flex:1;font-size:12px;color:var(--text0)">${p.label}</div>
+          <div style="font-size:11px;font-family:var(--font-mono);color:var(--cyan)">${p.signal_count} sigs</div>
+        </div>`).join('');
+    }
+  }
+
+  // Scrape detail
+  const scEl=document.getElementById('rs-scrape-detail');
+  if(scEl&&data.scrape){
+    const sc=data.scrape;
+    const errHtml=sc.errors&&sc.errors.length
+      ?'<div style="margin-top:8px;color:var(--amber)">Warnings ('+sc.errors.length+'):</div>'
+       +sc.errors.slice(0,3).map(e=>`<div style="font-size:11px;color:var(--text2);margin-top:2px">• ${e.slice(0,80)}</div>`).join('')
+      :'';
+    scEl.innerHTML=`
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <div>Fetched: <span style="color:var(--text0)">${sc.total_fetched}</span></div>
+        <div>Unique after dedup: <span style="color:var(--green)">${sc.total_unique}</span></div>
+        <div>Dropped duplicates: <span style="color:var(--text2)">${sc.duplicates_dropped}</span></div>
+        <div>Sources hit: <span style="color:var(--cyan)">${(sc.sources_hit||[]).join(', ')||'—'}</span></div>
+        ${data.expansion?`<div style="margin-top:6px">Category: <span style="color:var(--purple)">${data.expansion.category}</span></div>`:''}
+      </div>${errHtml}`;
+  }
+
+  // Action buttons — injected after result renders
+  _renderResearchActions(data);
+}
+
+function _renderResearchActions(data){
+  // Remove any previous action bar
+  const prev=document.getElementById('rs-action-bar');
+  if(prev)prev.remove();
+
+  const result=document.getElementById('rs-result');
+  if(!result)return;
+
+  const bar=document.createElement('div');
+  bar.id='rs-action-bar';
+  bar.style.cssText='display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px;padding:12px 16px;background:var(--bg2);border:1px solid var(--border);border-radius:8px';
+
+  const topic=data.topic||'';
+  const vc=data.verdict||'unknown';
+  const score=data.score||0;
+  const isHighConfidence=vc==='proceed'&&score>=0.7;
+
+  bar.innerHTML=`
+    <span style="font-size:12px;color:var(--text2);font-family:var(--font-mono);flex:1">Actions for: <strong style="color:var(--text0)">${topic}</strong></span>
+    <button class="btn" onclick="rsAddToWatchlist('${topic.replace(/'/g,"\\'")}',this)" style="font-size:12px;padding:6px 14px">
+      ☰ Add to Watchlist
+    </button>
+    ${isHighConfidence
+      ?`<button class="btn" onclick="rsPushAlert(this)" id="rs-push-alert-btn"
+           style="font-size:12px;padding:6px 14px;border-color:var(--green2);color:var(--green)"
+           title="Push this PROCEED verdict to the Phase 4 alert pipeline">
+           ⚡ Push Alert
+         </button>`
+      :`<button class="btn" disabled title="Only PROCEED verdicts with score ≥70% can be pushed"
+           style="font-size:12px;padding:6px 14px;opacity:.4;cursor:not-allowed">
+           ⚡ Push Alert
+         </button>`}
+  `;
+  result.parentNode.insertBefore(bar,result);
+}
+
+async function rsAddToWatchlist(topic,btn){
+  if(btn){btn.disabled=true;btn.textContent='Adding…';}
+  try{
+    await api('/api/watchlist/add',{method:'POST',body:JSON.stringify({topic})});
+    if(btn){btn.textContent='✓ In Watchlist';btn.style.color='var(--green)';}
+    await _wlLoad();
+    toast('Added to watchlist: '+topic,'ok');
+  }catch(e){
+    if(btn){btn.disabled=false;btn.textContent='☰ Add to Watchlist';}
+    toast('Failed: '+e.message,'err');
+  }
+}
+
+async function rsPushAlert(btn){
+  // find job_id from the most recent completed job matching S.lastResearch
+  const jobId=Object.keys(_research_jobs_js).find(id=>{
+    const j=_research_jobs_js[id];
+    return j&&j.topic===((S.lastResearch||{}).topic);
+  });
+  // fallback: use the button's data attribute if set
+  const jid=btn?.dataset?.jobId||jobId;
+  if(!jid){toast('Job ID not available — re-run research to push alert','err');return}
+  if(btn){btn.disabled=true;btn.textContent='Pushing…';}
+  try{
+    const r=await api(`/api/topic/research/${jid}/push-alert`,{method:'POST'});
+    if(btn){btn.textContent='✓ Alert Sent';btn.style.color='var(--green)';}
+    toast('Alert pushed: '+r.p4_verdict+' (trend: '+r.trend_id+')','ok');
+  }catch(e){
+    if(btn){btn.disabled=false;btn.textContent='⚡ Push Alert';}
+    toast('Push failed: '+e.message,'err');
+  }
+}
+// track job_id → topic mapping for push-alert
+const _research_jobs_js={};
+
 // ── INFRASTRUCTURE ────────────────────────────────────────────────────────────
 function renderInfra(){
   const sys=S.system||{};
@@ -1691,13 +2553,99 @@ function destroyChart(id){
   if(S.charts[id]){try{S.charts[id].destroy()}catch(e){} delete S.charts[id]}
 }
 
+/** Pure-JS EMA (same 2/(period+1) formula as the backend) — for chart overlays. */
+function _computeEMA(series,period){
+  if(!series.length)return[];
+  const alpha=2/(period+1);
+  const out=[series[0]];
+  for(let i=1;i<series.length;i++) out.push(alpha*series[i]+(1-alpha)*out[i-1]);
+  return out;
+}
+
 const _chartDefaults={
-  plugins:{legend:{display:false}},
+  responsive:true,
+  maintainAspectRatio:false,
+  animation:{duration:400,easing:'easeInOutQuart'},
+  plugins:{
+    legend:{display:false},
+    tooltip:{
+      backgroundColor:'#0d1526',
+      borderColor:'#2a4870',
+      borderWidth:1,
+      titleColor:'#e8f4ff',
+      bodyColor:'#a8c8e8',
+      padding:10,
+      cornerRadius:6,
+      displayColors:false,
+    }
+  },
   scales:{
-    x:{ticks:{color:'#6a9bbf',font:{size:10}},grid:{color:'#1e3354'}},
-    y:{ticks:{color:'#6a9bbf',font:{size:10}},grid:{color:'#1e3354'}},
+    x:{
+      ticks:{color:'#6a9bbf',font:{size:10}},
+      grid:{color:'rgba(30,51,84,0.45)'},
+      border:{color:'#1e3354'},
+    },
+    y:{
+      ticks:{color:'#6a9bbf',font:{size:10}},
+      grid:{color:'rgba(30,51,84,0.45)'},
+      border:{color:'#1e3354'},
+    },
   },
 };
+
+// ── Visualization Utilities ───────────────────────────────────────────────────
+
+/** Return an HTML string with a colored directional arrow. */
+function trendArrow(velocity){
+  if(velocity>0.8)return '<span class="trend-up2">↑↑</span>';
+  if(velocity>0.15)return '<span class="trend-up1">↑</span>';
+  if(velocity<-0.8)return '<span class="trend-dn2">↓↓</span>';
+  if(velocity<-0.15)return '<span class="trend-dn1">↓</span>';
+  return '<span class="trend-flat">→</span>';
+}
+
+/** Return HTML sparkline from the last ≤10 values in `arr`. */
+function sparkline(arr,color='#00d4ff'){
+  if(!arr||!arr.length)return '';
+  const slice=arr.slice(-10);
+  const mx=Math.max(...slice,1);
+  const bars=slice.map(v=>{
+    const h=Math.max(2,Math.round((v/mx)*22));
+    return `<div class="sparkline-bar" style="height:${h}px;background:${color}"></div>`;
+  }).join('');
+  return `<div class="sparkline-wrap">${bars}</div>`;
+}
+
+/** Return a horizontal confidence meter HTML. */
+function confMeter(value,color='var(--cyan)'){
+  const pct=Math.round((value||0)*100);
+  return `<div class="conf-meter">
+    <div class="conf-meter-bar"><div class="conf-meter-fill" style="width:${pct}%;background:${color}"></div></div>
+    <span class="conf-meter-val">${pct}%</span>
+  </div>`;
+}
+
+/** Return HTML for the market pulse badge. */
+function renderMarketPulseBadge(pulse){
+  const icon={bullish:'📈',bearish:'📉',neutral:'📊',mixed:'⚡'}[pulse]||'📊';
+  const cls={bullish:'bullish',bearish:'bearish',mixed:'mixed',neutral:''}[pulse]||'';
+  const col={bullish:'var(--green)',bearish:'var(--red)',mixed:'var(--amber)',neutral:'var(--text2)'}[pulse]||'var(--text2)';
+  const label=(pulse||'neutral').toUpperCase();
+  return `<div class="market-pulse ${cls}">
+    <span class="mp-icon">${icon}</span>
+    <div>
+      <div class="mp-label">Market Pulse</div>
+      <div class="mp-value" style="color:${col}">${label}</div>
+    </div>
+  </div>`;
+}
+
+/** Return a momentum chip HTML. */
+function momentumChip(momentum){
+  if(momentum>0.15)return `<span class="momentum-chip bullish">▲ ${(momentum*100).toFixed(0)}% EMA</span>`;
+  if(momentum<-0.15)return `<span class="momentum-chip bearish">▼ ${(Math.abs(momentum)*100).toFixed(0)}% EMA</span>`;
+  return `<span class="momentum-chip neutral">≈ Neutral</span>`;
+}
 
 function drawPlatformBar(id,byPlatform){
   destroyChart(id);
@@ -1722,7 +2670,7 @@ function drawPlatformBar(id,byPlatform){
   });
 }
 
-function drawActivityLine(id,hourly){
+function drawActivityLine(id,hourly,emaData){
   destroyChart(id);
   const ctx=document.getElementById(id);
   if(!ctx||!hourly.length)return;
@@ -1731,20 +2679,50 @@ function drawActivityLine(id,hourly){
     return d.getHours().toString().padStart(2,'0')+':00';
   });
   const data=hourly.map(h=>h.count);
+
+  // Gradient fill — cyan at top fades to transparent at bottom.
+  const canvas=ctx;
+  const gradient=(()=>{
+    try{
+      const g=canvas.getContext('2d').createLinearGradient(0,0,0,canvas.clientHeight||220);
+      g.addColorStop(0,'rgba(0,212,255,0.28)');
+      g.addColorStop(0.6,'rgba(0,212,255,0.07)');
+      g.addColorStop(1,'rgba(0,212,255,0.01)');
+      return g;
+    }catch(_){return 'rgba(0,212,255,.1)';}
+  })();
+
+  const datasets=[{
+    label:'Signals',
+    data,
+    borderColor:'#00d4ff',
+    backgroundColor:gradient,
+    fill:true,
+    tension:.4,
+    pointRadius:2,
+    pointHoverRadius:5,
+    pointBackgroundColor:'#00d4ff',
+    borderWidth:2,
+  }];
+
+  // EMA overlay: a smooth purple dashed line showing the trend direction.
+  if(emaData&&emaData.length===data.length){
+    datasets.push({
+      label:'EMA',
+      data:emaData,
+      borderColor:'rgba(156,110,255,0.65)',
+      backgroundColor:'transparent',
+      fill:false,
+      tension:.55,
+      pointRadius:0,
+      borderWidth:1.5,
+      borderDash:[5,4],
+    });
+  }
+
   S.charts[id]=new Chart(ctx,{
     type:'line',
-    data:{
-      labels,
-      datasets:[{
-        data,
-        borderColor:'var(--cyan)',
-        backgroundColor:'rgba(0,212,255,.1)',
-        fill:true,
-        tension:.4,
-        pointRadius:2,
-        pointBackgroundColor:'var(--cyan)',
-      }]
-    },
+    data:{labels,datasets},
     options:{..._chartDefaults}
   });
 }
@@ -1817,6 +2795,7 @@ async function loadSwarm(){
     ]);
     S.swarm={latest,agents,history};
     if(S.section==='swarm')renderSwarm();
+    if(S.section==='overview')renderOverview();
   }catch(e){console.error('loadSwarm',e)}
 }
 
@@ -1927,8 +2906,8 @@ function startAutoRefresh(){
   setInterval(()=>{loadSystem();loadStats()},30000);
   // Agents refresh every 15s
   setInterval(()=>{loadAgents()},15000);
-  // Swarm refresh every 60s
-  setInterval(()=>{loadSwarm()},60000);
+  // Swarm fallback refresh every 30s (SSE swarm_complete also triggers loadSwarm immediately)
+  setInterval(()=>{loadSwarm()},30000);
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────

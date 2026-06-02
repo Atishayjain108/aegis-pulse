@@ -251,4 +251,4 @@ class RedditEcommerceAdapter(SourceAdapter[dict[str, Any]]):
             return None
 
 
-__all__ = ["RedditEcommerceAdapter", "RedditEcommerceConfig", "SCRAPER_VERSION", "_USER_AGENT"]
+__all__ = ["SCRAPER_VERSION", "_USER_AGENT", "RedditEcommerceAdapter", "RedditEcommerceConfig"]

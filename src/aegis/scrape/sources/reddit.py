@@ -556,8 +556,8 @@ _SENTINEL_DONE = object()
 
 
 __all__ = [
+    "SCRAPER_VERSION",
     "RedditAdapter",
     "RedditConfig",
     "RedditScrapeContext",
-    "SCRAPER_VERSION",
 ]

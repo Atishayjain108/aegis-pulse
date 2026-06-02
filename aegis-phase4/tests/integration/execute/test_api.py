@@ -6,7 +6,6 @@ from uuid import uuid4
 
 import httpx
 import pytest
-
 from aegis.execute.api import build_app
 from aegis.execute.bridge.types import ComposerInput
 from aegis.execute.config import ExecuteSettings, set_execute_settings

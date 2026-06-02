@@ -258,7 +258,7 @@ def _cosine(a: tuple[float, ...], b: tuple[float, ...]) -> float:
 
 __all__ = [
     "FusionWeights",
-    "PlattCalibrator",
     "IsotonicCalibrator",
+    "PlattCalibrator",
     "fuse",
 ]

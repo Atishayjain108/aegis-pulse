@@ -395,4 +395,4 @@ def _clean_text(html_fragment: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
-__all__ = ["NitterAdapter", "NitterConfig", "SCRAPER_VERSION"]
+__all__ = ["SCRAPER_VERSION", "NitterAdapter", "NitterConfig"]

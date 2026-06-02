@@ -83,4 +83,4 @@ class ConcurrencyGovernor:
         await self._domain_buckets[domain].wait_and_consume()
 
 
-__all__ = ["TokenBucket", "ConcurrencyGovernor"]
+__all__ = ["ConcurrencyGovernor", "TokenBucket"]

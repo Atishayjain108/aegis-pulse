@@ -307,6 +307,25 @@ class Settings(BaseSettings):
     )
 
     # ------------------------------------------------------------------
+    # Dashboard security
+    # ------------------------------------------------------------------
+    dashboard_ops_token: SecretStr | None = Field(
+        default=None,
+        description=(
+            "When set, POST /api/ops/run requires header X-Ops-Token matching "
+            "this value. Required in prod (AEGIS_ENV=prod); optional in dev."
+        ),
+    )
+    dashboard_allowed_origins: list[str] = Field(
+        default=["http://localhost:8300", "http://127.0.0.1:8300"],
+        description=(
+            "CORS allowed origins for the dashboard. Defaults to localhost-only. "
+            "Set AEGIS_DASHBOARD_ALLOWED_ORIGINS='[\"https://yourhost\"]' to expose "
+            "to other origins. Never use [\"*\"] with the ops endpoint."
+        ),
+    )
+
+    # ------------------------------------------------------------------
     # Internal service URLs (override in Docker via env vars)
     # ------------------------------------------------------------------
     predict_api_url: str = Field(
@@ -387,6 +406,6 @@ __all__ = [
     "Environment",
     "LogFormat",
     "Settings",
-    "settings",
     "reload_settings",
+    "settings",
 ]

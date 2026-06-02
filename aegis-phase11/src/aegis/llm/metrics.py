@@ -40,7 +40,7 @@ except ImportError:
     _log.debug("metrics.prometheus_not_installed", hint="pip install prometheus-client")
 
 
-def _noop(*args: Any, **kwargs: Any) -> Any:  # noqa: ANN401
+def _noop(*args: Any, **kwargs: Any) -> Any:
     """No-op callable for metric methods when prometheus is absent."""
     return lambda *a, **kw: None
 
@@ -48,7 +48,7 @@ def _noop(*args: Any, **kwargs: Any) -> Any:  # noqa: ANN401
 class _NoOpMetric:
     """Dummy metric object that silently ignores all calls."""
 
-    def labels(self, **kwargs: Any) -> "_NoOpMetric":
+    def labels(self, **kwargs: Any) -> _NoOpMetric:
         return self
 
     def inc(self, *args: Any, **kwargs: Any) -> None:
@@ -60,7 +60,7 @@ class _NoOpMetric:
     def set(self, *args: Any, **kwargs: Any) -> None:
         pass
 
-    def __call__(self, *args: Any, **kwargs: Any) -> "_NoOpMetric":
+    def __call__(self, *args: Any, **kwargs: Any) -> _NoOpMetric:
         return self
 
 

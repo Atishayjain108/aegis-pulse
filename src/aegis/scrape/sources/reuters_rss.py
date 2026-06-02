@@ -34,4 +34,4 @@ class ReutersRSSAdapter(RSSAdapter):
         return "reuters"
 
 
-__all__ = ["ReutersRSSAdapter", "RSSAdapterConfig", "SCRAPER_VERSION"]
+__all__ = ["SCRAPER_VERSION", "RSSAdapterConfig", "ReutersRSSAdapter"]

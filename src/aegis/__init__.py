@@ -38,7 +38,22 @@ __version__ = "0.3.0"
 # causes the Phase 4 aegis/__init__.py to shadow this package. By extending
 # __path__ we expose aegis.execute (from aegis-phase4/) alongside the main
 # submodules without requiring a pure namespace-package setup.
-_p4_aegis = _pathlib.Path(__file__).parent.parent.parent / "aegis-phase4" / "src" / "aegis"
+_root = _pathlib.Path(__file__).parent.parent.parent
+
+_p4_aegis = _root / "aegis-phase4" / "src" / "aegis"
 if _p4_aegis.is_dir() and str(_p4_aegis) not in __path__:
     __path__ = [*__path__, str(_p4_aegis)]  # type: ignore[assignment]
-del _p4_aegis, _pathlib
+
+_harden_aegis = _root / "aegis-harden" / "src" / "aegis"
+if _harden_aegis.is_dir() and str(_harden_aegis) not in __path__:
+    __path__ = [*__path__, str(_harden_aegis)]  # type: ignore[assignment]
+
+_phase12_aegis = _root / "aegis-phase12" / "src" / "aegis"
+if _phase12_aegis.is_dir() and str(_phase12_aegis) not in __path__:
+    __path__ = [*__path__, str(_phase12_aegis)]  # type: ignore[assignment]
+
+_phase13_aegis = _root / "aegis-phase13" / "src" / "aegis"
+if _phase13_aegis.is_dir() and str(_phase13_aegis) not in __path__:
+    __path__ = [*__path__, str(_phase13_aegis)]  # type: ignore[assignment]
+
+del _root, _p4_aegis, _harden_aegis, _phase12_aegis, _phase13_aegis, _pathlib

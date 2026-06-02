@@ -184,4 +184,4 @@ async def fetch_recent_signals(
     return [dict(row) for row in rows]
 
 
-__all__ = ["insert_signals", "fetch_recent_signals"]
+__all__ = ["fetch_recent_signals", "insert_signals"]

@@ -124,12 +124,48 @@ SSE_KEEPALIVE_INTERVAL_S: Final[float] = 15.0
 SSE_MAX_QUEUE: Final[int] = 1024  # per-client backlog before drop
 
 # ---------------------------------------------------------------------------
-# Execution mode (v1 supports only advisory)
+# Execution modes
+#
+# advisory: log recommendations, no capital at risk (CI default).
+# staging:  real orders, mock/Stripe-test payment — validates integrations.
+# live:     irreversible, full capital at risk — production only.
 # ---------------------------------------------------------------------------
 MODE_ADVISORY: Final[str] = "advisory"
-ALLOWED_MODES: Final[frozenset[str]] = frozenset({MODE_ADVISORY})
+MODE_STAGING: Final[str] = "staging"
+MODE_LIVE: Final[str] = "live"
+ALLOWED_MODES: Final[frozenset[str]] = frozenset({MODE_ADVISORY, MODE_STAGING, MODE_LIVE})
 
 # ---------------------------------------------------------------------------
 # Schema version (alert envelope payload version)
 # ---------------------------------------------------------------------------
 ALERT_ENVELOPE_VERSION: Final[str] = "1.0"
+
+# ---------------------------------------------------------------------------
+# Phase 6 — Capital Execution Engine
+# ---------------------------------------------------------------------------
+
+# Fulfillment routing thresholds (demand units/hour).
+FULFILLMENT_POD_MAX_QTY: Final[int] = 5        # ≤5 units → print-on-demand
+FULFILLMENT_DROPSHIP_MAX_QTY: Final[int] = 20  # ≤20 units → dropship
+
+# Capital safety limits (override via env AEGIS_EXECUTE_*).
+CAPITAL_MAX_RISK_USD: Final[float] = 500.0
+CAPITAL_DAILY_LOSS_LIMIT_USD: Final[float] = 1000.0
+CAPITAL_KELLY_FRACTION: Final[float] = 0.25    # fractional Kelly safety factor
+
+# Approval workflow.
+APPROVAL_TIMEOUT_S: Final[int] = 300           # 5-minute window before auto-reject
+APPROVAL_AUTO_EXECUTE_P0: Final[bool] = False  # P0 auto-execute disabled by default
+
+# Pricing engine.
+PRICING_MIN_MARGIN_PCT: Final[float] = 0.15    # 15% floor margin
+PRICING_MAX_MARKUP_FACTOR: Final[float] = 3.0  # 3× COGS ceiling
+PRICING_AB_TEST_RATE: Final[float] = 0.10      # 10% of requests get A/B price test
+PRICING_AB_TEST_DELTAS: Final[tuple[float, ...]] = (0.95, 1.05)  # ±5% test variants
+
+# Settlement.
+SETTLEMENT_DEFAULT_SHIPPING_USD: Final[float] = 5.0   # placeholder shipping cost
+SETTLEMENT_DEFAULT_PLATFORM_FEE_PCT: Final[float] = 0.03  # 3% platform fee
+
+# Metrics / error codes.
+EXEC_ENGINE_ERROR_PREFIX: Final[str] = "AEGIS-EXEC-CAP-"

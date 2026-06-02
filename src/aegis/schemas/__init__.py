@@ -30,6 +30,7 @@ from aegis.schemas.signal import (
     ScrapeProvenance,
     compute_content_hash,
 )
+from aegis.schemas.swarm import SwarmResult, WaveStats
 
 __all__ = [
     "Author",
@@ -47,7 +48,9 @@ __all__ = [
     "ScrapeMethod",
     "ScrapeProvenance",
     "SourceTier",
+    "SwarmResult",
     "ToSRisk",
+    "WaveStats",
     "compute_content_hash",
     "confidence_band",
     "platform_tier",

@@ -33,8 +33,8 @@ from aegis.execute.utils.time import Clock, reset_clock, set_clock, utc_now
 
 __all__ = [
     "ALERT_ID_HEX_LEN",
-    "Clock",
     "INTENT_ID_HEX_LEN",
+    "Clock",
     "compute_alert_id",
     "compute_dedup_hash",
     "compute_intent_id",

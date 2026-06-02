@@ -289,4 +289,4 @@ def _parse_int(s: str) -> int:
         return 0
 
 
-__all__ = ["GitHubTrendingAdapter", "GitHubTrendingConfig", "SCRAPER_VERSION"]
+__all__ = ["SCRAPER_VERSION", "GitHubTrendingAdapter", "GitHubTrendingConfig"]

@@ -276,4 +276,4 @@ class NPMTrendsAdapter(SourceAdapter[dict[str, Any]]):
             return None
 
 
-__all__ = ["NPMTrendsAdapter", "NPMTrendsConfig", "SCRAPER_VERSION"]
+__all__ = ["SCRAPER_VERSION", "NPMTrendsAdapter", "NPMTrendsConfig"]

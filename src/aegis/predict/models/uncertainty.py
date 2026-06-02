@@ -221,6 +221,6 @@ class DeepEnsemblePredictor(Predictor):
 
 __all__ = [
     "ConformalCalibrator",
-    "fit_conformal",
     "DeepEnsemblePredictor",
+    "fit_conformal",
 ]

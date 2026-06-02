@@ -214,7 +214,7 @@ class TaskRouter:
         structured_signals = ["json", "schema", "structured", "extract", "parse",
                                "fill in", "format as"]
 
-        scores: dict[TaskType, int] = {t: 0 for t in TaskType}
+        scores: dict[TaskType, int] = dict.fromkeys(TaskType, 0)
         for signal in code_signals:
             if signal in lower:
                 scores[TaskType.CODE] += 1

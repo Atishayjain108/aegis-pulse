@@ -41,4 +41,4 @@ class YahooFinanceRSSAdapter(RSSAdapter):
         return self._FEEDS + ticker_feeds + self._rss_config.extra_feed_urls
 
 
-__all__ = ["YahooFinanceRSSAdapter", "RSSAdapterConfig", "SCRAPER_VERSION"]
+__all__ = ["SCRAPER_VERSION", "RSSAdapterConfig", "YahooFinanceRSSAdapter"]

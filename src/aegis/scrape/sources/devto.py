@@ -247,4 +247,4 @@ class DevToAdapter(SourceAdapter[dict[str, Any]]):
             return None
 
 
-__all__ = ["DevToAdapter", "DevToConfig", "SCRAPER_VERSION"]
+__all__ = ["SCRAPER_VERSION", "DevToAdapter", "DevToConfig"]

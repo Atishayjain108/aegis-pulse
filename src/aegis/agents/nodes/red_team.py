@@ -38,6 +38,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+import structlog
+
 from ..llm import prompts
 from ..schemas import AgentDecision, AgentVerdict, TrendCandidate
 from ..tools.velocity import V_THRESHOLD_LOW, classify
@@ -45,6 +47,8 @@ from .base import AgentNode
 
 if TYPE_CHECKING:
     from ..state import GraphState
+
+_log = structlog.get_logger("aegis.agents.nodes.red_team")
 
 
 class RedTeamAgent(AgentNode):
@@ -162,7 +166,8 @@ class RedTeamAgent(AgentNode):
                 falsifiers=", ".join(heuristic.details.get("red_team_falsifiers", [])),
                 scout_score=heuristic.details.get("scout_score_used", 0.0),
             )
-        except Exception:
+        except Exception as exc:
+            _log.debug("red_team.llm_input_build_failed", error=str(exc))
             return None
         system_text = (
             "You are RED_TEAM. Hunt for additional falsifiers. Reply JSON only: "

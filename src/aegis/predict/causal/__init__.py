@@ -27,9 +27,9 @@ from .counterfactual import (
 __all__ = [
     "CausalAttribution",
     "CausalAttributor",
-    "DeterministicAttributor",
-    "attribute",
     "CounterfactualEngine",
     "CounterfactualScenario",
+    "DeterministicAttributor",
+    "attribute",
     "propose_counterfactuals",
 ]

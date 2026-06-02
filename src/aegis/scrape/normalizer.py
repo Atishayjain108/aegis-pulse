@@ -91,8 +91,8 @@ def normalize_swarm_batch(signals: list[dict[str, Any]]) -> list[dict[str, Any]]
 
 __all__ = [
     "TIER_WEIGHTS",
-    "z_score_batch",
-    "percentile_rank_batch",
     "apply_tier_weight",
     "normalize_swarm_batch",
+    "percentile_rank_batch",
+    "z_score_batch",
 ]

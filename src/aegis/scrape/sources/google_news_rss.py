@@ -267,4 +267,4 @@ def _text(element: ET.Element, tag: str) -> str:
     return (child.text or "").strip()
 
 
-__all__ = ["GoogleNewsRSSAdapter", "GoogleNewsRSSConfig", "SCRAPER_VERSION"]
+__all__ = ["SCRAPER_VERSION", "GoogleNewsRSSAdapter", "GoogleNewsRSSConfig"]

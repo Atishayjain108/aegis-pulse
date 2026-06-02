@@ -1,6 +1,5 @@
 """tests/unit/llm/test_tokenizer.py — Tokenizer tests"""
 from __future__ import annotations
-import pytest
 
 
 class TestCountTokens:
@@ -20,7 +19,7 @@ class TestCountTokens:
         assert long > short
 
     def test_code_fewer_tokens_per_char(self):
-        from aegis.llm.tokenizer import count_tokens, _is_code
+        from aegis.llm.tokenizer import _is_code, count_tokens
         code = "def calculate_total(items): return sum(item.price for item in items)"
         assert _is_code(code)
         n = count_tokens(code)

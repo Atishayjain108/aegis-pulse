@@ -52,11 +52,28 @@ services:
       - "shared_preload_libraries=timescaledb"
       - "-c"
       - "listen_addresses=*"
+      - "-c"
+      - "shared_buffers=512MB"
+      - "-c"
+      - "effective_cache_size=2GB"
+      - "-c"
+      - "work_mem=16MB"
+      - "-c"
+      - "maintenance_work_mem=128MB"
+      - "-c"
+      - "max_connections=100"
     ports:
       - "127.0.0.1:5433:5432"
     volumes:
       - aegis_postgres_data:/home/postgres/pgdata/data
       - ./db/migrations:/docker-entrypoint-initdb.d/migrations:ro
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 4G
+        reservations:
+          memory: 512M
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aegis_app} -d ${POSTGRES_DB:-aegis}"]
       interval: 5s
@@ -85,6 +102,13 @@ services:
       - "127.0.0.1:6380:6379"
     volumes:
       - aegis_redis_data:/data
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 1536M
+        reservations:
+          memory: 256M
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -157,7 +181,7 @@ services:
     environment:
       AEGIS_PG_DSN: postgresql://${POSTGRES_USER:-aegis_app}:${POSTGRES_PASSWORD:-aegis_app_dev_pw}@postgres:5432/${POSTGRES_DB:-aegis}
       AEGIS_REDIS_URL: redis://redis:6379/0
-      AEGIS_ENV: ${AEGIS_ENV:-development}
+      AEGIS_ENV: ${AEGIS_ENV:-dev}
       AEGIS_LOG_JSON: "true"
       AEGIS_FLARESOLVERR_URL: "http://aegis-flaresolverr:8191/v1"
       # Disable Ollama in the predict container — inference is heuristic-first
@@ -171,6 +195,13 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 2G
+        reservations:
+          memory: 256M
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8000/healthz"]
       interval: 15s
@@ -196,7 +227,7 @@ services:
       AEGIS_EXECUTE_MODE: advisory
       AEGIS_EXECUTE_API_HOST: "0.0.0.0"
       AEGIS_EXECUTE_API_PORT: "8200"
-      AEGIS_EXECUTE_HMAC_KEY: "dev-hmac-key-not-for-prod"
+      AEGIS_EXECUTE_HMAC_KEY: "${AEGIS_EXECUTE_HMAC_KEY:-dev-hmac-key-not-for-prod}"
       AEGIS_EXECUTE_KILLSWITCH_KEY: "aegis:execute:killswitch"
       AEGIS_PG_DSN: postgresql://${POSTGRES_USER:-aegis_app}:${POSTGRES_PASSWORD:-aegis_app_dev_pw}@postgres:5432/${POSTGRES_DB:-aegis}
       AEGIS_REDIS_URL: redis://redis:6379/0
@@ -231,7 +262,7 @@ services:
       # Tenant UUID for this drain worker. Use the same default_tenant_id
       # as the main aegis stack (from AEGIS_DEFAULT_TENANT_ID in .env).
       AEGIS_EXECUTE_TENANT_ID: ${AEGIS_DEFAULT_TENANT_ID:-00000000-0000-0000-0000-000000000001}
-      AEGIS_EXECUTE_HMAC_KEY: "dev-hmac-key-not-for-prod"
+      AEGIS_EXECUTE_HMAC_KEY: "${AEGIS_EXECUTE_HMAC_KEY:-dev-hmac-key-not-for-prod}"
       AEGIS_EXECUTE_KILLSWITCH_KEY: "aegis:execute:killswitch"
       AEGIS_PG_DSN: postgresql://${POSTGRES_USER:-aegis_app}:${POSTGRES_PASSWORD:-aegis_app_dev_pw}@postgres:5432/${POSTGRES_DB:-aegis}
       AEGIS_REDIS_URL: redis://redis:6379/0
@@ -260,12 +291,21 @@ services:
     environment:
       AEGIS_PG_DSN: postgresql://${POSTGRES_USER:-aegis_app}:${POSTGRES_PASSWORD:-aegis_app_dev_pw}@postgres:5432/${POSTGRES_DB:-aegis}
       AEGIS_REDIS_URL: redis://redis:6379/0
-      AEGIS_ENV: ${AEGIS_ENV:-development}
+      AEGIS_ENV: ${AEGIS_ENV:-dev}
       AEGIS_PREDICT_API_URL: http://predict:8000
       AEGIS_EXECUTE_API_URL: http://execute-api:8200
       AEGIS_FLARESOLVERR_URL: "http://aegis-flaresolverr:8191/v1"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+    group_add:
+      - "${DOCKER_GID:-1001}"
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          memory: 128M
     ports:
       - "127.0.0.1:8300:8300"
     depends_on:
@@ -365,6 +405,60 @@ services:
       - aegis
 
   # -----------------------------------------------------------------
+  # Phase 14 — Loki log aggregation
+  # Receives structured logs from Promtail. Queried by Grafana.
+  # UI: Grafana → Explore → select "Loki" datasource
+  # -----------------------------------------------------------------
+  loki:
+    image: grafana/loki:3.1.0
+    container_name: aegis-loki
+    restart: unless-stopped
+    command: -config.file=/etc/loki/loki.yaml
+    ports:
+      - "127.0.0.1:3100:3100"
+    volumes:
+      - ./config/loki/loki.yaml:/etc/loki/loki.yaml:ro
+      - aegis_loki_data:/loki
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:3100/ready || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: "512M"
+    networks:
+      - aegis
+
+  # -----------------------------------------------------------------
+  # Phase 14 — Promtail log collector
+  # Ships Docker container log files to Loki with compose labels.
+  # Needs docker.sock to enumerate running containers.
+  # -----------------------------------------------------------------
+  promtail:
+    image: grafana/promtail:3.1.0
+    container_name: aegis-promtail
+    restart: unless-stopped
+    command: -config.file=/etc/promtail/config.yaml
+    volumes:
+      - ./config/promtail/config.yaml:/etc/promtail/config.yaml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    depends_on:
+      loki:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: "128M"
+    networks:
+      - aegis
+
+  # -----------------------------------------------------------------
   # Phase 10 — Prefect 3 orchestration server (optional UI)
   # The lake itself runs as a library inside the main Python process.
   # Prefect is only needed if you want the flow-run UI at :4200.
@@ -403,27 +497,33 @@ services:
     container_name: aegis-ollama
     restart: unless-stopped
     ports:
-      - "11434:11434"
+      - "127.0.0.1:11434:11434"
     volumes:
       - aegis_ollama_models:/root/.ollama
     environment:
       OLLAMA_HOST: "0.0.0.0:11434"
       OLLAMA_ORIGINS: "*"
-      OLLAMA_NUM_CTX: "32768"
-      OLLAMA_MAX_LOADED_MODELS: "2"
+      OLLAMA_NUM_CTX: "8192"
+      OLLAMA_MAX_LOADED_MODELS: "1"
+    deploy:
+      resources:
+        limits:
+          cpus: "4.0"
+          memory: 8G
+        reservations:
+          memory: 2G
+        # Uncomment to pass through an NVIDIA GPU:
+        # reservations:
+        #   devices:
+        #     - driver: nvidia
+        #       count: 1
+        #       capabilities: [gpu]
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:11434/api/version"]
+      test: ["CMD", "ollama", "list"]
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 30s
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: 1
-    #           capabilities: [gpu]
     networks:
       - aegis
 
@@ -440,18 +540,15 @@ services:
     depends_on:
       ollama:
         condition: service_healthy
-    entrypoint: >
-      sh -c "
+    entrypoint:
+      - sh
+      - -c
+      - |
         echo '[ollama-init] Pulling bge-m3 embedding model...' &&
-        curl -sf -X POST http://aegis-ollama:11434/api/pull
-          -H 'Content-Type: application/json'
-          -d '{\"name\":\"bge-m3\"}' &&
+        curl -sf -X POST http://aegis-ollama:11434/api/pull -H 'Content-Type: application/json' -d '{"name":"bge-m3"}' &&
         echo '[ollama-init] Pulling llama3.2:3b fast chat model...' &&
-        curl -sf -X POST http://aegis-ollama:11434/api/pull
-          -H 'Content-Type: application/json'
-          -d '{\"name\":\"llama3.2:3b\"}' &&
+        curl -sf -X POST http://aegis-ollama:11434/api/pull -H 'Content-Type: application/json' -d '{"name":"llama3.2:3b"}' &&
         echo '[ollama-init] Bootstrap complete.'
-      "
     networks:
       - aegis
 
@@ -467,7 +564,7 @@ services:
     restart: unless-stopped
     profiles: ["llm-proxy"]
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     volumes:
       - ./config/litellm_config.yaml:/app/config.yaml:ro
     command: ["--config", "/app/config.yaml", "--port", "8080"]
@@ -508,6 +605,8 @@ volumes:
     name: aegis_prefect_data
   aegis_ollama_models:
     name: aegis_ollama_models
+  aegis_loki_data:
+    name: aegis_loki_data
 
 # ---------------------------------------------------------------------
 # Networks

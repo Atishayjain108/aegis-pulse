@@ -235,7 +235,8 @@ class SentinelAgent(AgentNode):
                 volume_maturity=round(heuristic.details.get("volume_maturity", 0.0), 3),
                 signal_count=candidate.signal_count,
             )
-        except Exception:
+        except Exception as exc:
+            _log.debug("sentinel.llm_input_build_failed", error=str(exc))
             return None
         system_text = (
             "You are SENTINEL, the saturation detector. Reply JSON only: "

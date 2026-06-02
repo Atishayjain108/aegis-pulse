@@ -1,7 +1,6 @@
 """tests/unit/llm/test_guardrails.py — Guardrails and PII scrubber tests"""
 
 from __future__ import annotations
-import pytest
 
 
 class TestPIIScrubber:
@@ -67,6 +66,7 @@ class TestPIIScrubber:
 
     def test_add_custom_rule(self):
         import re
+
         from aegis.llm.guardrails.pii_scrubber import PIIRule, PIIScrubber
         s = PIIScrubber()
         rule = PIIRule(

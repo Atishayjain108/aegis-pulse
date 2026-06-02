@@ -32,4 +32,4 @@ class InvestingComRSSAdapter(RSSAdapter):
         return "investing_com"
 
 
-__all__ = ["InvestingComRSSAdapter", "RSSAdapterConfig", "SCRAPER_VERSION"]
+__all__ = ["SCRAPER_VERSION", "InvestingComRSSAdapter", "RSSAdapterConfig"]

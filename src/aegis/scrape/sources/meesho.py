@@ -38,6 +38,7 @@ from aegis.schemas.signal import (
 )
 from aegis.scrape.base import AdapterConfig, ScrapeContext, SourceAdapter
 from aegis.scrape.ecommerce_utils import random_ua
+from aegis.scrape.playwright_fetcher import fetch_page_html as _playwright_fetch
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -58,9 +59,22 @@ _HEADERS = {
 }
 
 # HTML selectors (fallback path)
-_CARD_SEL = ".product-card, [data-testid='product-card'], .sc-dkrFOg"
-_TITLE_SEL = ".product-title, [data-testid='product-name'], h3"
-_PRICE_SEL = ".price, [data-testid='product-price'], .sc-jSFjdj"
+# Avoid Styled-Components hashes (sc-*) — they rotate on every deploy.
+# Use semantic/data-testid selectors + broad structural fallbacks.
+_CARD_SEL = (
+    "[data-testid='product-card'], [data-testid='catalogueCard'], "
+    ".product-card, article[class*='Product'], article[class*='product'], "
+    "li[class*='product'], div[class*='ProductCard'], div[class*='productCard']"
+)
+_TITLE_SEL = (
+    "[data-testid='product-name'], [data-testid='productName'], "
+    ".product-title, [class*='productName'], [class*='ProductName'], h3, h4"
+)
+_PRICE_SEL = (
+    "[data-testid='product-price'], [data-testid='discountedPrice'], "
+    ".price, [class*='Price'], [class*='price'] span, "
+    "[class*='discountedPrice'], [class*='DiscountedPrice']"
+)
 
 
 def _extract_json_products(data: Any) -> list[dict[str, Any]]:
@@ -221,17 +235,31 @@ class MeeshoAdapter(SourceAdapter[dict[str, Any]]):
             return []
 
     async def _fetch_html(self) -> list[dict[str, Any]]:
+        """Fetch trending HTML: plain httpx → Playwright stealth fallback."""
         if self._client is None:
             return []
         await self._rate_limit()
         self._record_request_metric(method="html_fallback")
+
+        # --- plain httpx ---
+        items: list[dict[str, Any]] = []
         try:
             resp = await self._client.get(_HTML_URL)
             resp.raise_for_status()
-            return _parse_meesho_html(resp.text)
+            items = _parse_meesho_html(resp.text)
         except Exception as e:
             _log.warning("meesho.html_fallback.failed", error=str(e))
-            return []
+
+        # --- Playwright renders JS — needed for React-rendered product cards ---
+        if not items:
+            _log.info("meesho.html_fallback.trying_playwright")
+            html = await _playwright_fetch(_HTML_URL)
+            if html:
+                items = _parse_meesho_html(html)
+            else:
+                _log.warning("meesho.playwright.no_html")
+
+        return items
 
     async def fetch_raw(  # type: ignore[override]
         self,
@@ -313,9 +341,9 @@ class MeeshoAdapter(SourceAdapter[dict[str, Any]]):
 
 
 __all__ = [
+    "SCRAPER_VERSION",
     "MeeshoAdapter",
     "MeeshoConfig",
-    "SCRAPER_VERSION",
     "_extract_json_products",
     "_parse_meesho_html",
 ]

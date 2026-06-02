@@ -253,4 +253,4 @@ class RedditFinanceAdapter(SourceAdapter[dict[str, Any]]):
             return None
 
 
-__all__ = ["RedditFinanceAdapter", "RedditFinanceConfig", "SCRAPER_VERSION", "_USER_AGENT"]
+__all__ = ["SCRAPER_VERSION", "_USER_AGENT", "RedditFinanceAdapter", "RedditFinanceConfig"]

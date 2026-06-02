@@ -28,9 +28,9 @@ from .heuristic import (
 )
 
 __all__ = [
-    "Predictor",
-    "HeuristicTemporalPredictor",
     "HeuristicRelationalPredictor",
+    "HeuristicTemporalPredictor",
+    "Predictor",
     "heuristic_predict",
     "load_model",
 ]

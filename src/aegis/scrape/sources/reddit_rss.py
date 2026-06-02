@@ -39,6 +39,7 @@ from aegis.schemas.signal import (
     compute_content_hash,
 )
 from aegis.scrape.base import AdapterConfig, ScrapeContext, SourceAdapter
+from aegis.scrape.harden_shim import HardenShim
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -84,10 +85,18 @@ class RedditRSSAdapter(SourceAdapter[dict[str, Any]]):
             ...
     """
 
-    def __init__(self, config: RedditRSSConfig | AdapterConfig, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        config: RedditRSSConfig | AdapterConfig,
+        *,
+        harden_shim: HardenShim | None = None,
+        **kwargs: Any,
+    ) -> None:
         super().__init__(config, **kwargs)
         self._rss_config = config if isinstance(config, RedditRSSConfig) else RedditRSSConfig()
         self._client: httpx.AsyncClient | None = None
+        self._harden_shim = harden_shim
+        self._harden_seq = 0
 
     @property
     def name(self) -> str:
@@ -142,6 +151,25 @@ class RedditRSSAdapter(SourceAdapter[dict[str, Any]]):
             else:
                 feed_url = f"{_REDDIT_BASE}/r/{sub}/{listing_kind}.json"
 
+            # Phase 5 pre-flight: fingerprint pick + honeypot screen.
+            # No-op when harden_shim is None or aegis.harden not installed.
+            _extra_headers: dict[str, str] = {}
+            if self._harden_shim is not None:
+                decision = self._harden_shim.preflight(
+                    source="reddit-rss", url=feed_url, seq=self._harden_seq
+                )
+                self._harden_seq += 1
+                if decision.skip:
+                    log.warning(
+                        "reddit_rss.harden_skip",
+                        url=feed_url,
+                        subreddit=sub,
+                        reason=decision.reason,
+                    )
+                    continue
+                if decision.fingerprint is not None:
+                    _extra_headers["User-Agent"] = decision.fingerprint.tls.ua
+
             await self._rate_limit()
             self._record_request_metric(method="reddit_json")
 
@@ -149,6 +177,7 @@ class RedditRSSAdapter(SourceAdapter[dict[str, Any]]):
                 resp = await self._client.get(
                     feed_url,
                     params={"limit": min(100, per_sub), "raw_json": "1"},
+                    headers=_extra_headers or None,
                 )
                 if resp.status_code == 429:
                     log.warning("reddit_rss.rate_limited", subreddit=sub)
@@ -217,17 +246,21 @@ class RedditRSSAdapter(SourceAdapter[dict[str, Any]]):
 
             raw_text: str | None = None
             if is_self and selftext and selftext not in ("[deleted]", "[removed]"):
-                raw_text = selftext[:20_000]
+                raw_text = selftext[:20_000].strip() or None
             elif not is_self and url:
-                raw_text = url
+                raw_text = url.strip() or None
 
             tags = frozenset({subreddit.lower()} if subreddit else ())
+
+            # Strip whitespace before hashing so the hash matches what Pydantic
+            # will store after its str_strip_whitespace=True model_config pass.
+            title_clean = title[:512].strip() or None if title else None
 
             h = compute_content_hash(
                 platform=Platform.REDDIT,
                 external_id=external_id,
                 url=canonical_url,
-                title=title[:512] if title else None,
+                title=title_clean,
                 raw_text=raw_text,
                 posted_at=posted_at,
             )
@@ -237,7 +270,7 @@ class RedditRSSAdapter(SourceAdapter[dict[str, Any]]):
                 tier=SourceTier.TIER_1_INTENT,
                 external_id=external_id,
                 url=canonical_url,  # type: ignore[arg-type]
-                title=title[:512] if title else None,
+                title=title_clean,
                 raw_text=raw_text,
                 modality=ContentModality.TEXT,
                 tags=tags,
@@ -272,4 +305,4 @@ class RedditRSSAdapter(SourceAdapter[dict[str, Any]]):
             return None
 
 
-__all__ = ["RedditRSSAdapter", "RedditRSSConfig", "SCRAPER_VERSION"]
+__all__ = ["SCRAPER_VERSION", "RedditRSSAdapter", "RedditRSSConfig"]

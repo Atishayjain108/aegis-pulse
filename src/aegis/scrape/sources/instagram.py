@@ -245,4 +245,4 @@ class InstagramAdapter(SourceAdapter[Any]):
             return None
 
 
-__all__ = ["InstagramAdapter", "InstagramConfig", "SCRAPER_VERSION"]
+__all__ = ["SCRAPER_VERSION", "InstagramAdapter", "InstagramConfig"]

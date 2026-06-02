@@ -109,10 +109,20 @@ _REGISTRY: dict[str, tuple[str, str, str | None, str, str]] = {
 
 
 # ---------------------------------------------------------------------------
+# Adapters that require a `query` kwarg to produce any results.
+# When called from the swarm without a topic, we pass a sensible default so
+# these adapters contribute signals instead of returning nothing.
+# ---------------------------------------------------------------------------
+_QUERY_ADAPTERS: frozenset[str] = frozenset({"google-news", "bing-news"})
+_DEFAULT_SWARM_QUERY = "trending technology market business ecommerce india"
+
+
+# ---------------------------------------------------------------------------
 # Adapter function factory
 # ---------------------------------------------------------------------------
 
 def _make_adapter_fn(
+    adapter_name: str,
     module_path: str,
     adapter_cls_name: str,
     config_cls_name: str | None,
@@ -136,14 +146,20 @@ def _make_adapter_fn(
             else:
                 from aegis.scrape.sources._rss_base import RSSAdapterConfig
                 adapter = adapter_cls(RSSAdapterConfig())
-        except Exception:
+        except Exception as exc:
+            _log.debug("adapter_fn_init_error", adapter=adapter_cls_name, error=str(exc))
             return []
 
         ctx = ScrapeContext()
         signals: list[dict[str, Any]] = []
+        # Pass a default query for search-based adapters so they produce results
+        # even when the swarm runs without a specific topic keyword.
+        run_kwargs: dict[str, Any] = {}
+        if adapter_name in _QUERY_ADAPTERS:
+            run_kwargs["query"] = _DEFAULT_SWARM_QUERY
         try:
             await adapter.setup(ctx)
-            async for sig in adapter.run(limit=limit):
+            async for sig in adapter.run(limit=limit, **run_kwargs):
                 if hasattr(sig, "model_dump"):
                     d: dict[str, Any] = sig.model_dump(mode="json")
                     # scraped_at lives in ScrapeProvenance, not at the signal root.
@@ -180,7 +196,7 @@ def _build_all_agents() -> list[ScraperAgent]:
             ScraperAgent(
                 name=name,
                 platform=platform,
-                adapter_fn=_make_adapter_fn(mod, cls_name, cfg_name),
+                adapter_fn=_make_adapter_fn(name, mod, cls_name, cfg_name),
                 capabilities=caps,
                 health=AgentHealth.UNKNOWN,
             )
@@ -302,6 +318,8 @@ class _SwarmPersistence:
             await self._redis.xadd(
                 "aegis:swarm:results",
                 {"body": result.model_dump_json()},
+                maxlen=10_000,
+                approximate=True,
             )
         except Exception as exc:
             _log.warning("swarm.redis_publish_failed", error=str(exc))
@@ -496,11 +514,11 @@ class SwarmOrchestrator:
 
 
 __all__ = [
+    "ALL_WAVE_NAMES",
     "WAVE_1_SOCIAL",
     "WAVE_2_NEWS",
     "WAVE_3_ECOMMERCE",
     "WAVE_4_TECH",
-    "ALL_WAVE_NAMES",
-    "classify_pulse",
     "SwarmOrchestrator",
+    "classify_pulse",
 ]

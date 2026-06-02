@@ -194,7 +194,7 @@ class SemanticRouter:
     # Routing
     # ------------------------------------------------------------------
 
-    async def route(self, query: str) -> "RouterResult":
+    async def route(self, query: str) -> RouterResult:
         """
         Attempt to route ``query`` to a fast-path.
 

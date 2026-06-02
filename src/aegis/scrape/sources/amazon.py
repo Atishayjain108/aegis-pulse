@@ -275,4 +275,4 @@ def _int_or_none(v: Any) -> int | None:
         return None
 
 
-__all__ = ["AmazonAdapter", "AmazonConfig", "SCRAPER_VERSION"]
+__all__ = ["SCRAPER_VERSION", "AmazonAdapter", "AmazonConfig"]

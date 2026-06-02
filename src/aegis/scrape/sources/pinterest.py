@@ -290,4 +290,4 @@ def _int_or_none(v: Any) -> int | None:
         return None
 
 
-__all__ = ["PinterestAdapter", "PinterestConfig", "SCRAPER_VERSION"]
+__all__ = ["SCRAPER_VERSION", "PinterestAdapter", "PinterestConfig"]

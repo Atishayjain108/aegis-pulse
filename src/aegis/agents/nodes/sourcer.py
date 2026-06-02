@@ -33,12 +33,16 @@ import math
 import re
 from typing import TYPE_CHECKING, Any
 
+import structlog
+
 from ..llm import prompts
 from ..schemas import AgentDecision, AgentVerdict, TrendCandidate
 from .base import AgentNode
 
 if TYPE_CHECKING:
     from ..state import GraphState
+
+_log = structlog.get_logger("aegis.agents.nodes.sourcer")
 
 # ----------------------------------------------------------------------
 # Category detection table.
@@ -307,7 +311,8 @@ class SourcerAgent(AgentNode):
                 feasibility=heuristic.details.get("feasibility", "standard"),
                 heuristic_score=round(heuristic.score, 3),
             )
-        except Exception:
+        except Exception as exc:
+            _log.debug("sourcer.llm_input_build_failed", error=str(exc))
             return None
 
         system_text = (

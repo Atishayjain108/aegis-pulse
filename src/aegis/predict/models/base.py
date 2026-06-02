@@ -143,4 +143,4 @@ class Predictor(abc.ABC):
         return dict(zip(window.feature_names, last, strict=False))
 
 
-__all__ = ["Predictor", "INFERENCE_HARD_TIMEOUT_S"]
+__all__ = ["INFERENCE_HARD_TIMEOUT_S", "Predictor"]

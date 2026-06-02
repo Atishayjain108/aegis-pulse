@@ -1,6 +1,5 @@
 """tests/unit/llm/test_metrics.py — Metrics tests"""
 from __future__ import annotations
-import pytest
 
 
 class TestMetrics:

@@ -154,7 +154,7 @@ async def stream_openai_compat(
 
 
 async def stream_complete(
-    gateway: "LLMGateway",
+    gateway: LLMGateway,
     messages: list[dict[str, str]],
     *,
     provider_name: str | None = None,

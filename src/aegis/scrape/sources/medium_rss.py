@@ -38,4 +38,4 @@ class MediumRSSAdapter(RSSAdapter):
         return tuple(_TAG_FEED_TPL.format(tag=t) for t in tags) + self._rss_config.extra_feed_urls
 
 
-__all__ = ["MediumRSSAdapter", "RSSAdapterConfig", "SCRAPER_VERSION"]
+__all__ = ["SCRAPER_VERSION", "MediumRSSAdapter", "RSSAdapterConfig"]

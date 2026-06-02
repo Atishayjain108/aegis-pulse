@@ -10,6 +10,32 @@ from click.testing import CliRunner
 from aegis.datalake.cli.main import cli
 
 
+def _parse_doctor_payload(output: str) -> dict[str, object]:
+    """Extract the doctor --json-out payload from mixed stdout/stderr.
+
+    When structlog is configured for JSON (common in pytest because stderr is
+    not a TTY), facade lifecycle events land on stderr.  CliRunner mixes stderr
+    into ``result.output`` by default, so we locate the Phase 10 payload by its
+    stable ``phase`` key rather than assuming stdout is clean JSON.
+    """
+    decoder = json.JSONDecoder()
+    pos = 0
+    while pos < len(output):
+        start = output.find("{", pos)
+        if start < 0:
+            break
+        try:
+            obj, end = decoder.raw_decode(output, start)
+        except json.JSONDecodeError:
+            pos = start + 1
+            continue
+        if isinstance(obj, dict) and obj.get("phase") == "phase10" and "backend_ok" in obj:
+            return obj
+        # raw_decode returns the absolute end index, not a relative advance.
+        pos = end if end > start else start + 1
+    raise AssertionError(f"No Phase 10 doctor payload in output: {output!r}")
+
+
 def _common_opts(tmp_root: str) -> list[str]:
     return [
         "--local-root", tmp_root,
@@ -38,13 +64,7 @@ class TestDoctor:
             cli, [*_common_opts(tmp_root), "doctor", "--json-out"]
         )
         assert result.exit_code == 0, result.output
-        # Output may include log lines from structlog; find the JSON.
-        # The last lines should be the JSON block.
-        output = result.output
-        # find first '{' and last '}'
-        start = output.find("{")
-        end = output.rfind("}")
-        body = json.loads(output[start : end + 1])
+        body = _parse_doctor_payload(result.output)
         assert body["backend_ok"] is True
         assert body["catalog_ok"] is True
 

@@ -275,8 +275,8 @@ class NykaaAdapter(SourceAdapter[dict[str, Any]]):
 
 
 __all__ = [
+    "SCRAPER_VERSION",
     "NykaaAdapter",
     "NykaaConfig",
-    "SCRAPER_VERSION",
     "_parse_nykaa_html",
 ]

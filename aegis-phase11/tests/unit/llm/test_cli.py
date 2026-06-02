@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 from click.testing import CliRunner
 
 
@@ -62,8 +61,9 @@ class TestLLMCLI:
         assert "Test answer" in result.output
 
     def test_complete_json_out(self):
-        from aegis.llm.cli.commands import llm_group
         import json
+
+        from aegis.llm.cli.commands import llm_group
 
         runner = CliRunner()
 

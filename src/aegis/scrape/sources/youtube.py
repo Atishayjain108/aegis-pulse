@@ -321,4 +321,4 @@ def _int_or_none(v: Any) -> int | None:
         return None
 
 
-__all__ = ["YouTubeAdapter", "YouTubeConfig", "SCRAPER_VERSION"]
+__all__ = ["SCRAPER_VERSION", "YouTubeAdapter", "YouTubeConfig"]

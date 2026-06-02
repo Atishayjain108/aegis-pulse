@@ -317,7 +317,8 @@ from datetime import UTC, datetime, timedelta  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
-def _seed_rng() -> None:
+def seed_rng() -> None:
+    """Autouse fixture to seed the random number generator for deterministic tests."""
     random.seed(1234)
 
 
@@ -330,7 +331,7 @@ def utc_now() -> datetime:
 def synthetic_signals(utc_now: datetime) -> list[dict[str, Any]]:
     """72-row synthetic signal stream usable by the Phase 3 feature builder."""
     base = utc_now - timedelta(hours=72)
-    rows = []
+    rows: list[dict[str, Any]] = []
     for i in range(72):
         rows.append(
             {

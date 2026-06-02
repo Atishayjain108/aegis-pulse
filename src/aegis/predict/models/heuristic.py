@@ -33,12 +33,18 @@ from ..constants import (
     ACTION_CONFIDENCE_FLOOR,
     ACTION_ENTER_PROBABILITY_FLOOR,
     ACTION_EXIT_PROBABILITY_CEILING,
+    EMA_LONG_PERIOD,
+    EMA_SHORT_PERIOD,
     HEURISTIC_BREAKOUT_MIN_AUTHORS,
     HEURISTIC_BREAKOUT_MIN_SIGNALS,
     HEURISTIC_BREAKOUT_VELOCITY_24H,
     HEURISTIC_CONFIDENCE_CEILING,
     HEURISTIC_DECLINING_VELOCITY_24H,
     HEURISTIC_PEAK_DECEL_THRESHOLD,
+    MOMENTUM_BEARISH_THRESHOLD,
+    MOMENTUM_BULLISH_THRESHOLD,
+    OLS_HORIZON_CAP_HOURS,
+    OLS_STRONG_R2,
 )
 from ..features.graph import CreatorGraph
 from ..schemas import (
@@ -65,8 +71,70 @@ def _logistic(x: float, *, k: float = 1.0, x0: float = 0.0) -> float:
     return ez / (1.0 + ez)
 
 
+def _ema(series: list[float], *, period: int) -> float:
+    """Exponential moving average (final value) — pure stdlib, O(N).
+
+    Uses the standard 2/(period+1) smoothing factor so that the result
+    matches widely-accepted TA convention (e.g. pandas ewm(span=period)).
+    """
+    if not series:
+        return 0.0
+    alpha = 2.0 / (period + 1)
+    val = series[0]
+    for v in series[1:]:
+        val = alpha * v + (1.0 - alpha) * val
+    return val
+
+
+def _ema_series(series: list[float], *, period: int) -> list[float]:
+    """Full EMA series (same length as input), earliest value first."""
+    if not series:
+        return []
+    alpha = 2.0 / (period + 1)
+    out = [series[0]]
+    for v in series[1:]:
+        out.append(alpha * v + (1.0 - alpha) * out[-1])
+    return out
+
+
+def _ols_slope_r2(series: list[float]) -> tuple[float, float]:
+    """OLS slope and R² for y = slope*t + intercept, t in 0..n-1.
+
+    Returns (0.0, 0.0) when the series is too short or degenerate.
+    Pure stdlib — no numpy.
+    """
+    n = len(series)
+    if n < 3:
+        return 0.0, 0.0
+    # Closed-form OLS using integer sums (exact for int t).
+    t_sum = n * (n - 1) / 2
+    t2_sum = n * (n - 1) * (2 * n - 1) / 6
+    y_sum = sum(series)
+    ty_sum = sum(float(t) * y for t, y in enumerate(series))
+    denom = n * t2_sum - t_sum * t_sum
+    if abs(denom) < 1e-10:
+        return 0.0, 0.0
+    slope = (n * ty_sum - t_sum * y_sum) / denom
+    intercept = (y_sum - slope * t_sum) / n
+    y_mean = y_sum / n
+    ss_tot = sum((y - y_mean) ** 2 for y in series)
+    if ss_tot < 1e-12:
+        # All values identical — perfect fit by convention.
+        return slope, 1.0
+    ss_res = sum((y - (slope * t + intercept)) ** 2 for t, y in enumerate(series))
+    r2 = max(0.0, 1.0 - ss_res / ss_tot)
+    return slope, r2
+
+
 def _summarise_window(window: FeatureWindow) -> dict[str, Any]:
-    """Extract a small dict of scalar summaries from the window."""
+    """Extract a small dict of scalar summaries from the window.
+
+    Phase 3.1 additions (all pure stdlib, no numpy):
+      ema_short / ema_long  — exponential moving averages of signal_count.
+      momentum              — (ema_short / ema_long) - 1; positive = bullish.
+      ols_slope / ols_r2    — OLS trend line over the last 24 h of counts.
+      ma_cross_signal       — +1 bullish cross, -1 bearish, 0 no change.
+    """
     rows = window.as_2d()
     names = list(window.feature_names)
     idx = {n: i for i, n in enumerate(names)}
@@ -102,6 +170,35 @@ def _summarise_window(window: FeatureWindow) -> dict[str, Any]:
     recent_v6 = col(recent, "velocity_6h") if recent else [0.0]
     v_std = statistics.pstdev(recent_v6) if len(recent_v6) > 1 else 0.0
 
+    # ------------------------------------------------------------------ #
+    # Phase 3.1 — EMA / momentum / OLS trend analysis
+    # ------------------------------------------------------------------ #
+    counts_all = col(rows, "signal_count")
+
+    # EMA of signal counts: short (3 h) and long (12 h).
+    ema_s = _ema(counts_all, period=EMA_SHORT_PERIOD)
+    ema_l = _ema(counts_all, period=EMA_LONG_PERIOD)
+    # Momentum = fractional excess of short EMA over long EMA.
+    momentum = (ema_s / (ema_l + 1e-9)) - 1.0
+
+    # OLS slope over the last 24 buckets of signal counts.
+    ols_window = counts_all[-24:] if len(counts_all) >= 24 else counts_all
+    ols_slope, ols_r2 = _ols_slope_r2(ols_window)
+
+    # MA cross detection: compare penultimate vs. final EMA relationship.
+    # Short EMA series over all rows; check if the cross happened in the
+    # last two buckets.
+    ma_cross_signal = 0.0
+    if len(counts_all) >= 2:
+        ema_short_series = _ema_series(counts_all, period=EMA_SHORT_PERIOD)
+        ema_long_series = _ema_series(counts_all, period=EMA_LONG_PERIOD)
+        prev_diff = ema_short_series[-2] - ema_long_series[-2]
+        curr_diff = ema_short_series[-1] - ema_long_series[-1]
+        if prev_diff < 0 and curr_diff >= 0:
+            ma_cross_signal = 1.0   # golden cross (bullish)
+        elif prev_diff >= 0 and curr_diff < 0:
+            ma_cross_signal = -1.0  # death cross (bearish)
+
     return {
         "recent_signals": recent_signals,
         "prior_signals": prior_signals,
@@ -115,17 +212,33 @@ def _summarise_window(window: FeatureWindow) -> dict[str, Any]:
         "coord_risk": last_coord,
         "acceleration": accel,
         "velocity_noise": v_std,
+        # Phase 3.1 additions
+        "ema_short": ema_s,
+        "ema_long": ema_l,
+        "momentum": momentum,
+        "ols_slope": ols_slope,
+        "ols_r2": ols_r2,
+        "ma_cross_signal": ma_cross_signal,
     }
 
 
 def _heuristic_stage(s: dict[str, Any]) -> TrendStage:
-    """Map summary scalars to a discrete TrendStage."""
+    """Map summary scalars to a discrete TrendStage.
+
+    Phase 3.1: momentum and OLS signals are used as secondary confirming
+    evidence.  The primary velocity/acceleration rules are unchanged —
+    momentum only acts as a tiebreaker or an early-warning signal.
+    """
     v24 = s["v24"]
     v1 = s["v1"]
     accel = s["acceleration"]
     recent_signals = s["recent_signals"]
     recent_authors = s["recent_authors"]
+    momentum = s.get("momentum", 0.0)
+    ols_slope = s.get("ols_slope", 0.0)
+    ols_r2 = s.get("ols_r2", 0.0)
 
+    # Primary breakout: classic velocity + count + author threshold.
     if (
         v24 >= HEURISTIC_BREAKOUT_VELOCITY_24H
         and recent_signals >= HEURISTIC_BREAKOUT_MIN_SIGNALS
@@ -134,13 +247,40 @@ def _heuristic_stage(s: dict[str, Any]) -> TrendStage:
     ):
         return TrendStage.BREAKOUT
 
+    # Momentum-assisted breakout: slightly below velocity threshold but
+    # short EMA has crossed above long EMA (golden cross) with a positive
+    # OLS slope — early breakout signal before volume fully arrives.
+    if (
+        v24 >= HEURISTIC_BREAKOUT_VELOCITY_24H * 0.75
+        and momentum > MOMENTUM_BULLISH_THRESHOLD
+        and ols_slope > 0
+        and ols_r2 >= OLS_STRONG_R2
+        and recent_signals >= HEURISTIC_BREAKOUT_MIN_SIGNALS * 0.6
+        and accel > 0
+    ):
+        return TrendStage.BREAKOUT
+
     if v24 > 0 and accel <= HEURISTIC_PEAK_DECEL_THRESHOLD and recent_signals > 0:
         return TrendStage.PEAK
 
+    # Momentum-confirmed decline: bearish EMA cross + negative OLS slope
+    # provides higher confidence than velocity alone.
     if v24 <= HEURISTIC_DECLINING_VELOCITY_24H:
         return TrendStage.DECLINING
 
+    if (
+        momentum < MOMENTUM_BEARISH_THRESHOLD
+        and ols_slope < 0
+        and ols_r2 >= OLS_STRONG_R2
+        and v24 < 0
+    ):
+        return TrendStage.DECLINING
+
+    # OLS-confirmed emergence: positive trend line even when v24 is low.
     if v24 > 0 and accel > 0:
+        return TrendStage.EMERGING
+
+    if ols_slope > 0 and ols_r2 >= OLS_STRONG_R2 and v24 > 0:
         return TrendStage.EMERGING
 
     if recent_signals == 0 and v1 == 0:
@@ -244,8 +384,39 @@ def heuristic_predict(
     auth_conf = _clamp(math.log1p(s["recent_authors"]) / math.log(50.0), 0.0, 0.2)
     same_sign = int(s["v1"] >= 0) + int(s["v6"] >= 0) + int(s["v24"] >= 0)
     sign_conf = 0.05 * (1 + abs(same_sign - 1.5) * 2)  # 0.05 → 0.20
+
+    # Phase 3.1 — momentum / MA-cross / OLS confidence adjustments.
+    # Each bonus is small and individually capped to prevent compounding
+    # from pushing past HEURISTIC_CONFIDENCE_CEILING on its own.
+    momentum = s.get("momentum", 0.0)
+    ols_r2 = s.get("ols_r2", 0.0)
+    ols_slope = s.get("ols_slope", 0.0)
+    ma_cross = s.get("ma_cross_signal", 0.0)
+
+    # Bullish momentum bonus (stage must agree).
+    momentum_bonus = 0.0
+    if momentum > MOMENTUM_BULLISH_THRESHOLD and stage in (
+        TrendStage.BREAKOUT, TrendStage.EMERGING
+    ):
+        momentum_bonus = _clamp(momentum * 0.10, 0.0, 0.05)
+    elif momentum < MOMENTUM_BEARISH_THRESHOLD and stage == TrendStage.DECLINING:
+        momentum_bonus = _clamp(abs(momentum) * 0.08, 0.0, 0.04)
+
+    # MA cross bonus: freshly crossed golden cross = early confirmation.
+    ma_cross_bonus = 0.04 if ma_cross == 1.0 and stage in (
+        TrendStage.BREAKOUT, TrendStage.EMERGING
+    ) else 0.0
+
+    # OLS trend confirmation: a reliable positive trend line adds evidence.
+    ols_bonus = 0.0
+    if ols_r2 >= OLS_STRONG_R2:
+        if ols_slope > 0 and stage in (TrendStage.BREAKOUT, TrendStage.EMERGING):
+            ols_bonus = ols_r2 * 0.05   # up to +0.05 at R²=1
+        elif ols_slope < 0 and stage == TrendStage.DECLINING:
+            ols_bonus = ols_r2 * 0.04   # declining trend confirmed
+
     confidence = _clamp(
-        0.20 + sig_conf + auth_conf + sign_conf,
+        0.20 + sig_conf + auth_conf + sign_conf + momentum_bonus + ma_cross_bonus + ols_bonus,
         0.05,
         HEURISTIC_CONFIDENCE_CEILING,
     )
@@ -262,16 +433,29 @@ def heuristic_predict(
 
     p_breakout, p_peak, p_decline = _stage_to_class_probs(stage, confidence=confidence)
 
-    # Velocity forecast: log-mean is a damped extrapolation of v24.
-    # At h hours ahead, expected log-velocity = current_v24 * decay(h)
-    # where decay shrinks to 0 over ~96 hours.
+    # Velocity forecast: log-mean is a damped extrapolation of v24,
+    # now blended with an OLS trend component at short horizons.
+    # At h hours ahead: mean_log = v24 * decay(h) + ols_blend(h)
+    # where decay shrinks to 0 over ~96 h and ols_blend decays over ~48 h.
     base_log_v = s["v24"]
     noise = max(0.05, s["velocity_noise"])
 
     out: list[Prediction] = []
     for h in horizons:
         decay = math.exp(-h / 96.0)
-        mean_log = base_log_v * decay
+
+        # Phase 3.1: OLS trend blend — only within the extrapolation window
+        # and only when the trend is reliable (R² ≥ OLS_STRONG_R2).
+        ols_blend = 0.0
+        if ols_r2 >= OLS_STRONG_R2 and h <= OLS_HORIZON_CAP_HOURS:
+            # sign(slope) × R² × small_scale, decaying with horizon.
+            ols_blend = (
+                math.copysign(ols_r2 * 0.15, ols_slope)
+                * math.exp(-h / 48.0)
+            )
+
+        mean_log = base_log_v * decay + ols_blend
+
         mean, p10, p50, p90 = _percentile_band(mean_log=mean_log, noise=noise, horizon_h=h)
         action = _action_for(
             p_breakout=p_breakout,
@@ -282,7 +466,8 @@ def heuristic_predict(
         reasoning = (
             f"heuristic stage={stage.value} signals={int(s['recent_signals'])} "
             f"authors={int(s['recent_authors'])} v24={s['v24']:.2f} "
-            f"accel={s['acceleration']:.2f} coord={s['coord_risk']:.2f}"
+            f"accel={s['acceleration']:.2f} coord={s['coord_risk']:.2f} "
+            f"momentum={momentum:.2f} ols_r2={ols_r2:.2f} ols_slope={ols_slope:.3f}"
         )
         if graph is not None:
             reasoning += (
@@ -375,7 +560,7 @@ class HeuristicRelationalPredictor(Predictor):
 
 
 __all__ = [
-    "HeuristicTemporalPredictor",
     "HeuristicRelationalPredictor",
+    "HeuristicTemporalPredictor",
     "heuristic_predict",
 ]

@@ -34,4 +34,4 @@ class MintRSSAdapter(RSSAdapter):
         return "mint"
 
 
-__all__ = ["MintRSSAdapter", "RSSAdapterConfig", "SCRAPER_VERSION"]
+__all__ = ["SCRAPER_VERSION", "MintRSSAdapter", "RSSAdapterConfig"]

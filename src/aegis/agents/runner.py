@@ -32,7 +32,7 @@ from typing import TYPE_CHECKING, Any
 
 import structlog
 
-from aegis.scrape.swarm_result import SwarmResult
+from aegis.schemas import SwarmResult
 
 from .schemas import (
     AgentVerdict,
@@ -268,7 +268,12 @@ async def _publish_phase2_result(
         ],
     }
     body = json.dumps(payload, default=str)
-    await redis_client.xadd("aegis:phase2:graph_results", {"body": body})
+    await redis_client.xadd(
+        "aegis:phase2:graph_results",
+        {"body": body},
+        maxlen=10_000,
+        approximate=True,
+    )
 
 
 def _build_exception_result(

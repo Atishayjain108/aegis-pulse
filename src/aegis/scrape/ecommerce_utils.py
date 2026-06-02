@@ -62,6 +62,15 @@ async def flaresolverr_get(
                 return data["solution"]["response"]
             _log.warning("flaresolverr_status_not_ok", url=url, status=data.get("status"))
             return None
+        except httpx.ConnectError:
+            _log.warning(
+                "flaresolverr_unavailable",
+                url=url,
+                flaresolverr_url=flaresolverr_url,
+                hint="Is the FlareSolverr container running? "
+                     "Start with: docker compose up -d aegis-flaresolverr",
+            )
+            return None
         except Exception as e:
             _log.warning("flaresolverr_failed", url=url, error=str(e))
             return None

@@ -39,7 +39,8 @@ from ..constants import (
     TIMESNET_N_LAYERS,
 )
 from ..errors import ModelInferenceError
-from ..schemas import FeatureWindow, ModelKind, PredictionBundle
+from ..features.graph import CreatorGraph
+from ..schemas import FeatureWindow, ModelKind, Prediction
 from .base import Predictor
 from .heuristic import heuristic_predict
 
@@ -284,15 +285,22 @@ class TimesNetPredictor(Predictor):
         except Exception as exc:  # pragma: no cover
             raise ModelInferenceError(f"timesnet failed to load state_dict: {exc}") from exc
 
-    async def _predict_inner(self, window: FeatureWindow) -> PredictionBundle:
+    async def _predict_inner(
+        self,
+        *,
+        window: FeatureWindow,
+        graph: CreatorGraph | None,
+        horizons: tuple[int, ...],
+        seed: int,
+    ) -> list[Prediction]:
         """Run TimesNet, then fold its output into the heuristic verdict."""
         # Always compute the heuristic floor first — this is also our
         # fallback if the neural pass fails for any reason.
-        base_bundle = heuristic_predict(window, model_name=self.name, version=self.version)
+        base_preds = heuristic_predict(window=window, graph=graph, horizons=horizons)
 
         net = self._ensure_net()
         if net is None:
-            return base_bundle
+            return base_preds
 
         # Validate shape early — saves us from a confusing RuntimeError deep in conv.
         if window.window_size != self.window_size or window.feature_dim != self.feature_dim:
@@ -303,7 +311,7 @@ class TimesNetPredictor(Predictor):
                 self.window_size,
                 self.feature_dim,
             )
-            return base_bundle
+            return base_preds
 
         try:
             arr = window.as_2d()
@@ -314,7 +322,7 @@ class TimesNetPredictor(Predictor):
             logits = logits.squeeze(0).cpu().numpy()  # (H, 8)
         except Exception as exc:  # pragma: no cover — guard rail
             logger.warning("timesnet forward failed: %s — using heuristic", exc)
-            return base_bundle
+            return base_preds
 
         # Refine each per-horizon prediction. We do NOT flip the stage —
         # we only:
@@ -322,8 +330,8 @@ class TimesNetPredictor(Predictor):
         #   * if net's velocity sigma is *larger* than heuristic's, use it
         #     (more conservative bands);
         #   * stamp model_kind = TEMPORAL.
-        refined: list[Any] = []
-        for h_idx, base_pred in enumerate(base_bundle.predictions):
+        refined: list[Prediction] = []
+        for h_idx, base_pred in enumerate(base_preds):
             row = logits[h_idx]
             stage_logits = row[:6]
             # Stable softmax for entropy
@@ -353,10 +361,4 @@ class TimesNetPredictor(Predictor):
                 )
             )
 
-        return base_bundle.model_copy(
-            update={
-                "predictions": tuple(refined),
-                "model_name": self.name,
-                "model_version": self.version,
-            }
-        )
+        return refined

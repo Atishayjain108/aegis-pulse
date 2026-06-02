@@ -30,9 +30,9 @@ from aegis.execute.workers.intake_worker import (
 
 __all__ = [
     "CONSUMER_GROUP",
-    "IntakeWorker",
     "MERGE_WINDOW_S",
     "STREAM_PHASE2",
     "STREAM_PHASE3",
+    "IntakeWorker",
     "run_drain_worker",
 ]

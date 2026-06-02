@@ -46,12 +46,16 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+import structlog
+
 from ..llm import prompts
 from ..schemas import AgentDecision, AgentVerdict, TrendCandidate
 from .base import AgentNode
 
 if TYPE_CHECKING:
     from ..state import GraphState
+
+_log = structlog.get_logger("aegis.agents.nodes.geo_arbitrage")
 
 # Platform → role mapping. Lowercased lookup. Patterns are substring
 # matches so "tiktok-creative-center" still maps to discovery_social.
@@ -198,7 +202,8 @@ class GeoArbitrageAgent(AgentNode):
                 discovery_count=heuristic.details.get("discovery_count", 0),
                 commerce_count=heuristic.details.get("commerce_count", 0),
             )
-        except Exception:
+        except Exception as exc:
+            _log.debug("geo_arbitrage.llm_input_build_failed", error=str(exc))
             return None
         system_text = (
             "You are GEO_ARBITRAGE. Reply JSON only: "

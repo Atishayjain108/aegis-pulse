@@ -27,15 +27,15 @@ from typing import TYPE_CHECKING
 import structlog
 
 from aegis.llm.constants import (
-    GROQ_FAST_MODEL,
     GROQ_DEFAULT_MODEL,
+    GROQ_FAST_MODEL,
     OLLAMA_CODER_MODEL,
     OLLAMA_DEFAULT_MODEL,
     OLLAMA_FAST_MODEL,
 )
 
 if TYPE_CHECKING:
-    from aegis.llm.providers.base import BaseProvider
+    pass
 
 _log = structlog.get_logger("aegis.llm.routing.task_router")
 
@@ -214,7 +214,7 @@ class TaskRouter:
         structured_signals = ["json", "schema", "structured", "extract", "parse",
                                "fill in", "format as"]
 
-        scores: dict[TaskType, int] = {t: 0 for t in TaskType}
+        scores: dict[TaskType, int] = dict.fromkeys(TaskType, 0)
         for signal in code_signals:
             if signal in lower:
                 scores[TaskType.CODE] += 1

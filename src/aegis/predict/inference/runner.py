@@ -150,7 +150,8 @@ class InferenceRunner:
                 timeout_s=self.config.hard_timeout_s,
                 fallback=_fallback,
             )
-        assert window is not None
+        if window is None:
+            raise RuntimeError("FeatureWindow construction returned None — signal data missing")
 
         # ---- 2. Graph ------------------------------------------------------
         if graph is None:
