@@ -62,6 +62,15 @@ def validate_batch(signals: list[dict[str, Any]], platform: str) -> list[dict[st
             valid=len(valid),
             dropped=len(signals) - len(valid),
         )
+    # ADP-6: feed the per-platform drift tracker so the swarm can self-heal
+    # (quarantine an adapter whose response shape has drifted). Best-effort —
+    # never let drift accounting break the validation path.
+    try:
+        from aegis.scrape.schema_drift import get_drift_tracker
+
+        get_drift_tracker().record_batch(platform, len(signals), len(valid))
+    except Exception as exc:  # pragma: no cover - defensive
+        _log.debug("schema_drift.record_failed", platform=platform, error=str(exc))
     return valid
 
 

@@ -1,0 +1,355 @@
+# .github/workflows/ci-phase13.yml — AEGIS Pulse Phase 13: CI Pipeline
+#
+# Runs on every push and PR. Matrix: Python 3.12.0, 3.12.4, 3.12.7
+# Enforces: ruff lint, mypy strict, pytest ≥78% coverage, 0 ruff violations.
+#
+# Secrets required (set in GitHub repo Settings → Secrets):
+#   None for unit tests (zero API keys needed)
+#   AEGIS_TEST_INTEGRATION=1 for integration job (optional, separate job)
+
+name: Phase 13 — Testing & Quality
+
+on:
+  push:
+    branches: ["main", "develop", "phase-*"]
+  pull_request:
+    branches: ["main", "develop"]
+  schedule:
+    # Nightly full run including mutation testing
+    - cron: "0 2 * * *"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Ensures deterministic Python behaviour
+  PYTHONDONTWRITEBYTECODE: "1"
+  PYTHONUNBUFFERED: "1"
+  # AEGIS test environment
+  AEGIS_ENV: "test"
+  AEGIS_DISABLE_OLLAMA: "1"
+  AEGIS_AGENT_HMAC_KEY: "ci-test-key-not-for-prod"
+  AEGIS_DEFAULT_TENANT_ID: "00000000-0000-0000-0000-000000000001"
+  AEGIS_EXECUTE_MODE: "advisory"
+  AEGIS_ENABLE_HARDEN: "false"
+  # Hypothesis CI profile (50 examples, not 500)
+  HYPOTHESIS_PROFILE: "ci"
+  # UV cache
+  UV_CACHE_DIR: ~/.cache/uv
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Job 1: Lint & Format
+  # ---------------------------------------------------------------------------
+  lint:
+    name: Lint & Format (ruff)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "0.5.x"
+          enable-cache: true
+
+      - name: Set up Python 3.12
+        run: uv python install 3.12.7
+
+      - name: Install lint deps
+        run: uv sync --only-group dev --frozen
+
+      - name: ruff check (zero violations required)
+        run: uv run ruff check src/ tests/ --output-format=github
+
+      - name: ruff format --check
+        run: uv run ruff format --check src/ tests/
+
+  # ---------------------------------------------------------------------------
+  # Job 2: Type checking
+  # ---------------------------------------------------------------------------
+  typecheck:
+    name: Type Check (mypy strict)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "0.5.x"
+          enable-cache: true
+
+      - name: Set up Python 3.12.7
+        run: uv python install 3.12.7
+
+      - name: Install all deps
+        run: uv sync --all-packages --all-extras --frozen
+
+      - name: mypy strict
+        run: |
+          uv run mypy src/aegis/testing/ tests/unit/ tests/property/ \
+            --ignore-missing-imports \
+            --no-error-summary
+
+  # ---------------------------------------------------------------------------
+  # Job 3: Unit Tests — Python version matrix
+  # ---------------------------------------------------------------------------
+  unit-tests:
+    name: Unit Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12.0", "3.12.4", "3.12.7"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "0.5.x"
+          enable-cache: true
+
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Cache uv packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.UV_CACHE_DIR }}
+          key: uv-${{ runner.os }}-${{ matrix.python-version }}-${{ hashFiles('**/uv.lock') }}
+          restore-keys: |
+            uv-${{ runner.os }}-${{ matrix.python-version }}-
+            uv-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: uv sync --all-packages --all-extras --frozen
+
+      - name: Run unit tests with coverage
+        run: |
+          uv run python -m pytest tests/unit/ tests/property/ \
+            -p no:hypothesis \
+            --cov=src/aegis \
+            --cov-report=xml:coverage.xml \
+            --cov-report=term-missing:skip-covered \
+            --cov-fail-under=78 \
+            --junit-xml=test-results/unit-${{ matrix.python-version }}.xml \
+            -q \
+            --no-header \
+            2>&1
+
+      - name: Upload coverage to Codecov
+        if: matrix.python-version == '3.12.7'
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.xml
+          flags: unit-tests
+          name: aegis-phase13-unit
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.python-version }}
+          path: test-results/
+
+  # ---------------------------------------------------------------------------
+  # Job 4: Phase-specific test suites (also runs existing phase tests)
+  # ---------------------------------------------------------------------------
+  phase-tests:
+    name: Phase Test Suites
+    runs-on: ubuntu-24.04
+    needs: unit-tests
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "0.5.x"
+          enable-cache: true
+
+      - name: Set up Python 3.12.7
+        run: uv python install 3.12.7
+
+      - name: Install all deps
+        run: uv sync --all-packages --all-extras --frozen
+
+      - name: Run existing Phase 0–11 unit tests
+        run: |
+          uv run python -m pytest tests/unit/ \
+            -p no:hypothesis \
+            -q --no-header --no-cov \
+            2>&1
+
+      - name: Run Phase 4 unit tests (aegis-phase4)
+        run: |
+          uv run python -m pytest aegis-phase4/tests/ \
+            -q --no-header --no-cov -p no:hypothesis \
+            2>&1
+
+  # ---------------------------------------------------------------------------
+  # Job 5: Integration tests (Docker services via testcontainers)
+  # ---------------------------------------------------------------------------
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-24.04
+    needs: unit-tests
+    # Only run on main branch or when explicitly triggered
+    if: github.ref == 'refs/heads/main' || github.event_name == 'schedule'
+
+    services:
+      # Fallback: also provide services directly (testcontainers spins its own)
+      postgres:
+        image: timescale/timescaledb-ha:pg16-latest
+        env:
+          POSTGRES_USER: aegis_app
+          POSTGRES_PASSWORD: aegis_app_dev_pw
+          POSTGRES_DB: aegis_test
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7.4-alpine
+        ports:
+          - 6380:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "0.5.x"
+          enable-cache: true
+
+      - name: Set up Python 3.12.7
+        run: uv python install 3.12.7
+
+      - name: Install all deps
+        run: uv sync --all-packages --all-extras --frozen
+
+      - name: Run integration tests
+        env:
+          AEGIS_TEST_INTEGRATION: "1"
+          AEGIS_TEST_POSTGRES: "1"
+          AEGIS_TEST_REDIS: "1"
+          AEGIS_PG_DSN: "postgresql://aegis_app:aegis_app_dev_pw@localhost:5433/aegis_test"
+          AEGIS_REDIS_URL: "redis://localhost:6380/15"
+        run: |
+          uv run python -m pytest tests/integration/ \
+            -v --no-cov \
+            --timeout=120 \
+            -p no:hypothesis \
+            2>&1
+
+  # ---------------------------------------------------------------------------
+  # Job 6: Benchmark regression check
+  # ---------------------------------------------------------------------------
+  benchmarks:
+    name: Performance Benchmarks
+    runs-on: ubuntu-24.04
+    needs: unit-tests
+    if: github.event_name == 'schedule' || github.ref == 'refs/heads/main'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "0.5.x"
+          enable-cache: true
+
+      - name: Set up Python 3.12.7
+        run: uv python install 3.12.7
+
+      - name: Install all deps
+        run: uv sync --all-packages --all-extras --frozen
+
+      - name: Run benchmarks
+        run: |
+          uv run python -m pytest tests/perf/ \
+            --benchmark-only \
+            --benchmark-json=.benchmarks/results.json \
+            --benchmark-sort=mean \
+            --no-cov \
+            -v 2>&1
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: .benchmarks/results.json
+
+  # ---------------------------------------------------------------------------
+  # Job 7: Nightly mutation testing
+  # ---------------------------------------------------------------------------
+  mutation-tests:
+    name: Mutation Testing (nightly)
+    runs-on: ubuntu-24.04
+    needs: unit-tests
+    if: github.event_name == 'schedule'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "0.5.x"
+          enable-cache: true
+
+      - name: Set up Python 3.12.7
+        run: uv python install 3.12.7
+
+      - name: Install all deps + mutation extras
+        run: uv sync --all-packages --all-extras --extra mutation --frozen
+
+      - name: Run mutation tests
+        run: python tests/mutation/run_mutmut.py --ci
+
+      - name: Upload mutation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-report
+          path: html/
+
+  # ---------------------------------------------------------------------------
+  # Summary job (required status check)
+  # ---------------------------------------------------------------------------
+  ci-summary:
+    name: CI Summary
+    runs-on: ubuntu-24.04
+    needs: [lint, typecheck, unit-tests, phase-tests]
+    if: always()
+    steps:
+      - name: Check all required jobs passed
+        run: |
+          if [[ "${{ needs.lint.result }}" != "success" ]]; then
+            echo "FAIL: lint"
+            exit 1
+          fi
+          if [[ "${{ needs.typecheck.result }}" != "success" ]]; then
+            echo "FAIL: typecheck"
+            exit 1
+          fi
+          if [[ "${{ needs.unit-tests.result }}" != "success" ]]; then
+            echo "FAIL: unit-tests"
+            exit 1
+          fi
+          echo "✓ All required CI jobs passed"

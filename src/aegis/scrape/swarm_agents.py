@@ -31,6 +31,8 @@ COOLDOWN_BY_ERROR: dict[AdapterStatus, int] = {
     AdapterStatus.TIMEOUT: 60,         # 1 min
     AdapterStatus.HTTP_ERROR: 120,     # 2 min
     AdapterStatus.PARSE_ERROR: 30,     # 30 sec — may just be transient HTML change
+    AdapterStatus.NEEDS_CREDENTIALS: 86400,  # 24h — won't fix itself without a key
+    AdapterStatus.SCHEMA_DRIFT: 1800,  # 30 min — needs an adapter fix, back off hard
     AdapterStatus.UNKNOWN_ERROR: 60,
 }
 
@@ -41,6 +43,8 @@ DOWN_THRESHOLD_BY_ERROR: dict[AdapterStatus, int] = {
     AdapterStatus.HTTP_ERROR: 3,
     AdapterStatus.PARSE_ERROR: 5,      # parse errors need more evidence
     AdapterStatus.TIMEOUT: 3,
+    AdapterStatus.NEEDS_CREDENTIALS: 1,  # one strike — no key means no recovery
+    AdapterStatus.SCHEMA_DRIFT: 1,  # one strike — the tracker already smooths over batches
     AdapterStatus.UNKNOWN_ERROR: 3,
 }
 
@@ -169,6 +173,16 @@ class SwarmAgentPool:
         except Exception as e:
             _log.warning("health_persist_failed", agent=agent.name, error=str(e))
 
+    @staticmethod
+    def _is_schema_drifting(platform: str) -> bool:
+        """Consult the ADP-6 drift tracker (best-effort; never raises)."""
+        try:
+            from aegis.scrape.schema_drift import get_drift_tracker
+
+            return get_drift_tracker().is_drifting(platform)
+        except Exception:  # pragma: no cover - defensive
+            return False
+
     async def run_agent(
         self,
         agent: ScraperAgent,
@@ -199,6 +213,24 @@ class SwarmAgentPool:
                 )
 
             latency_ms = (time.monotonic() - start) * 1000
+
+            # ADP-6 self-healing: a run can "succeed" while schema_guard silently
+            # dropped most signals because the response shape drifted. Consult the
+            # drift tracker and quarantine (cool down) the adapter if so, instead
+            # of letting it keep emitting corrupt/empty batches every wave.
+            if self._is_schema_drifting(agent.platform):
+                agent.record_failure(AdapterStatus.SCHEMA_DRIFT, latency_ms)
+                await self._persist_health(agent)
+                _log.warning("agent_schema_drift_quarantine", agent=agent.name, platform=agent.platform)
+                return AdapterRun(
+                    agent_name=agent.name,
+                    platform=agent.platform,
+                    signals=signals,
+                    status=AdapterStatus.SCHEMA_DRIFT,
+                    latency_ms=latency_ms,
+                    error_msg="schema_drift_detected",
+                )
+
             status = AdapterStatus.SUCCESS if signals else AdapterStatus.EMPTY
             agent.record_success(len(signals), latency_ms)
             await self._persist_health(agent)
@@ -226,7 +258,20 @@ class SwarmAgentPool:
         except Exception as e:
             latency_ms = (time.monotonic() - start) * 1000
             err_str = str(e)
-            if "403" in err_str or "blocked" in err_str.lower():
+            _low = err_str.lower()
+            _cred_miss = (
+                ("requires" in _low and ("client_id" in _low or "client_secret" in _low))
+                or "api key" in _low
+                or "api_key" in _low
+                or "credential" in _low
+                or "not configured" in _low
+            )
+            if _cred_miss:
+                # ADP-2 / HALLU-4: a key-gated adapter with no key configured is
+                # NOT "success, 0 signals" — surface it distinctly so it doesn't
+                # masquerade as a working-but-empty source.
+                status = AdapterStatus.NEEDS_CREDENTIALS
+            elif "403" in err_str or "blocked" in err_str.lower():
                 status = AdapterStatus.BLOCKED
             elif "429" in err_str or "rate" in err_str.lower():
                 status = AdapterStatus.RATE_LIMITED
@@ -252,9 +297,19 @@ class SwarmAgentPool:
         settings: Any,
         http: Any,
         limit: int,
+        limits: dict[str, int] | None = None,
     ) -> list[AdapterRun]:
+        """Run a wave of adapters concurrently.
+
+        ``limits`` (ADP-4) optionally overrides the uniform ``limit`` per agent
+        name — used by the UCB1 budget allocator. Missing entries fall back to
+        the uniform ``limit``.
+        """
         agents = [self.agents[n] for n in agent_names if n in self.agents]
-        tasks = [self.run_agent(a, settings, http, limit) for a in agents]
+        tasks = [
+            self.run_agent(a, settings, http, (limits or {}).get(a.name, limit))
+            for a in agents
+        ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
         runs: list[AdapterRun] = []
         for r in results:

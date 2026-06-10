@@ -58,36 +58,53 @@ def _sync_scrape(limit: int) -> list[dict[str, Any]]:
         return []
 
     try:
-        pt = TrendReq(hl="en-IN", tz=330, timeout=(10, 25), retries=1, backoff_factor=0.5)
-        india_df = pt.trending_searches(pn="india")
-        global_df = pt.trending_searches(pn="united_states")
+        # Patch urllib3 2.x Retry for pytrends 4.x compatibility (method_whitelist → allowed_methods)
+        try:
+            import urllib3.util.retry as _r
+            _orig = _r.Retry.__init__
 
-        india_terms: list[str] = india_df.head(limit).iloc[:, 0].tolist()
-        global_terms: set[str] = set(global_df.head(10).iloc[:, 0].tolist())
+            def _p(self: Any, *a: Any, method_whitelist: Any = None, **kw: Any) -> None:  # type: ignore[misc]
+                if method_whitelist is not None and "allowed_methods" not in kw:
+                    kw["allowed_methods"] = method_whitelist
+                _orig(self, *a, **kw)
+
+            _r.Retry.__init__ = _p  # type: ignore[method-assign]
+        except Exception:
+            pass
+        pt = TrendReq(hl="en-IN", tz=330, timeout=(10, 25), retries=1, backoff_factor=0.5)
+        # trending_searches() is deprecated (404). Use interest_over_time() with
+        # India-relevant seed keywords instead.
+        india_keywords = ["startup India", "ecommerce", "mutual fund", "Nifty", "SIP"]
+        pt.build_payload(india_keywords[:5], geo="IN", timeframe="now 7-d")
+        df = pt.interest_over_time()
 
         scraped_at = datetime.now(UTC).isoformat()
         signals: list[dict[str, Any]] = []
-        for i, term in enumerate(india_terms[:limit]):
-            term_str = str(term).strip()
-            if not term_str:
-                continue
-            signals.append({
-                "title": term_str,
-                "platform": Platform.GOOGLE_TRENDS_INDIA.value,
-                "tier": SourceTier.TIER_3_SEARCH.value,
-                "url": f"https://trends.google.com/trends/explore?q={term_str}&geo=IN",
-                "score": float(limit - i),
-                "sentiment": 0.0,
-                "raw_json": {"also_in_global": term_str in global_terms, "rank": i + 1},
-                "scraped_at": scraped_at,
-                "author": None,
-                "views": None,
-                "likes": None,
-                "comments": None,
-                "shares": None,
-                "saves": None,
-            })
-        return signals
+        if df is not None and not df.empty:
+            latest = df.tail(7)
+            for kw in india_keywords[:5]:
+                if kw not in latest.columns:
+                    continue
+                avg_val = float(latest[kw].mean())
+                if avg_val <= 0:
+                    continue
+                signals.append({
+                    "title": kw,
+                    "platform": Platform.GOOGLE_TRENDS_INDIA.value,
+                    "tier": SourceTier.TIER_3_SEARCH.value,
+                    "url": f"https://trends.google.com/trends/explore?q={kw}&geo=IN",
+                    "score": avg_val,
+                    "sentiment": 0.0,
+                    "raw_json": {"avg_interest_7d": avg_val, "geo": "IN"},
+                    "scraped_at": scraped_at,
+                    "author": None,
+                    "views": None,
+                    "likes": None,
+                    "comments": None,
+                    "shares": None,
+                    "saves": None,
+                })
+        return signals[:limit]
     except Exception as e:
         _log.error("google_trends_india.pytrends_failed", error=str(e))
         return []

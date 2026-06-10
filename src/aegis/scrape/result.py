@@ -18,6 +18,8 @@ class AdapterStatus(str, Enum):
     RATE_LIMITED = "rate_limited"
     BLOCKED = "blocked"       # 403 / Cloudflare wall
     TIMEOUT = "timeout"
+    NEEDS_CREDENTIALS = "needs_credentials"  # key-gated adapter with no key configured
+    SCHEMA_DRIFT = "schema_drift"  # response structure changed → mass validation drops
     UNKNOWN_ERROR = "unknown_error"
 
 

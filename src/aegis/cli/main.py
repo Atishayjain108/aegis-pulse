@@ -157,6 +157,86 @@ except ImportError:
     pass
 
 
+@main.group(name="api")
+def _api_group() -> None:
+    """Unified REST API (geo / compliance / evolve / datalake)."""
+
+
+@main.group(name="autonomous")
+def _autonomous_group() -> None:
+    """Autonomous self-driving scheduler (scrape → analyze → drift → retrain)."""
+
+
+@_autonomous_group.command(name="run")
+def _autonomous_run() -> None:
+    """Run the autonomous scheduler loop in the foreground (ORPH-2)."""
+    import asyncio as _asyncio
+
+    from aegis.scheduler.autonomous import main as _sched_main
+
+    _asyncio.run(_sched_main())
+
+
+@main.group(name="realtime")
+def _realtime_group() -> None:
+    """Event-driven Phase 0 → Phase 2/3 stream consumer (CONN-4 / BRAIN-5)."""
+
+
+@_realtime_group.command(name="run")
+@click.option("--use-llm/--no-llm", default=False, show_default=True)
+@click.option("--timeout-s", default=60.0, show_default=True, type=float)
+def _realtime_run(use_llm: bool, timeout_s: float) -> None:
+    """Consume aegis:phase0:raw_signals via XREADGROUP and dispatch run_trend.
+
+    Push-based replacement for DB polling: each scrape batch emitted by
+    ``scrape_topic(stream_client=...)`` is dispatched through the full Phase 2
+    LangGraph + Phase 3 pipeline the moment it lands, with at-least-once
+    delivery (consumer-group PEL).
+    """
+    import asyncio as _asyncio
+
+    import redis.asyncio as aioredis
+
+    from aegis.scrape.realtime_consumer import SignalStreamConsumer
+    from aegis.scrape.stream_bridge import ensure_consumer_group
+
+    cfg = settings()
+
+    async def _run() -> None:
+        client = aioredis.from_url(cfg.redis_url_str, decode_responses=True)
+        await ensure_consumer_group(client)
+        consumer = SignalStreamConsumer(
+            redis_client=client,
+            redis_client_p4=client,
+            use_llm=use_llm,
+            timeout_s=timeout_s,
+        )
+        click.echo("AEGIS realtime consumer started — Ctrl-C to stop.")
+        try:
+            await consumer.run()
+        finally:
+            await client.aclose()
+
+    try:
+        _asyncio.run(_run())
+    except KeyboardInterrupt:
+        click.echo("\nrealtime consumer stopped.")
+
+
+@_api_group.command(name="serve")
+@click.option("--host", default="0.0.0.0", show_default=True)
+@click.option("--port", default=8400, show_default=True, type=int)
+def _api_serve(host: str, port: int) -> None:
+    """Serve the unified AEGIS API (ORPH-1)."""
+    import uvicorn
+
+    from aegis.api.main import create_app, mounted_routers
+
+    app = create_app()
+    click.echo(f"AEGIS unified API — mounted phases: {', '.join(mounted_routers()) or 'none'}")
+    uvicorn.run(app, host=host, port=port)
+
+
 # ---------------------------------------------------------------------
 # Stack lifecycle
 # ---------------------------------------------------------------------
@@ -354,10 +434,23 @@ _ADAPTER_REGISTRY: dict[str, tuple[str, str]] = {
 }
 
 
-def _load_adapter_class(name: str) -> Any:
+# ADP-1: permanently-broken adapters (external service dead / auth-walled).
+# They never return signals and are excluded from the default swarm waves. They
+# remain reachable via `aegis scrape --source <name> --include-experimental` for
+# manual debugging, but are quarantined by default so a user does not silently
+# pick a dead source.
+_QUARANTINED_ADAPTERS: frozenset[str] = frozenset({"tiktok", "pinterest", "nitter"})
+
+
+def _load_adapter_class(name: str, *, include_experimental: bool = False) -> Any:
     if name not in _ADAPTER_REGISTRY:
         valid = ", ".join(sorted(_ADAPTER_REGISTRY))
         raise click.UsageError(f"Unknown source {name!r}. Valid: {valid}")
+    if name in _QUARANTINED_ADAPTERS and not include_experimental:
+        raise click.UsageError(
+            f"Source {name!r} is quarantined (external service dead/auth-walled and "
+            f"returns no signals). Pass --include-experimental to run it anyway."
+        )
     module_path, class_name = _ADAPTER_REGISTRY[name]
     import importlib
 
@@ -406,6 +499,12 @@ def _load_adapter_class(name: str) -> Any:
     default=False,
     help="Suppress verbose logs; only show signal count.",
 )
+@click.option(
+    "--include-experimental",
+    is_flag=True,
+    default=False,
+    help="Allow quarantined/broken adapters (tiktok, pinterest, nitter).",
+)
 def scrape(
     source: str,
     limit: int,
@@ -415,6 +514,7 @@ def scrape(
     hashtag: str | None,
     country: str | None,
     quiet: bool,
+    include_experimental: bool,
 ) -> None:
     """Run a single source adapter end-to-end."""
     asyncio.run(
@@ -427,6 +527,7 @@ def scrape(
             hashtag=hashtag,
             country=country,
             quiet=quiet,
+            include_experimental=include_experimental,
         )
     )
 
@@ -547,6 +648,7 @@ async def _scrape_async(
     hashtag: str | None,
     country: str | None,
     quiet: bool = False,
+    include_experimental: bool = False,
 ) -> int:
     import uuid
 
@@ -570,7 +672,7 @@ async def _scrape_async(
     if country:
         run_params["country_code"] = country
 
-    adapter_cls = _load_adapter_class(source)
+    adapter_cls = _load_adapter_class(source, include_experimental=include_experimental)
     adapter = _build_adapter(source, adapter_cls, limit=limit)
 
     pool: PgPool | None = None
@@ -2151,14 +2253,29 @@ except (ImportError, ModuleNotFoundError):
     pass
 
 
+@main.group("evolve")
+def evolve_group() -> None:
+    """Phase 9 — Autonomous Self-Evolution (retrain · drift · RL policy)."""
+
+
+try:
+    from aegis.evolve.cli import evolve_group as _evolve_cli
+
+    for _cmd in _evolve_cli.commands.values():
+        evolve_group.add_command(_cmd)
+except (ImportError, ModuleNotFoundError):
+    pass
+
+
 @main.group("comply")
 def comply_group() -> None:
     """Phase 8 — Regulatory & Compliance Engine (check / rules / brands / doctor)."""
 
 
 try:
-    from aegis.comply.cli import app as _comply_typer_app
     import typer.main as _typer_main
+
+    from aegis.comply.cli import app as _comply_typer_app
 
     _comply_click = _typer_main.get_command(_comply_typer_app)
     for _cmd in _comply_click.commands.values():  # type: ignore[union-attr]

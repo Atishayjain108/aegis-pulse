@@ -175,7 +175,9 @@ def _build_summary(ci: ComposerInput, verdict: str) -> str:
     numeric annotations. Never empty.
     """
     parts: list[str] = []
-    if ci.phase2_narrative:
+    if ci.phase2_explanation:
+        parts.append(ci.phase2_explanation.strip())
+    elif ci.phase2_narrative:
         parts.append(ci.phase2_narrative.strip())
 
     quant_bits: list[str] = []

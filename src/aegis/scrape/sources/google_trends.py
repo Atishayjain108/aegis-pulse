@@ -90,6 +90,21 @@ class GoogleTrendsAdapter(SourceAdapter[dict[str, Any]]):
                 "GoogleTrendsAdapter requires pytrends — " "install with `uv sync --extra scrape`"
             ) from e
 
+        # urllib3 2.x renamed method_whitelist → allowed_methods; pytrends 4.x
+        # still passes the old kwarg. Patch Retry to accept both spellings.
+        try:
+            import urllib3.util.retry as _retry_mod
+            _orig_retry_init = _retry_mod.Retry.__init__
+
+            def _patched_retry_init(self: Any, *args: Any, method_whitelist: Any = None, **kw: Any) -> None:  # type: ignore[misc]
+                if method_whitelist is not None and "allowed_methods" not in kw:
+                    kw["allowed_methods"] = method_whitelist
+                _orig_retry_init(self, *args, **kw)
+
+            _retry_mod.Retry.__init__ = _patched_retry_init  # type: ignore[method-assign]
+        except Exception:
+            pass  # Best-effort — if patching fails, TrendReq will raise its own error
+
         def _build() -> Any:
             return TrendReq(
                 hl="en-US",

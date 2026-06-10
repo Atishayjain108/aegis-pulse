@@ -181,6 +181,7 @@ class RegionalDemandAnalyzer:
             "total_engagement": total_engagement,
             "price_samples_usd": price_usd_samples,
             "median_price_usd": median_price,
+            "demand_source": "db",  # HALLU-3: real Phase 1 signal velocity
         }
 
     def _synthetic_demand(self, region: Region, category: str) -> dict[str, Any]:
@@ -206,4 +207,5 @@ class RegionalDemandAnalyzer:
             "total_engagement": 0,
             "price_samples_usd": [price_usd],
             "median_price_usd": price_usd,
+            "demand_source": "synthetic",  # HALLU-3: market-size proxy, no real signals
         }

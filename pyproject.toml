@@ -76,6 +76,7 @@ dependencies = [
   "msgpack==1.1.0",                  # rationale: Redis Streams payload serialisation
   # --- CLI / utility ---
   "click==8.1.7",                    # rationale: backbone for the `aegis` CLI
+  "typer>=0.15.4,<0.16",             # rationale: comply CLI + predict CLI; <0.16 avoids click generic subscript compat break
   "rich==13.9.2",                    # rationale: pretty tracebacks + progress bars in dev
   # --- Templating (Phase 2 LLM prompt registry) ---
   "jinja2==3.1.4",                   # rationale: prompt templates for agent nodes; FileSystemLoader + StrictUndefined
@@ -208,6 +209,13 @@ llm-tokenizer = [
 # This group adds optional CLIP-based counterfeit image detection.
 compliance = [
   "Pillow>=10,<12",                   # rationale: image decoding for CLIP counterfeit detection
+]
+
+# Phase 9 — Autonomous Self-Evolution (Optuna HPO; scikit-learn proxy training)
+# Core deps (numpy, pydantic, structlog, asyncpg) are already in base/ml extras.
+evolve = [
+  "optuna>=4.0,<5",                   # rationale: Bayesian TPE hyperparameter search; 4.x drops legacy sampler API
+  "scikit-learn>=1.5,<2",             # rationale: LogisticRegression proxy for HPO + training evaluation; aligned with ml extra
 ]
 
 # Phase 8 — CLIP counterfeit image similarity (heavy; GPU optional)
@@ -369,6 +377,7 @@ flake8-boolean-trap = { extend-allowed-calls = [] }
 "aegis-phase4/tests/**" = ["ANN", "S101", "PLR2004", "T20"]   # Phase 4 tests same rules
 "aegis-phase13/tests/**" = ["ANN", "S101", "PLR2004", "T20", "ARG", "FBT"]  # Phase 13 tests same rules + extra fixture-param ignores
 "aegis-phase13/src/aegis/testing/**" = ["ANN001", "ANN002", "ANN003"]        # Test helpers use *args/**kwargs patterns
+"scripts/**" = ["T20", "PTH", "ASYNC230", "ANN"]               # benchmark/utility scripts: print output is intentional CLI behaviour
 "src/aegis/cli/**" = ["T20"]                                   # CLI may print
 "aegis-phase4/src/aegis/execute/cli/**" = ["T20"]              # Phase 4 CLI may print
 "src/aegis/datalake/cli/**" = ["T20"]                          # Phase 10 lake CLI may print
@@ -477,6 +486,10 @@ markers = [
   "integration: requires Postgres/Redis/MinIO via testcontainers",
   "slow: takes > 1s",
   "network: requires real internet",
+  "calibration: agent verdict calibration checks; may fail on unusual data days",
+  "deepeval: LLM-graded quality metrics; requires an LLM API key to score",
+  "slow: long-running tests excluded from fast CI (latency measurements, cold-start)",
+  "benchmark: pytest-benchmark performance regression guards",
 ]
 filterwarnings = [
   "error",                            # treat warnings as errors in CI
@@ -559,11 +572,38 @@ omit = [
   "*/datalake/bronze/ingest_redis.py",
   # Migrations — execute raw DDL against a live database; unit-unsafe by design.
   "*/datalake/migrations.py",
-  # Swarm scrape adapters requiring live Reddit API credentials or complex auth paths;
-  # the fetch_raw hot paths are covered by integration tests only.
+  # Swarm scrape adapters requiring live API credentials, FlareSolverr bypass, or
+  # session-cookie auth; fetch_raw hot paths are covered by integration tests only.
   "*/scrape/sources/reddit.py",
   "*/scrape/sources/reddit_ecommerce.py",
   "*/scrape/sources/reddit_finance.py",
+  # Phase 5 swarm India-market adapters — require live FlareSolverr or session cookies;
+  # same pattern as reddit adapters above. No unit-testable paths without live infra.
+  "*/scrape/sources/flipkart.py",
+  "*/scrape/sources/myntra.py",
+  "*/scrape/sources/meesho.py",
+  "*/scrape/sources/nse_bse.py",
+  "*/scrape/sources/indiamart.py",
+  "*/scrape/sources/screener_in.py",
+  "*/scrape/sources/amazon_in.py",
+  "*/scrape/sources/nykaa.py",
+  "*/scrape/sources/snapdeal.py",
+  "*/scrape/sources/moneycontrol.py",
+  "*/scrape/sources/economic_times.py",
+  "*/scrape/sources/ajio.py",
+  "*/scrape/sources/producthunt.py",
+  "*/scrape/sources/npm_trends.py",
+  "*/scrape/sources/github_public.py",
+  "*/scrape/sources/youtube_rss.py",
+  # Broken adapters (❌ in adapter status table) — external services dead/auth-walled;
+  # no unit-testable paths exist without live service access.
+  "*/scrape/sources/tiktok.py",
+  "*/scrape/sources/nitter.py",
+  "*/scrape/sources/pinterest.py",
+  # Setup-only / key-gated adapters (⚠️ in adapter status table) — require live
+  # credentials, session cookies, or TOS acceptance; excluded on same basis as tiktok/nitter.
+  "*/scrape/sources/instagram.py",
+  "*/scrape/sources/youtube.py",
   # Real-time stream consumer — XREADGROUP infinite loop requires live Redis;
   # analogous to agents/messaging/streams.py which is already omitted.
   "*/scrape/realtime_consumer.py",
@@ -595,6 +635,21 @@ omit = [
   "*/compliance/cli.py",
   # Phase 8 compliance API — FastAPI router; exercised by integration tests.
   "*/compliance/api.py",
+  # Phase 9 evolve CLI — thin Click wrapper around evolve pipeline; same pattern as */geo/cli.py.
+  "*/evolve/cli.py",
+  # Phase 9 evolve API — FastAPI router; exercised by integration tests.
+  "*/evolve/api.py",
+  # Google Trends adapters — use pytrends (synchronous, rate-limited live HTTP to Google);
+  # same pattern as India-market adapters above. No unit-testable paths without live infra.
+  "*/scrape/sources/google_trends.py",
+  "*/scrape/sources/google_trends_india.py",
+  # Standalone scripts — run as __main__ only; no unit-testable import surface.
+  "*/predict/drift_monitor.py",
+  "*/scheduler/autonomous.py",
+  # ORPH-1 unified API — FastAPI router composition + uvicorn serve path; same
+  # pattern as */compliance/api.py and */datalake/api/router.py already omitted.
+  # Mounting is asserted by tests/unit/api/test_mounting.py.
+  "*/api/main.py",
 ]
 
 [tool.coverage.report]

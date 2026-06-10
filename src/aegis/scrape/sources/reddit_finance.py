@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -51,6 +52,47 @@ _HEADERS = {
     "Accept": "application/json",
     "Accept-Encoding": "gzip",
 }
+
+_ATOM_NS = "http://www.w3.org/2005/Atom"
+
+
+def _atom_entry_to_post(entry: ET.Element, sub: str) -> dict[str, Any]:
+    """Convert one Atom <entry> element to a dict matching the JSON API shape."""
+    ns = {"a": _ATOM_NS}
+
+    def _t(tag: str) -> str:
+        el = entry.find(tag, ns)
+        return el.text or "" if el is not None else ""
+
+    raw_id = _t("a:id")
+    post_id = raw_id.split(",")[0].replace("t3_", "") if raw_id else ""
+    link_el = entry.find("a:link", ns)
+    href = link_el.get("href", "") if link_el is not None else ""
+    author_el = entry.find("a:author/a:name", ns)
+    author_name = author_el.text or "" if author_el is not None else ""
+    cat_el = entry.find("a:category", ns)
+    subreddit_name = cat_el.get("term", sub) if cat_el is not None else sub
+    updated = _t("a:updated")
+    created_utc: float | None = None
+    if updated:
+        with contextlib.suppress(ValueError):
+            created_utc = datetime.fromisoformat(updated.replace("Z", "+00:00")).timestamp()
+    return {
+        "id": post_id or raw_id,
+        "title": _t("a:title"),
+        "selftext": "",
+        "subreddit": subreddit_name,
+        "author": author_name,
+        "score": 0,
+        "num_comments": 0,
+        "url": href,
+        "permalink": href.replace("https://www.reddit.com", "") if href else None,
+        "created_utc": created_utc,
+        "is_self": False,
+        "over_18": False,
+        "_subreddit_override": sub,
+    }
+
 
 _DEFAULT_SUBREDDITS: tuple[str, ...] = (
     "IndiaInvestments",
@@ -109,29 +151,29 @@ class RedditFinanceAdapter(SourceAdapter[dict[str, Any]]):
     async def _fetch_subreddit(self, sub: str, per_sub: int) -> list[dict[str, Any]]:
         if self._client is None:
             return []
-        url = f"{_REDDIT_BASE}/r/{sub}/{self._rf_config.listing}.json"
+        # Reddit JSON API (/r/sub/hot.json) returns 403 as of 2026.
+        url = f"{_REDDIT_BASE}/r/{sub}/{self._rf_config.listing}.rss"
         await self._rate_limit()
-        self._record_request_metric(method="reddit_json")
+        self._record_request_metric(method="reddit_atom")
         try:
-            resp = await self._client.get(url, params={"limit": min(100, per_sub), "raw_json": "1"})
+            resp = await self._client.get(url, params={"limit": min(100, per_sub)})
             if resp.status_code == 429:
                 _log.warning("reddit_finance.rate_limited", subreddit=sub)
                 return []
             resp.raise_for_status()
-            data: dict[str, Any] = resp.json()
+            root = ET.fromstring(resp.content)  # noqa: S314
         except httpx.HTTPStatusError as e:
             _log.warning("reddit_finance.http_error", status=e.response.status_code, sub=sub)
+            return []
+        except ET.ParseError as e:
+            _log.warning("reddit_finance.xml_parse_error", error=str(e), sub=sub)
             return []
         except Exception as e:
             _log.warning("reddit_finance.request_error", error=str(e), sub=sub)
             return []
 
-        posts = []
-        for wrapper in (data.get("data") or {}).get("children") or []:
-            post = wrapper.get("data") or {}
-            post["_subreddit_override"] = sub
-            posts.append(post)
-        return posts
+        entries = root.findall(f"{{{_ATOM_NS}}}entry")
+        return [_atom_entry_to_post(e, sub) for e in entries[:per_sub]]
 
     async def fetch_raw(  # type: ignore[override]
         self,

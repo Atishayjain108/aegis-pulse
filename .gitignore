@@ -25,6 +25,7 @@ htmlcov/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.hypothesis/
 
 # Local environment (contains secrets)
 .env
@@ -54,3 +55,16 @@ chroma/
 # Node (dashboard tooling)
 node_modules/
 package-lock.json
+
+# Duplicate standalone phase scratch folders (STRUCT-1/2) — the canonical code
+# lives under src/aegis/ (these are untracked copies, NOT workspace members).
+# Workspace members aegis-phase4 / aegis-harden / aegis-phase12 / aegis-phase13
+# are tracked real code and intentionally NOT listed here.
+/aegis-phase6/
+/aegis-phase7/
+/aegis-phase 14/
+/aegis-pulse-phase8/
+/aegis-pulse-phase9-0.9.0/
+
+# Archived dead duplicate phase folders (STRUCT-1; integrated into src/aegis/)
+/archive/

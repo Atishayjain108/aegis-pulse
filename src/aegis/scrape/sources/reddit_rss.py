@@ -1,20 +1,20 @@
-"""Reddit public JSON API adapter (no API credentials required).
+"""Reddit Atom RSS adapter (no API credentials required).
 
-Reddit exposes public JSON endpoints for every subreddit:
-  https://www.reddit.com/r/{subreddit}/{listing}.json
-  https://www.reddit.com/r/popular.json
-  https://www.reddit.com/r/all.json
+Reddit exposes public Atom RSS feeds for every subreddit:
+  https://www.reddit.com/r/{subreddit}/.rss
+  https://www.reddit.com/r/popular.rss
 
+The old JSON API (*.json) now returns 403; the Atom feed still returns 200.
 No client_id or client_secret required — only a descriptive User-Agent.
-Reddit's robots.txt explicitly allows this endpoint for reasonable usage.
 
-ToS Risk: GREEN — publicly documented JSON endpoint, no auth required.
+ToS Risk: GREEN — publicly listed RSS feed, no auth required.
 Rate limit: stay at 1 req/3 s to stay well under Reddit's 60 req/min cap.
 """
 
 from __future__ import annotations
 
 import contextlib
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -46,11 +46,22 @@ if TYPE_CHECKING:
 
 log = get_logger(__name__)
 
-SCRAPER_VERSION = "reddit-json-0.2.0"
+SCRAPER_VERSION = "reddit-atom-0.3.0"
 
 _REDDIT_BASE = "https://www.reddit.com"
 
 _VALID_LISTINGS = ("hot", "new", "top", "rising", "best")
+
+_ATOM_NS = "http://www.w3.org/2005/Atom"
+
+
+def _parse_atom_ts(ts: str) -> float | None:
+    """Parse an ISO-8601 timestamp from the Atom feed to a UTC unix float."""
+    if not ts:
+        return None
+    with contextlib.suppress(ValueError):
+        return datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
+    return None
 
 
 @dataclass(frozen=True, slots=True)
@@ -146,13 +157,13 @@ class RedditRSSAdapter(SourceAdapter[dict[str, Any]]):
             if total_yielded >= limit or self.is_cancelled:
                 return
 
+            # Reddit JSON API (/r/sub/hot.json) returns 403 as of 2026.
+            # The Atom RSS feed (/r/sub/.rss) still returns 200 — use that.
             if sub in ("popular", "all"):
-                feed_url = f"{_REDDIT_BASE}/r/{sub}.json"
+                feed_url = f"{_REDDIT_BASE}/r/{sub}.rss"
             else:
-                feed_url = f"{_REDDIT_BASE}/r/{sub}/{listing_kind}.json"
+                feed_url = f"{_REDDIT_BASE}/r/{sub}/{listing_kind}.rss"
 
-            # Phase 5 pre-flight: fingerprint pick + honeypot screen.
-            # No-op when harden_shim is None or aegis.harden not installed.
             _extra_headers: dict[str, str] = {}
             if self._harden_shim is not None:
                 decision = self._harden_shim.preflight(
@@ -171,36 +182,73 @@ class RedditRSSAdapter(SourceAdapter[dict[str, Any]]):
                     _extra_headers["User-Agent"] = decision.fingerprint.tls.ua
 
             await self._rate_limit()
-            self._record_request_metric(method="reddit_json")
+            self._record_request_metric(method="reddit_atom")
 
             try:
                 resp = await self._client.get(
                     feed_url,
-                    params={"limit": min(100, per_sub), "raw_json": "1"},
+                    params={"limit": min(100, per_sub)},
                     headers=_extra_headers or None,
                 )
                 if resp.status_code == 429:
                     log.warning("reddit_rss.rate_limited", subreddit=sub)
                     break
                 resp.raise_for_status()
-                data: dict[str, Any] = resp.json()
+                xml_bytes = resp.content
             except httpx.HTTPStatusError as e:
                 log.warning("reddit_rss.http_error", status=e.response.status_code, sub=sub)
                 continue
             except httpx.RequestError as e:
                 log.warning("reddit_rss.request_error", error=str(e), sub=sub)
                 continue
-            except Exception as e:
-                log.warning("reddit_rss.json_parse_error", error=str(e), sub=sub)
+
+            try:
+                root = ET.fromstring(xml_bytes)  # noqa: S314
+            except ET.ParseError as e:
+                log.warning("reddit_rss.xml_parse_error", error=str(e), sub=sub)
                 continue
 
-            posts = (data.get("data") or {}).get("children") or []
-            for post_wrapper in posts:
+            ns = {"a": _ATOM_NS}
+            entries = root.findall("a:entry", ns)
+
+            for entry in entries:
                 if total_yielded >= limit or self.is_cancelled:
                     return
-                post_data = post_wrapper.get("data") or {}
-                post_data["_subreddit_override"] = sub
-                yield post_data
+
+                def _text(tag: str) -> str:
+                    el = entry.find(tag, ns)
+                    return el.text or "" if el is not None else ""
+
+                raw_id = _text("a:id")
+                # Reddit Atom id format: "t3_postid,https://..."
+                post_id = raw_id.split(",")[0].lstrip("t3_") if raw_id else ""
+
+                link_el = entry.find("a:link", ns)
+                href = link_el.get("href", "") if link_el is not None else ""
+
+                author_el = entry.find("a:author/a:name", ns)
+                author_name = author_el.text or "" if author_el is not None else ""
+
+                cat_el = entry.find("a:category", ns)
+                subreddit_name = cat_el.get("term", sub) if cat_el is not None else sub
+
+                updated = _text("a:updated")
+
+                yield {
+                    "id": post_id or raw_id,
+                    "title": _text("a:title"),
+                    "selftext": "",
+                    "subreddit": subreddit_name,
+                    "author": author_name,
+                    "score": 0,
+                    "num_comments": 0,
+                    "url": href,
+                    "permalink": href.replace("https://www.reddit.com", "") if href else None,
+                    "created_utc": _parse_atom_ts(updated),
+                    "is_self": False,
+                    "over_18": False,
+                    "_subreddit_override": sub,
+                }
                 total_yielded += 1
 
     def parse(self, raw: dict[str, Any], ctx: ScrapeContext) -> ProductSignal | None:

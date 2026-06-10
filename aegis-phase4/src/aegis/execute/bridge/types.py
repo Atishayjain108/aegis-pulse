@@ -37,6 +37,8 @@ class ComposerInput:
     phase2_blocked_by: tuple[str, ...] = field(default_factory=tuple)
     phase2_title: str | None = None
     phase2_narrative: str = ""  # LLM-augmented text from supervisor
+    phase2_explanation: str = ""  # Causal explanation from explainer layer
+    phase2_primary_drivers: tuple[str, ...] = field(default_factory=tuple)
 
     # ----- Phase 3 group (None means absent) -----
     phase3_p_breakout_24h: float | None = None

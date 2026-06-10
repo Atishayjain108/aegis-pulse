@@ -593,43 +593,29 @@ class TestRedditRSSParsers:
     async def test_fetch_raw_parses_json_response(self):
         from aegis.scrape.sources.reddit_rss import RedditRSSAdapter, RedditRSSConfig
 
-        fake_posts = {
-            "data": {
-                "children": [
-                    {
-                        "data": {
-                            "id": "post1",
-                            "title": "Title 1",
-                            "score": 100,
-                            "num_comments": 10,
-                            "subreddit": "popular",
-                            "author": "user1",
-                            "is_self": False,
-                            "over_18": False,
-                            "created_utc": 1705320000.0,
-                            "url": "https://example.com",
-                            "permalink": "/r/popular/comments/post1/",
-                        }
-                    },
-                    {
-                        "data": {
-                            "id": "post2",
-                            "title": "Title 2",
-                            "score": 50,
-                            "num_comments": 5,
-                            "subreddit": "popular",
-                            "author": "user2",
-                            "is_self": True,
-                            "selftext": "body",
-                            "over_18": False,
-                            "created_utc": 1705320000.0,
-                            "url": "https://reddit.com",
-                            "permalink": "/r/popular/comments/post2/",
-                        }
-                    },
-                ]
-            }
-        }
+        # Adapter migrated to Atom RSS feed format — provide valid XML bytes
+        _NS = "http://www.w3.org/2005/Atom"
+        atom_xml = (
+            f'<?xml version="1.0" encoding="UTF-8"?>'
+            f'<feed xmlns="{_NS}">'
+            f"<entry>"
+            f"<id>t3_post1,https://www.reddit.com/r/popular/comments/post1/</id>"
+            f"<title>Title 1</title>"
+            f'<link href="https://www.reddit.com/r/popular/comments/post1/"/>'
+            f"<author><name>user1</name></author>"
+            f"<updated>2024-01-15T12:00:00+00:00</updated>"
+            f'<category term="popular"/>'
+            f"</entry>"
+            f"<entry>"
+            f"<id>t3_post2,https://www.reddit.com/r/popular/comments/post2/</id>"
+            f"<title>Title 2</title>"
+            f'<link href="https://www.reddit.com/r/popular/comments/post2/"/>'
+            f"<author><name>user2</name></author>"
+            f"<updated>2024-01-15T12:00:00+00:00</updated>"
+            f'<category term="popular"/>'
+            f"</entry>"
+            f"</feed>"
+        ).encode()
 
         adapter = RedditRSSAdapter(RedditRSSConfig())
         ctx = _ctx()
@@ -638,7 +624,7 @@ class TestRedditRSSParsers:
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.raise_for_status = MagicMock()
-        mock_resp.json = MagicMock(return_value=fake_posts)
+        mock_resp.content = atom_xml
 
         with patch.object(adapter._client, "get", new=AsyncMock(return_value=mock_resp)):
             results = [r async for r in adapter.fetch_raw(ctx, limit=10)]
@@ -652,25 +638,22 @@ class TestRedditRSSParsers:
     async def test_fetch_raw_respects_limit(self):
         from aegis.scrape.sources.reddit_rss import RedditRSSAdapter, RedditRSSConfig
 
-        children = [
-            {
-                "data": {
-                    "id": f"p{i}",
-                    "title": f"T{i}",
-                    "score": i,
-                    "num_comments": 0,
-                    "subreddit": "popular",
-                    "author": "u",
-                    "is_self": False,
-                    "over_18": False,
-                    "created_utc": 1705320000.0,
-                    "url": "https://x.com",
-                    "permalink": f"/r/x/{i}/",
-                }
-            }
+        _NS = "http://www.w3.org/2005/Atom"
+        entries_xml = "".join(
+            f"<entry>"
+            f"<id>t3_p{i},https://www.reddit.com/r/x/{i}/</id>"
+            f"<title>T{i}</title>"
+            f'<link href="https://www.reddit.com/r/x/{i}/"/>'
+            f"<author><name>u</name></author>"
+            f"<updated>2024-01-15T12:00:00+00:00</updated>"
+            f'<category term="popular"/>'
+            f"</entry>"
             for i in range(20)
-        ]
-        fake_response = {"data": {"children": children}}
+        )
+        atom_xml = (
+            f'<?xml version="1.0" encoding="UTF-8"?>'
+            f'<feed xmlns="{_NS}">{entries_xml}</feed>'
+        ).encode()
 
         adapter = RedditRSSAdapter(RedditRSSConfig())
         ctx = _ctx()
@@ -679,7 +662,7 @@ class TestRedditRSSParsers:
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.raise_for_status = MagicMock()
-        mock_resp.json = MagicMock(return_value=fake_response)
+        mock_resp.content = atom_xml
 
         with patch.object(adapter._client, "get", new=AsyncMock(return_value=mock_resp)):
             results = [r async for r in adapter.fetch_raw(ctx, limit=5)]

@@ -1,3 +1,7 @@
+
+
+
+
 # AEGIS Pulse — Claude Code Context
 
 ## Project overview
@@ -20,6 +24,7 @@ It scrapes signals from social platforms, stores them in TimescaleDB, and runs a
 **Phase 6** — Capital Execution Engine (three-tier advisory/staging/live model; fractional-Kelly 0.25× position sizing; Telegram approval workflow for P0/P1 plans; dynamic RL pricing engine; Printful POD + CJ Dropshipping + Shopify fulfillment clients; `SettlementManager` EOD PnL reconciliation; daily drawdown circuit breaker; `/capital/*` REST API; migration `0007_capital_execution.sql`; 55 unit tests; `src/aegis/fulfillment/` package)  
 **Phase 7** — Geospatial Intelligence & Cross-Market Arbitrage (WTO MFN tariff schedule 2024 for 20 HS codes × 8 regions; ECB FX rates via Frankfurter API — no key needed; EMS/postal shipping matrix 8×8 regions; `CrossMarketAnalyzer` enumerates all O×D pairs ranked by `gross_margin_pct × demand_intensity × market_size`; demand intensity from Phase 1 signals DB; Phase 6 bridge → `ExecutionIntent`; `/geo/*` REST API; `aegis geo` CLI; DB migration `0008_geo_intelligence.sql`; `docs/adr/0007-geospatial-intelligence.md`; `src/aegis/geo/` package)  
 **Phase 8** — Regulatory & Compliance Engine (composite 7-dimension risk matrix: trademark/patent/FDA/counterfeit/FTC/privacy/AML; real APIs — USPTO PatentsView, EUIPO TMview, FDA OpenFDA, Trade.gov CSL; OFAC + FATF sanctions; GDPR/DPDP/DSA/GPSR/CCPA privacy rules; FTC rule engine with 30+ compiled patterns; counterfeit detector with text heuristics + optional CLIP; Phase 6 `gate_execution_plan()` integration; `/compliance/*` REST API; `aegis compliance` CLI; DB migration `0009_compliance.sql`; `docs/adr/0008-compliance-engine.md`; `src/aegis/compliance/` package; 80 unit tests)  
+**Phase 9** — Autonomous Self-Evolution (continuous retraining + drift detection + online RL; `OutcomeRecorder` stores every settled trade as ground truth; `RetrainingPipeline` weekly Sunday 2 AM UTC run with Optuna TPE HPO; champion promotion gate +2% AUC; `DriftDetector` KS-distance + precision monitoring with auto-rollback; `OnlinePricingPolicy` 4-weight REINFORCE agent for daily pricing updates; `/evolve/*` REST API; `aegis evolve` CLI; DB migration `0011_evolve.sql`; `docs/adr/0009-autonomous-evolution.md`; `src/aegis/evolve/` package; 145 unit tests)  
 **Dashboard** — Unified Command Center web UI on :8300 (aggregates all phases; SSE live feed; streaming console for running CLI ops)
 
 ## Package layout
@@ -130,6 +135,19 @@ src/aegis/
     phase6_bridge.py   — geo_opportunity_to_execution_intent(): GeoOpportunity → Phase 6 ExecutionIntent
     api.py             — FastAPI router: /geo/health /geo/analyze /geo/fx /geo/tariff /geo/shipping
     cli.py             — Click CLI: analyze, fx, tariff, shipping, regions
+  evolve/              — Phase 9: Autonomous Self-Evolution
+    __init__.py        — exports OutcomeRecorder, RetrainingPipeline, DriftDetector, OnlinePricingPolicy; __version__ = "9.0.0"
+    config.py          — EvolveSettings (AEGIS_EVOLVE_* env prefix): retrain schedule, promotion gate, drift thresholds, RL params
+    constants.py       — error codes AEGIS-EVOLVE-0001..0099, SUPPORTED_ARCHITECTURES, POLICY_WEIGHT_LABELS, EVOLVE_FEATURE_DIM
+    errors.py          — AegisEvolveError hierarchy: InsufficientOutcomesError, TrainingFailedError, DriftDetectedError, etc.
+    schemas.py         — TradeOutcome, ModelCandidate, DriftSnapshot, PolicyState, RetrainRun, EvolveStatus (frozen Pydantic v2)
+    outcomes.py        — OutcomeRecorder: record_outcome(), fetch_recent_outcomes(), count_recent_outcomes(), fetch_outcomes_for_drift()
+    hpo.py             — optimize_hyperparameters() Optuna TPE; get_default_hyperparameters(); graceful fallback when optuna absent
+    drift.py           — DriftDetector: detect_drift(), detect_performance_drop(), run_all_checks(), persist_snapshot(), fetch_latest_snapshot()
+    rl_policy.py       — OnlinePricingPolicy: update_from_outcome(), get_weights(), get_state(), persist(), load()
+    retrain.py         — RetrainingPipeline: run_weekly_retrain(), get_champion_auc(), rollback_champion(), fetch_recent_runs()
+    api.py             — FastAPI router: /evolve/health /status /retrain /outcomes /drift /policy /runs
+    cli.py             — Click CLI: status, retrain, drift, policy, outcomes, record
   compliance/          — Phase 8: Regulatory & Compliance Engine
     __init__.py        — exports ComplianceEngine, ComplianceRiskAssessment, ComplianceRequest, ComplianceSettings; __version__ = "8.0.0"
     config.py          — ComplianceSettings (AEGIS_COMPLY_* env prefix): API keys, risk thresholds, cache TTLs
@@ -543,7 +561,38 @@ uv run aegis compliance batch products.json
 uv run aegis compliance batch products.json --json-out
 ```
 
-### 17. Stack lifecycle
+### 17. Phase 9 Autonomous Self-Evolution CLI
+
+```bash
+# Aggregated evolve health snapshot
+uv run aegis evolve status
+uv run aegis evolve status --json-out
+
+# Trigger a manual model retraining run
+uv run aegis evolve retrain
+uv run aegis evolve retrain --json-out
+
+# Run a drift check on recent prediction outcomes
+uv run aegis evolve drift
+uv run aegis evolve drift --json-out
+
+# Show current RL pricing policy weights
+uv run aegis evolve policy
+uv run aegis evolve policy --json-out
+
+# Count recent trade outcomes available for retraining
+uv run aegis evolve outcomes
+uv run aegis evolve outcomes --days 7
+
+# Record a single trade outcome from the CLI
+uv run aegis evolve record \
+  --plan-id "plan-001" --trend-id "trend-abc" \
+  --score 0.82 --confidence 0.91 \
+  --roi 45.0 --pnl 450.0 --units 10 \
+  --status successful
+```
+
+### 18. Stack lifecycle
 
 ```bash
 uv run aegis up               # start all services (detached)
@@ -606,6 +655,7 @@ uv run python -m pytest tests/unit/backup/ -q -p no:hypothesis
 | Phase 15 — Disaster Recovery | ✅ Green | `src/aegis/backup/` — `BackupManager` (pgBackRest, WAL archiving, PITR), `ResticBackup` (encrypted filesystem), `BackupHealth` (staleness monitor + alerts); `aegis backup` CLI (create/list/restore/prune/health); `bootstrap/wsl/backup_wsl_disk.sh`; `docs/DR_RUNBOOK.md` + `docs/adr/0015-disaster-recovery.md`; 58 unit tests pass; 0 ruff violations; RPO ≤ 15 min / RTO ≤ 60 min. `aegis-phase15/` standalone DR orchestrator: `DrOrchestrator`, `RestoreDrill`, `DrHealthChecker`, FastAPI router, `aegis dr` CLI; 39 unit tests pass; 0 ruff violations |
 | Phase 6 — Capital Execution | ✅ Green | `aegis-phase4/src/aegis/execute/` extended: `engine.py` (ExecutionEngine, ExecutionPlan, Kelly sizing, drawdown circuit breaker), `pricing.py` (PricingStrategy, multi-objective weighted pricing, A/B test, online learning), `approval.py` (ApprovalBroker, Telegram inline-button workflow), `settlement.py` (SettlementManager, DailySettlement, tax CSV); `src/aegis/fulfillment/` package (PrintfulClient POD, CJDropshipClient, ShopifyClient); `/capital/*` REST API routes; DB migration `0007_capital_execution.sql`; `docs/adr/0006-capital-execution.md`; 55 unit tests pass; 0 ruff violations; advisory mode default — zero capital at risk in CI |
 | Phase 7 — Geospatial Intelligence | ✅ Green | `src/aegis/geo/` — `CrossMarketAnalyzer` (all O×D region pairs, real WTO tariffs, ECB FX, EMS shipping); `FXRateFetcher` (Frankfurter/ECB, no key, 1h TTL cache); `TariffEstimator` (20 HS codes × 8 regions, WTO MFN 2024); `ShippingResolver` (8×8 matrix, EMS/postal 2024); `RegionalDemandAnalyzer` (Phase 1 signals DB + synthetic fallback); `geo_opportunity_to_execution_intent()` Phase 6 bridge; `/geo/*` REST API; `aegis geo` CLI (analyze, fx, tariff, shipping, regions); DB migration `0008_geo_intelligence.sql`; `docs/adr/0007-geospatial-intelligence.md`; 60+ unit tests; 0 ruff violations |
+| Phase 9 — Autonomous Self-Evolution | ✅ Green | `src/aegis/evolve/` — `OutcomeRecorder` (ground truth pipeline), `RetrainingPipeline` (weekly + Optuna HPO), `DriftDetector` (KS-distance + precision monitoring), `OnlinePricingPolicy` (4-weight REINFORCE); `/evolve/*` REST API; `aegis evolve` CLI; DB migration `0011_evolve.sql`; `docs/adr/0009-autonomous-evolution.md`; 145 unit tests; 0 ruff violations |
 | Phase 8 — Compliance Engine | ✅ Green | `src/aegis/compliance/` — 7-dimension risk matrix (trademark 22%, FDA 20%, counterfeit 15%, patent 13%, privacy 10%, FTC 10%, AML 10%); `IPRChecker` (USPTO PatentsView + EUIPO TMview live APIs + 40-brand local DB); `FDAChecker` (OpenFDA /drug /food /device enforcement API, no key); `FTCRuleEngine` (30+ compiled regex, zero I/O); `PrivacyRiskAssessor` (GDPR/DPDP/DSA/GPSR/CCPA/COPPA); `AMLChecker` (OFAC 17-country list + FATF 2024 grey/black list + optional Trade.gov CSL entity screening); `CounterfeitDetector` (exact + fuzzy brand match + price anomaly + replica keywords + optional CLIP); `ComplianceEngine` (parallel asyncio.gather, hard BLOCK overrides, 6-hour result cache); `gate_execution_plan()` Phase 6 integration; `/compliance/*` REST API; `aegis compliance` CLI (assess, trademark, sanctions, ftc, batch); DB migration `0009_compliance.sql`; `docs/adr/0008-compliance-engine.md`; 80 unit tests; 0 ruff violations |
 | Dashboard | ✅ Green | Command Center on :8300; asyncpg + Redis shared pools; SSE uses shared pool (no per-tab connections); ops console |
 | Orchestration | ✅ Green | `aegis analyze` / `aegis topic` / `aegis daily` / `aegis swarm` → full pipeline → Phase 4 stream |
@@ -816,6 +866,15 @@ Redis: `redis://localhost:6380/0`
 - **Phase 8 EUIPO API skip condition**: `IPRChecker.check_trademark()` skips the live EUIPO API call when any local brand match has `confidence_score > 0.9`. This avoids 5 s network latency when an exact luxury brand match is already found locally. The EUIPO call still fires for borderline keyword matches (confidence ≤ 0.9).
 - **Phase 8 counterfeit price anomaly threshold**: products priced below 15% of category median USD are flagged (`_PRICE_ANOMALY_THRESHOLD = 0.15`). Category medians sourced from Phase 7 `CATEGORY_MEDIAN_PRICES_USD` (marketplace research 2024). No random/mock prices.
 - **Phase 8 compliance tests run in main suite**: `tests/unit/compliance/` is in the main `testpaths` (not a separate workspace member). All 80 tests mock every external API call (httpx) — no network access required. `cli.py` and `api.py` are in `coverage.run.omit` (same pattern as `*/geo/cli.py`).
+- **Phase 9 module path**: `aegis.evolve` lives at `src/aegis/evolve/` — a regular subpackage of the main `aegis` namespace. NOT a workspace member. Import as `from aegis.evolve import OutcomeRecorder, RetrainingPipeline, DriftDetector, OnlinePricingPolicy`.
+- **Phase 9 `EvolveSettings` env prefix**: `AEGIS_EVOLVE_`. Key vars: `AEGIS_EVOLVE_RETRAIN_DAY` (default `sunday`), `AEGIS_EVOLVE_RETRAIN_HOUR` (default `2` UTC), `AEGIS_EVOLVE_MIN_OUTCOMES_FOR_RETRAIN` (default `100`, min `10`), `AEGIS_EVOLVE_AUC_IMPROVEMENT_THRESHOLD` (default `0.02`), `AEGIS_EVOLVE_DRIFT_THRESHOLD` (default `0.15`), `AEGIS_EVOLVE_PERFORMANCE_DROP_THRESHOLD` (default `0.05`), `AEGIS_EVOLVE_RL_LEARNING_RATE` (default `0.01`).
+- **Phase 9 Optuna is optional**: `optuna` lives in the `evolve` extra (`uv sync --extra evolve`). When absent, `optimize_hyperparameters()` silently falls back to `get_default_hyperparameters(architecture)` — the retraining pipeline always produces a candidate. Install with `uv sync --extra evolve`.
+- **Phase 9 HPO proxy model**: `_proxy_auc()` uses logistic regression (sklearn) as a cheap fast-fidelity surrogate during Optuna search. This lets 30 trials complete in seconds rather than minutes on CPU. The final candidate uses the same LR proxy as the heuristic doctrine's `_train_and_evaluate()`. Replace with actual PatchTST/Autoformer when GPU is available.
+- **Phase 9 `DriftDetector` baseline is synthetic**: `_initialize_baseline()` seeds `baseline_mean=zeros(20)` and `baseline_std=ones(20)`. This is a placeholder — in production, populate from the feature statistics recorded during champion model training. The detector is conservative: a shifted mean of +1σ produces `drift_score ≈ 1.0` (clamped), so the threshold of `0.15` is intentionally loose until a real baseline is established.
+- **Phase 9 `OnlinePricingPolicy` weights are non-negative by design**: `np.maximum(weights, 1e-6)` after every update prevents zero-weight collapse. This means weights never reach exactly zero — a deliberate choice so all four pricing signals retain some influence regardless of run of bad trades.
+- **Phase 9 `RetrainingPipeline._upsert_retrain_audit` is best-effort**: audit write failures are logged at DEBUG and never raise — retrain logic should not fail because of audit persistence. Same pattern as Phase 4 SEC-013.
+- **Phase 9 `prediction_outcomes` is a TimescaleDB hypertable**: partitioned on `settlement_timestamp` (7-day chunks). RLS is enabled — always `SET app.current_tenant = '<uuid>'` before querying. The `ON CONFLICT DO NOTHING` in `record_outcome()` ensures idempotency.
+- **Phase 9 evolve tests run in main suite**: `tests/unit/evolve/` is in the main `testpaths`. 102 tests all mock asyncpg pool — no live DB needed. `cli.py` and `api.py` are in `coverage.run.omit` (same pattern as `*/compliance/cli.py`).
 
 ---
 

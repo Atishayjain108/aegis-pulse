@@ -67,6 +67,7 @@ services:
     volumes:
       - aegis_postgres_data:/home/postgres/pgdata/data
       - ./db/migrations:/docker-entrypoint-initdb.d/migrations:ro
+      - ./docker/postgres-init:/docker-entrypoint-initdb.d/init:ro
     deploy:
       resources:
         limits:
@@ -123,6 +124,13 @@ services:
   # -----------------------------------------------------------------
   minio:
     image: minio/minio:latest
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          memory: 256M
     container_name: aegis-minio
     restart: unless-stopped
     environment:
@@ -148,6 +156,13 @@ services:
   # -----------------------------------------------------------------
   flaresolverr:
     image: ghcr.io/flaresolverr/flaresolverr:latest
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          memory: 256M
     container_name: aegis-flaresolverr
     restart: unless-stopped
     environment:
@@ -181,7 +196,7 @@ services:
     environment:
       AEGIS_PG_DSN: postgresql://${POSTGRES_USER:-aegis_app}:${POSTGRES_PASSWORD:-aegis_app_dev_pw}@postgres:5432/${POSTGRES_DB:-aegis}
       AEGIS_REDIS_URL: redis://redis:6379/0
-      AEGIS_ENV: ${AEGIS_ENV:-dev}
+      AEGIS_ENV: dev
       AEGIS_LOG_JSON: "true"
       AEGIS_FLARESOLVERR_URL: "http://aegis-flaresolverr:8191/v1"
       # Disable Ollama in the predict container — inference is heuristic-first
@@ -221,6 +236,13 @@ services:
       context: aegis-phase4
       dockerfile: docker/Dockerfile.api
     image: aegis-execute-api:latest
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          memory: 256M
     container_name: aegis-execute-api
     restart: unless-stopped
     environment:
@@ -256,6 +278,13 @@ services:
       context: aegis-phase4
       dockerfile: docker/Dockerfile.drain
     image: aegis-execute-drain:latest
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+        reservations:
+          memory: 128M
     container_name: aegis-execute-drain
     restart: unless-stopped
     environment:
@@ -278,10 +307,15 @@ services:
   # -----------------------------------------------------------------
   # AEGIS Command Center Dashboard (unified web UI on :8300)
   # Reads from Postgres + Redis; proxies Phase 3 :8100 + Phase 4 :8200.
-  # Start separately: uv run aegis dashboard serve
-  # Or via compose: docker compose up dashboard
+  #
+  # RECOMMENDED (host mode — live reload, no Docker rebuild):
+  #   uv run aegis dashboard serve
+  #
+  # Docker mode (optional, requires --profile dashboard):
+  #   docker compose --profile dashboard up -d dashboard
   # -----------------------------------------------------------------
   dashboard:
+    profiles: ["dashboard"]
     build:
       context: .
       dockerfile: docker/Dockerfile.dashboard
@@ -291,14 +325,22 @@ services:
     environment:
       AEGIS_PG_DSN: postgresql://${POSTGRES_USER:-aegis_app}:${POSTGRES_PASSWORD:-aegis_app_dev_pw}@postgres:5432/${POSTGRES_DB:-aegis}
       AEGIS_REDIS_URL: redis://redis:6379/0
-      AEGIS_ENV: ${AEGIS_ENV:-dev}
+      AEGIS_ENV: dev
       AEGIS_PREDICT_API_URL: http://predict:8000
       AEGIS_EXECUTE_API_URL: http://execute-api:8200
       AEGIS_FLARESOLVERR_URL: "http://aegis-flaresolverr:8191/v1"
+      AEGIS_SCRAPE_FLARESOLVERR_URL: "http://aegis-flaresolverr:8191/v1"
+      AEGIS_OLLAMA_BASE_URL: "http://ollama:11434"
+      AEGIS_MINIO_ENDPOINT: "minio:9000"
+      AEGIS_DASHBOARD_OPS_TOKEN: ${AEGIS_DASHBOARD_OPS_TOKEN:-}
+    # INFRA-2: docker.sock is intentionally NOT mounted. This service runs the
+    # shell-executing ops console, so granting it the Docker API (even :ro) is a
+    # container-escape surface. The container-status panel degrades gracefully
+    # without it; for live Docker status run the dashboard in host mode
+    # (`uv run aegis dashboard serve`), which is the recommended path anyway.
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-    group_add:
-      - "${DOCKER_GID:-1001}"
+      - ./src:/app/src:ro
+      - ./src/aegis/dashboard/static:/app/src/aegis/dashboard/static:ro
     deploy:
       resources:
         limits:
@@ -331,6 +373,13 @@ services:
   # -----------------------------------------------------------------
   prometheus:
     image: prom/prometheus:v2.54.1
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          memory: 256M
     container_name: aegis-prometheus
     restart: unless-stopped
     command:
@@ -357,6 +406,13 @@ services:
   # -----------------------------------------------------------------
   grafana:
     image: grafana/grafana:11.2.2
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          memory: 256M
     container_name: aegis-grafana
     restart: unless-stopped
     environment:
@@ -387,6 +443,13 @@ services:
   # -----------------------------------------------------------------
   jaeger:
     image: jaegertracing/all-in-one:1.62.0
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          memory: 256M
     container_name: aegis-jaeger
     restart: unless-stopped
     environment:
@@ -408,11 +471,13 @@ services:
   # Phase 14 — Loki log aggregation
   # Receives structured logs from Promtail. Queried by Grafana.
   # UI: Grafana → Explore → select "Loki" datasource
+  # Start: docker compose --profile logging up -d loki promtail
   # -----------------------------------------------------------------
   loki:
     image: grafana/loki:3.1.0
     container_name: aegis-loki
     restart: unless-stopped
+    profiles: ["logging"]
     command: -config.file=/etc/loki/loki.yaml
     ports:
       - "127.0.0.1:3100:3100"
@@ -437,11 +502,13 @@ services:
   # Phase 14 — Promtail log collector
   # Ships Docker container log files to Loki with compose labels.
   # Needs docker.sock to enumerate running containers.
+  # Start: docker compose --profile logging up -d loki promtail
   # -----------------------------------------------------------------
   promtail:
     image: grafana/promtail:3.1.0
     container_name: aegis-promtail
     restart: unless-stopped
+    profiles: ["logging"]
     command: -config.file=/etc/promtail/config.yaml
     volumes:
       - ./config/promtail/config.yaml:/etc/promtail/config.yaml:ro
@@ -462,11 +529,20 @@ services:
   # Phase 10 — Prefect 3 orchestration server (optional UI)
   # The lake itself runs as a library inside the main Python process.
   # Prefect is only needed if you want the flow-run UI at :4200.
+  # Start: docker compose --profile orchestration up -d prefect
   # -----------------------------------------------------------------
   prefect:
     image: prefecthq/prefect:3-latest
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          memory: 256M
     container_name: aegis-prefect
     restart: unless-stopped
+    profiles: ["orchestration"]
     command: prefect server start --host 0.0.0.0
     environment:
       PREFECT_HOME: /opt/prefect
@@ -495,6 +571,7 @@ services:
   ollama:
     image: ollama/ollama:0.4.7
     container_name: aegis-ollama
+    profiles: ["local-llm"]
     restart: unless-stopped
     ports:
       - "127.0.0.1:11434:11434"
@@ -536,6 +613,7 @@ services:
   ollama-init:
     image: curlimages/curl:8.10.1
     container_name: aegis-ollama-init
+    profiles: ["local-llm"]
     restart: "no"
     depends_on:
       ollama:
@@ -560,6 +638,13 @@ services:
   # -----------------------------------------------------------------
   litellm:
     image: ghcr.io/berriai/litellm:main-v1.52.9
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          memory: 256M
     container_name: aegis-litellm
     restart: unless-stopped
     profiles: ["llm-proxy"]
@@ -569,21 +654,61 @@ services:
       - ./config/litellm_config.yaml:/app/config.yaml:ro
     command: ["--config", "/app/config.yaml", "--port", "8080"]
     environment:
-      AEGIS_OLLAMA_BASE_URL: "http://aegis-ollama:11434"
+      AEGIS_OLLAMA_BASE_URL: "http://host.docker.internal:11434"
       AEGIS_GROQ_API_KEY: "${AEGIS_GROQ_API_KEY:-}"
       AEGIS_OPENROUTER_API_KEY: "${AEGIS_OPENROUTER_API_KEY:-}"
       AEGIS_GEMINI_API_KEY: "${AEGIS_GEMINI_API_KEY:-}"
       AEGIS_LITELLM_MASTER_KEY: "${AEGIS_LITELLM_MASTER_KEY:-sk-litellm-dev-key-not-for-prod}"
       AEGIS_PG_DSN: "${AEGIS_PG_DSN:-}"
-    depends_on:
-      ollama:
-        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 20s
+    networks:
+      - aegis
+
+  # -----------------------------------------------------------------
+  # Langfuse — LLM observability and tracing (Phase: agent quality)
+  # Requires a 'langfuse' database in Postgres (created separately):
+  #   psql postgresql://aegis_app:aegis_app_dev_pw@localhost:5433/postgres \
+  #     -c "CREATE DATABASE langfuse OWNER aegis_app;"
+  # Start: docker compose --profile tracing up -d langfuse
+  # -----------------------------------------------------------------
+  langfuse:
+    image: langfuse/langfuse:2
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          memory: 256M
+    container_name: aegis-langfuse
+    profiles: ["tracing"]
+    ports:
+      - "127.0.0.1:3002:3000"
+    environment:
+      DATABASE_URL: postgresql://aegis_app:aegis_app_dev_pw@postgres:5432/langfuse
+      NEXTAUTH_SECRET: aegis-langfuse-dev-secret-CHANGE-IN-PROD
+      SALT: aegis-salt-CHANGE-IN-PROD
+      NEXTAUTH_URL: http://localhost:3002
+      TELEMETRY_ENABLED: "false"
+      LANGFUSE_INIT_ORG_NAME: aegis
+      LANGFUSE_INIT_PROJECT_NAME: aegis-pulse
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: pk-lf-aegis-dev
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: sk-lf-aegis-dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"const a=Object.values(require('os').networkInterfaces()).flat().find(i=>i.family==='IPv4'&&!i.internal).address;require('http').get('http://'+a+':3000/api/public/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))\""]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
     networks:
       - aegis
 

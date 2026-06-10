@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=./_schema.json
+name: reddit-rss
+version: 1
+match:
+  source: reddit-rss
+delay_ms: 600
+jitter_ms: 300
+rate_per_min: 60
+retries: 3
+profile: standard
+honor_robots: true
+use_flaresolverr: false
+rotate_every: 20
+notes: Reddit public RSS — no auth, generous rate.

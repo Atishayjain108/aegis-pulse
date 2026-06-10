@@ -1,0 +1,348 @@
+{
+  "__inputs": [],
+  "__requires": [
+    { "type": "grafana", "id": "grafana", "name": "Grafana", "version": "11.0.0" },
+    { "type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0" }
+  ],
+  "annotations": { "list": [] },
+  "description": "AEGIS Pulse — Mission Control: real-time observability for all phases",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "title": "Phase 1 — Ingest",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 1 },
+      "id": 1,
+      "options": { "legend": { "displayMode": "list" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "expr": "rate(aegis_obs_ingest_signals_total[5m])",
+          "legendFormat": "{{source}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Ingest Rate (signals/min)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "ms" } },
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 1 },
+      "id": 2,
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, rate(aegis_ingest_latency_ms_bucket[5m]))",
+          "legendFormat": "p99 {{source}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Ingest Latency p99 (ms) — SLA: < 5000 ms",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0, "max": 1 } },
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 1 },
+      "id": 3,
+      "targets": [
+        {
+          "expr": "aegis_dedup_ratio",
+          "legendFormat": "dedup ratio {{source}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Dedup Ratio (0–1)",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 7 },
+      "id": 101,
+      "title": "Phase 2 — Agent Intelligence",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "ms" } },
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 8 },
+      "id": 4,
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, rate(aegis_agent_task_duration_ms_bucket[5m]))",
+          "legendFormat": "p99 {{node}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Agent Task Duration p99 (ms)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 8 },
+      "id": 5,
+      "targets": [
+        {
+          "expr": "rate(aegis_obs_llm_requests_total[5m])",
+          "legendFormat": "{{provider}} / {{model}}",
+          "refId": "A"
+        }
+      ],
+      "title": "LLM Request Rate (req/s)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "currencyUSD" } },
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 8 },
+      "id": 6,
+      "targets": [
+        {
+          "expr": "aegis_llm_cost_usd",
+          "legendFormat": "{{provider}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Cumulative LLM Cost (USD)",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+      "id": 102,
+      "title": "Phase 3 — Predictions",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "ms", "color": { "mode": "thresholds" } },
+        "overrides": []
+      },
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 15 },
+      "id": 7,
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "orientation": "auto",
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, rate(aegis_model_inference_latency_ms_bucket[5m]))",
+          "legendFormat": "{{model_type}}",
+          "refId": "A"
+        }
+      ],
+      "thresholds": {
+        "mode": "absolute",
+        "steps": [
+          { "color": "green", "value": null },
+          { "color": "yellow", "value": 250 },
+          { "color": "red", "value": 500 }
+        ]
+      },
+      "title": "Inference Latency p99 (ms) — SLA: < 500 ms",
+      "type": "gauge"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "percentunit", "min": 0, "max": 1 }
+      },
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 15 },
+      "id": 8,
+      "targets": [
+        {
+          "expr": "aegis_model_prediction_precision",
+          "legendFormat": "precision",
+          "refId": "A"
+        }
+      ],
+      "title": "Model Precision (7-day rolling) — SLO: > 0.92",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 15 },
+      "id": 9,
+      "targets": [
+        {
+          "expr": "aegis_obs_model_drift_score",
+          "legendFormat": "{{feature}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Data Drift Score (alert > 0.1)",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 21 },
+      "id": 103,
+      "title": "Phase 4 — Execution & Alerts",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "ms" } },
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 22 },
+      "id": 10,
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, rate(aegis_alert_delivery_latency_ms_bucket[5m]))",
+          "legendFormat": "p99 {{channel}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Alert Delivery Latency p99 (ms) — SLA: < 10 000 ms",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "unit": "short",
+          "mappings": [
+            { "options": { "0": { "color": "green", "text": "ARMED" } }, "type": "value" },
+            { "options": { "match": "gt", "result": { "color": "red", "text": "TRIPPED" } }, "type": "range" }
+          ]
+        }
+      },
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 22 },
+      "id": 11,
+      "options": {
+        "colorMode": "background",
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      },
+      "targets": [
+        {
+          "expr": "aegis_killswitch_engaged_total",
+          "legendFormat": "killswitch",
+          "refId": "A"
+        }
+      ],
+      "thresholds": {
+        "mode": "absolute",
+        "steps": [
+          { "color": "green", "value": null },
+          { "color": "red", "value": 1 }
+        ]
+      },
+      "title": "Killswitch Status",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 22 },
+      "id": 12,
+      "targets": [
+        {
+          "expr": "rate(aegis_alert_delivered_total[5m])",
+          "legendFormat": "{{channel}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Alert Delivery Rate (alerts/min)",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 28 },
+      "id": 104,
+      "title": "Infrastructure",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "ms" } },
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 29 },
+      "id": 13,
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, rate(aegis_database_query_duration_ms_bucket[5m]))",
+          "legendFormat": "p99 {{operation}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Database Query Latency p99 (ms)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "ms" } },
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 29 },
+      "id": 14,
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, rate(aegis_redis_operation_duration_ms_bucket[5m]))",
+          "legendFormat": "p99 {{command}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Redis Operation Latency p99 (ms)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 } },
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 29 },
+      "id": 15,
+      "targets": [
+        {
+          "expr": "aegis_cache_hit_ratio",
+          "legendFormat": "LLM cache hit ratio",
+          "refId": "A"
+        }
+      ],
+      "title": "LLM Cache Hit Ratio — target: > 0.30",
+      "type": "stat"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["aegis", "mission-control", "phase14"],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "definition": "label_values(aegis_obs_ingest_signals_total, source)",
+        "hide": 0,
+        "includeAll": true,
+        "multi": true,
+        "name": "source",
+        "options": [],
+        "query": "label_values(aegis_obs_ingest_signals_total, source)",
+        "refresh": 2,
+        "type": "query",
+        "label": "Source"
+      }
+    ]
+  },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "AEGIS — Mission Control",
+  "uid": "aegis-mission-control",
+  "version": 1
+}

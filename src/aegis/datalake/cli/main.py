@@ -63,14 +63,15 @@ def _emit(payload: dict[str, Any], *, json_out: bool) -> None:
 
 def _settings_from_ctx(ctx: click.Context) -> DataLakeSettings:
     """Build a :class:`DataLakeSettings` from CLI flags + env."""
+    obj: dict[str, Any] = ctx.obj or {}
     overrides: dict[str, Any] = {}
-    if ctx.obj.get("local_root"):
-        overrides["local_root"] = ctx.obj["local_root"]
+    if obj.get("local_root"):
+        overrides["local_root"] = obj["local_root"]
         overrides["use_local_filesystem"] = True
-    if ctx.obj.get("catalog_db_path"):
-        overrides["catalog_db_path"] = ctx.obj["catalog_db_path"]
-    if ctx.obj.get("tenant_id"):
-        overrides["tenant_id"] = ctx.obj["tenant_id"]
+    if obj.get("catalog_db_path"):
+        overrides["catalog_db_path"] = obj["catalog_db_path"]
+    if obj.get("tenant_id"):
+        overrides["tenant_id"] = obj["tenant_id"]
     return DataLakeSettings(**overrides) if overrides else DataLakeSettings()
 
 

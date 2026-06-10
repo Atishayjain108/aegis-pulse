@@ -230,6 +230,16 @@ def build_graph_result(
         else "00000000-0000-0000-0000-000000000000"
     )
 
+    _decisions = list(state.get("decisions", []) or [])
+    # Provenance (HALLU-1): aggregate per-agent used_llm into one verdict-level signal.
+    _llm_count = sum(1 for d in _decisions if getattr(d, "used_llm", False))
+    if _llm_count == 0:
+        _source: str = "heuristic"
+    elif _llm_count == len(_decisions):
+        _source = "llm"
+    else:
+        _source = "mixed"
+
     return GraphResult(
         trend_id=_trend_id,
         correlation_id=_correlation_id,
@@ -237,10 +247,12 @@ def build_graph_result(
         final_priority=state.get("final_priority", Priority.P3_HOUSEKEEPING),
         final_score=float(state.get("final_score", 0.0)),
         final_confidence=float(state.get("final_confidence", 0.0)),
-        decisions=list(state.get("decisions", []) or []),
+        decisions=_decisions,
         blocked_by=list(state.get("blocked_by", []) or []),
         started_at=started_at,
         finished_at=finished,
         duration_ms=duration_ms,
         halt_reason=halt,  # type: ignore[arg-type]
+        llm_used=_llm_count > 0,
+        reasoning_source=_source,  # type: ignore[arg-type]
     )

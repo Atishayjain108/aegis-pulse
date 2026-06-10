@@ -61,7 +61,7 @@ requires-dist = [
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23,<1" },
     { name = "redis", marker = "extra == 'redis'", specifier = ">=5.0,<6" },
     { name = "structlog", specifier = ">=24.1,<25" },
-    { name = "typer", specifier = ">=0.12,<1" },
+    { name = "typer", specifier = ">=0.15.4,<0.16" },
     { name = "uvicorn", extras = ["standard"], marker = "extra == 'serve'", specifier = ">=0.27,<1" },
 ]
 provides-extras = ["serve", "db", "redis", "prometheus", "dev"]
@@ -110,7 +110,7 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0.1,<7" },
     { name = "scikit-learn", marker = "extra == 'ml'", specifier = ">=1.4,<2" },
     { name = "structlog", specifier = ">=24.1,<26" },
-    { name = "typer", specifier = ">=0.12,<1" },
+    { name = "typer", specifier = ">=0.15.4,<0.16" },
 ]
 provides-extras = ["ml", "metrics", "test"]
 
@@ -227,6 +227,7 @@ dependencies = [
     { name = "sqlalchemy", extra = ["asyncio"] },
     { name = "structlog" },
     { name = "tenacity" },
+    { name = "typer" },
     { name = "typing-extensions" },
 ]
 
@@ -270,6 +271,10 @@ dev = [
     { name = "testcontainers", extra = ["minio", "redis"] },
     { name = "types-redis" },
     { name = "types-requests" },
+]
+evolve = [
+    { name = "optuna" },
+    { name = "scikit-learn" },
 ]
 harden = [
     { name = "aegis-harden" },
@@ -408,6 +413,7 @@ requires-dist = [
     { name = "opentelemetry-instrumentation-redis", specifier = "==0.48b0" },
     { name = "opentelemetry-instrumentation-sqlalchemy", specifier = "==0.48b0" },
     { name = "opentelemetry-sdk", specifier = "==1.27.0" },
+    { name = "optuna", marker = "extra == 'evolve'", specifier = ">=4.0,<5" },
     { name = "orjson", specifier = "==3.11.9" },
     { name = "pandas", marker = "extra == 'ml'", specifier = "==2.2.3" },
     { name = "patchright", marker = "extra == 'scrape'", specifier = "==1.52.5" },
@@ -437,6 +443,7 @@ requires-dist = [
     { name = "respx", marker = "extra == 'dev'", specifier = "==0.21.1" },
     { name = "rich", specifier = "==13.9.2" },
     { name = "ruff", marker = "extra == 'dev'", specifier = "==0.6.9" },
+    { name = "scikit-learn", marker = "extra == 'evolve'", specifier = ">=1.5,<2" },
     { name = "scikit-learn", marker = "extra == 'ml'", specifier = "==1.5.2" },
     { name = "sentence-transformers", marker = "extra == 'llm'", specifier = ">=3.3,<4" },
     { name = "sentence-transformers", marker = "extra == 'memory'", specifier = ">=2.2" },
@@ -451,6 +458,7 @@ requires-dist = [
     { name = "torch", marker = "extra == 'memory'", specifier = ">=2.0", index = "https://download.pytorch.org/whl/cpu" },
     { name = "torch", marker = "extra == 'predict-ml'", specifier = ">=2.5,<2.6", index = "https://download.pytorch.org/whl/cpu" },
     { name = "torch-geometric", marker = "extra == 'predict-graph'", specifier = ">=2.6,<2.7" },
+    { name = "typer", specifier = ">=0.15.4,<0.16" },
     { name = "types-redis", marker = "extra == 'dev'", specifier = "==4.6.0.20241004" },
     { name = "types-requests", marker = "extra == 'dev'", specifier = "==2.32.0.20240914" },
     { name = "typing-extensions", specifier = ">=4.12,<5" },
@@ -458,7 +466,7 @@ requires-dist = [
     { name = "uvicorn", extras = ["standard"], marker = "extra == 'predict'", specifier = ">=0.34,<0.40" },
     { name = "yt-dlp", marker = "extra == 'scrape'", specifier = "==2024.10.7" },
 ]
-provides-extras = ["scrape", "ml", "queue", "agents", "memory", "snapshots", "predict", "predict-ml", "predict-graph", "predict-rl", "predict-causal", "predict-analysis", "datalake", "datalake-orchestration", "llm", "llm-tokenizer", "compliance", "compliance-clip", "harden", "dev"]
+provides-extras = ["scrape", "ml", "queue", "agents", "memory", "snapshots", "predict", "predict-ml", "predict-graph", "predict-rl", "predict-causal", "predict-analysis", "datalake", "datalake-orchestration", "llm", "llm-tokenizer", "compliance", "evolve", "compliance-clip", "harden", "dev"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -1304,6 +1312,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/cc/c7/eed8f27100517e8c0e6b923d5f0845d0cb99763da6fdee00478f91db7325/coloredlogs-15.0.1.tar.gz", hash = "sha256:7c991aa71a4577af2f82600d8f8f3a89f936baeaf9b50a9c197da014e5bf16b0", size = 278520, upload-time = "2021-06-11T10:22:45.202Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a7/06/3d6badcf13db419e25b07041d9c7b4a2c331d3f4e7134445ec5df57714cd/coloredlogs-15.0.1-py2.py3-none-any.whl", hash = "sha256:612ee75c546f53e92e70049c9dbfcc18c935a2b9a53b66085ce9ef6a6e5c0934", size = 46018, upload-time = "2021-06-11T10:22:42.561Z" },
+]
+
+[[package]]
+name = "colorlog"
+version = "6.10.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "colorama", marker = "sys_platform == 'win32'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a2/61/f083b5ac52e505dfc1c624eafbf8c7589a0d7f32daa398d2e7590efa5fda/colorlog-6.10.1.tar.gz", hash = "sha256:eb4ae5cb65fe7fec7773c2306061a8e63e02efc2c72eba9d27b0fa23c94f1321", size = 17162, upload-time = "2025-10-16T16:14:11.978Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6d/c1/e419ef3723a074172b68aaa89c9f3de486ed4c2399e2dbd8113a4fdcaf9e/colorlog-6.10.1-py3-none-any.whl", hash = "sha256:2d7e8348291948af66122cff006c9f8da6255d224e7cf8e37d8de2df3bad8c9c", size = 11743, upload-time = "2025-10-16T16:14:10.512Z" },
 ]
 
 [[package]]
@@ -3441,6 +3461,24 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/d6/d7/185c494754340e0a3928fd39fde2616ee78f2c9d66253affaad62d5b7935/opentelemetry_util_http-0.48b0.tar.gz", hash = "sha256:60312015153580cc20f322e5cdc3d3ecad80a71743235bdb77716e742814623c", size = 7863, upload-time = "2024-08-28T21:28:27.266Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ad/2e/36097c0a4d0115b8c7e377c90bab7783ac183bc5cb4071308f8959454311/opentelemetry_util_http-0.48b0-py3-none-any.whl", hash = "sha256:76f598af93aab50328d2a69c786beaedc8b6a7770f7a818cc307eb353debfffb", size = 6946, upload-time = "2024-08-28T21:27:37.975Z" },
+]
+
+[[package]]
+name = "optuna"
+version = "4.9.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "alembic" },
+    { name = "colorlog" },
+    { name = "numpy" },
+    { name = "packaging" },
+    { name = "pyyaml" },
+    { name = "sqlalchemy" },
+    { name = "tqdm" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f4/aa/05f5e3f662cc96a4c478fc3446b8ed6359825a2b504ecb614a9ac84e4a4d/optuna-4.9.0.tar.gz", hash = "sha256:b322e5cbdf1655fb84c37646c4a7a1f391de1b47806bbe222e015825d0a82b87", size = 485834, upload-time = "2026-06-01T06:23:30.424Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ab/f3/e5fcd5d9b15771ed6dc10e3a7eeddc672e418f4f4c4653d216cc1d857e2d/optuna-4.9.0-py3-none-any.whl", hash = "sha256:f52f3be6148654850c92a5860d398fd88ec6b2c84ab68d9c3d07dcff02e7afee", size = 425553, upload-time = "2026-06-01T06:23:28.804Z" },
 ]
 
 [[package]]

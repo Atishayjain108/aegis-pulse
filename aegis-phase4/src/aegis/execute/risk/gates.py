@@ -24,6 +24,7 @@ from aegis.execute.constants import (
     VERDICT_ENTER,
 )
 from aegis.execute.errors import (
+    EXEC_RISK_COMPLIANCE_FTC,
     EXEC_RISK_CONFIDENCE_TOO_LOW,
     EXEC_RISK_LOSS_PROB_TOO_HIGH,
     EXEC_RISK_MARGIN_BELOW_FLOOR,
@@ -87,6 +88,36 @@ def confidence_gate(alert: Alert) -> GateOutcome:
     return GateOutcome(passed=True)
 
 
+def compliance_ftc_gate(threshold: float = 0.80) -> RiskGate:
+    """Factory: block ENTER alerts whose text trips the FTC advertising rules.
+
+    CONN-2 — puts the Phase 8 compliance engine into the live alert path. Uses
+    the **FTC rule engine** specifically because it is stateless, zero-I/O and
+    needs no API keys, so it is safe on the hot path (the IPR/FDA/OFAC checks
+    require a product origin/destination the trend alert does not carry, and
+    make live external calls — those belong in the Phase 6 plan path, not here).
+
+    Degrades to a pass when ``aegis.compliance`` is not importable, so Phase 4
+    keeps working without Phase 8 installed.
+    """
+    try:
+        from aegis.compliance.ftc import FTCRuleEngine
+
+        _engine = FTCRuleEngine()
+    except Exception:  # Phase 8 not installed → gate is a no-op
+        _engine = None
+
+    def _gate(alert: Alert) -> GateOutcome:
+        if alert.verdict != VERDICT_ENTER or _engine is None:
+            return GateOutcome(passed=True)
+        _violations, risk = _engine.assess(alert.title, alert.summary_text)
+        if risk >= threshold:
+            return GateOutcome(passed=False, reason=EXEC_RISK_COMPLIANCE_FTC)
+        return GateOutcome(passed=True)
+
+    return _gate
+
+
 def tenant_blocklist_gate(blocklist: frozenset[str]) -> RiskGate:
     """Factory: returns a gate that blocks any alert from a tenant in `blocklist`."""
 
@@ -144,14 +175,21 @@ class GateChain:
 
 
 def default_chain() -> GateChain:
-    """Default gate chain used in production."""
-    return GateChain([margin_floor_gate, loss_probability_gate, confidence_gate])
+    """Default gate chain used in production.
+
+    The compliance (FTC) gate runs first so a deceptive-advertising ENTER is
+    blocked before the quant gates even look at it.
+    """
+    return GateChain(
+        [compliance_ftc_gate(), margin_floor_gate, loss_probability_gate, confidence_gate]
+    )
 
 
 __all__: Final = [
     "GateChain",
     "GateOutcome",
     "RiskGate",
+    "compliance_ftc_gate",
     "confidence_gate",
     "default_chain",
     "loss_probability_gate",

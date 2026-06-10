@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=./_schema.json
+name: hacker-news
+version: 1
+match:
+  source: hacker-news
+delay_ms: 300
+jitter_ms: 100
+rate_per_min: 120
+retries: 3
+profile: minimal
+honor_robots: true
+use_flaresolverr: false
+rotate_every: 30
+notes: Algolia API — fast, no auth.

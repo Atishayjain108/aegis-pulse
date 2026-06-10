@@ -43,6 +43,10 @@ class GeoOpportunity(BaseModel, frozen=True):
     gross_margin_pct: Decimal         # gross_margin / destination_price_usd × 100
 
     demand_intensity: float = Field(ge=0.0, le=1.0)
+    # Provenance (HALLU-3): "db" = real Phase 1 signal velocity, "synthetic" =
+    # market-size proxy used when no signals DB is available. Stops a synthetic
+    # estimate from looking identical to a real-demand score.
+    demand_source: str = "synthetic"
     market_size_score: float = Field(ge=0.0, le=1.0)
     opportunity_score: float          # composite rank value
 

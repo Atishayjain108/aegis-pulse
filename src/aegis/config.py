@@ -69,7 +69,7 @@ class _MinIOSettings(BaseSettings):
         frozen=True,
     )
 
-    endpoint: str = Field(default="localhost:9000")
+    endpoint: str = Field(default="localhost:9002")
     access_key: SecretStr = Field(default=SecretStr("aegis-dev-key"))
     secret_key: SecretStr = Field(default=SecretStr("aegis-dev-secret-please-change"))
     secure: bool = Field(default=False)
@@ -133,6 +133,12 @@ class _ScrapeSettings(BaseSettings):
     swarm_max_concurrent: int = Field(default=5, description="ConcurrencyGovernor global semaphore")
     swarm_flaresolverr_max_concurrent: int = Field(default=2)
     swarm_jitter_max_ms: int = Field(default=500)
+    swarm_adaptive_budget: bool = Field(
+        default=True,
+        description="ADP-4: allocate per-adapter scrape budget via UCB1 bandit "
+        "(productive adapters get more, quiet ones stay alive at min_limit). "
+        "Set False for a uniform per-adapter limit.",
+    )
     swarm_enabled_tiers: list[str] = Field(
         default=["T1_intent", "T2_commerce", "T3_search"],
     )
@@ -220,6 +226,19 @@ class Settings(BaseSettings):
     # Runtime context
     # ------------------------------------------------------------------
     env: Environment = Field(default="dev")
+
+    @field_validator("env", mode="before")
+    @classmethod
+    def _normalise_env(cls, v: object) -> object:
+        _aliases = {
+            "development": "dev",
+            "production": "prod",
+            "testing": "test",
+        }
+        if isinstance(v, str):
+            return _aliases.get(v.lower(), v.lower())
+        return v
+
     service_name: str = Field(default="aegis-pulse")
     service_version: str = Field(default="0.3.0")
     instance_id: str = Field(
@@ -242,7 +261,7 @@ class Settings(BaseSettings):
     # Postgres
     # ------------------------------------------------------------------
     pg_dsn: SecretStr = Field(
-        default=SecretStr("postgresql://aegis_app:aegis_app@localhost:5432/aegis"),
+        default=SecretStr("postgresql://aegis_app:aegis_app_dev_pw@localhost:5433/aegis"),
         description="Application DSN. Overridden via AEGIS_PG_DSN.",
     )
     pg_pool_min_size: int = Field(default=DB_POOL_MIN_SIZE, ge=0, le=128)
@@ -254,7 +273,7 @@ class Settings(BaseSettings):
     # Redis
     # ------------------------------------------------------------------
     redis_url: SecretStr = Field(
-        default=SecretStr("redis://localhost:6379/0"),
+        default=SecretStr("redis://localhost:6380/0"),
     )
     redis_namespace: str = Field(default="aegis")
 

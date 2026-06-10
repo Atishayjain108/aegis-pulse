@@ -2,7 +2,7 @@
 
 ## Overview
 
-AEGIS Pulse is an autonomous market arbitrage intelligence engine. It scrapes signals from 35+ platforms, stores them in TimescaleDB, runs a 10-node LangGraph multi-agent pipeline to score and prioritise arbitrage opportunities, executes capital-efficient plans through a three-tier approval workflow, persists everything in a Bronze/Silver/Gold data lake, and observes itself via a full OTel + Prometheus + Loki stack with automated disaster recovery.
+AEGIS Pulse is an autonomous market arbitrage intelligence engine. It scrapes signals from 35+ platforms, stores them in TimescaleDB, runs a 10-node LangGraph multi-agent pipeline to score and prioritise arbitrage opportunities, executes capital-efficient plans through a three-tier approval workflow, persists everything in a Bronze/Silver/Gold data lake, continuously self-improves via weekly model retraining + RL-based online learning + KS-distance drift detection, and observes itself via a full OTel + Prometheus + Loki stack with automated disaster recovery.
 
 ---
 
@@ -76,6 +76,16 @@ AEGIS Pulse is an autonomous market arbitrage intelligence engine. It scrapes si
                 EMS/postal shipping matrix       OFAC/FATF sanctions
                 RegionalDemandAnalyzer           FTC rule engine (30+ patterns)
                 /geo/* REST API                  /compliance/* REST API
+                        │
+                        ▼
+              [Phase 9 — Autonomous Self-Evolution]
+                OutcomeRecorder (every settled trade → ground truth)
+                RetrainingPipeline (weekly Sun 2AM UTC + Optuna TPE HPO)
+                DriftDetector (KS-distance + precision monitoring)
+                OnlinePricingPolicy (4-weight REINFORCE; daily updates)
+                Champion promotion gate (+2% AUC; auto-rollback on drift)
+                /evolve/* REST API
+                        │  ◄──── feedback loop back to Phase 3 champion model
                         │
                         ├──────────────────────────────────┐
                         ▼                                  ▼
@@ -327,6 +337,43 @@ ComplianceEngine (parallel asyncio.gather across all checkers)
 **DB migration**: `db/migrations/0009_compliance.sql`  
 **ADR**: `docs/adr/0008-compliance-engine.md`
 
+### Phase 9 — Autonomous Self-Evolution (`src/aegis/evolve/`)
+
+```
+RetrainingPipeline (weekly Sunday 2AM UTC + on-demand)
+   │
+   ├─ outcomes.py     → OutcomeRecorder: record_outcome(), fetch_recent_outcomes()
+   │                    TimescaleDB hypertable `prediction_outcomes` (7-day chunks, RLS)
+   │                    idempotent via ON CONFLICT DO NOTHING on (plan_id, trend_id)
+   │
+   ├─ hpo.py          → optimize_hyperparameters(): Optuna TPE, 30 trials, logistic-regression proxy
+   │                    graceful fallback to get_default_hyperparameters() when optuna absent
+   │                    optuna is optional extra — install with `uv sync --extra evolve`
+   │
+   ├─ retrain.py      → RetrainingPipeline.run_weekly_retrain():
+   │                    fetch ≥ MIN_OUTCOMES_FOR_RETRAIN outcomes → HPO → train candidate
+   │                    champion promotion gate: new AUC must exceed champion by ≥ 2%
+   │                    _upsert_retrain_audit() is best-effort (DEBUG on failure, never raises)
+   │
+   ├─ drift.py        → DriftDetector: KS-distance on feature distributions
+   │                    + precision monitoring against outcome labels
+   │                    auto-rollback trigger when drift_score ≥ AEGIS_EVOLVE_DRIFT_THRESHOLD (0.15)
+   │                    baseline_mean=zeros(20), baseline_std=ones(20) — replace with
+   │                    champion training-time statistics for production use
+   │
+   └─ rl_policy.py    → OnlinePricingPolicy: 4-weight REINFORCE agent
+                        weights ∈ [1e-6, ∞) (non-negative by design; prevents zero-weight collapse)
+                        update_from_outcome() applies daily pricing adjustments
+                        persist() / load() for checkpoint continuity across restarts
+```
+
+**Feedback loop**: `OutcomeRecorder` stores every settled Phase 6 trade; `DriftDetector` compares live prediction features against the champion baseline; `RetrainingPipeline` promotes a new champion to Phase 3 `ModelStore` when AUC improves; `OnlinePricingPolicy` adjusts Phase 6 `PricingStrategy` weights daily from outcome signals.  
+**Settings env prefix**: `AEGIS_EVOLVE_*` — key vars: `AEGIS_EVOLVE_MIN_OUTCOMES_FOR_RETRAIN` (default 100), `AEGIS_EVOLVE_AUC_IMPROVEMENT_THRESHOLD` (default 0.02), `AEGIS_EVOLVE_DRIFT_THRESHOLD` (default 0.15), `AEGIS_EVOLVE_RL_LEARNING_RATE` (default 0.01).  
+**REST API**: `/evolve/health`, `/evolve/status`, `/evolve/retrain`, `/evolve/outcomes`, `/evolve/drift`, `/evolve/policy`, `/evolve/runs`  
+**CLI**: `aegis evolve status|retrain|drift|policy|outcomes|record`  
+**DB migration**: `db/migrations/0011_evolve.sql`  
+**ADR**: `docs/adr/0009-autonomous-evolution.md`
+
 ### Phase 10 — Data Lake & Analytics (`src/aegis/datalake/`)
 
 ```
@@ -532,6 +579,12 @@ aegis.execute  (aegis-phase4 workspace member)
      ├── aegis.compliance  (Phase 8 — src/aegis/compliance/)
      │     └── gate_execution_plan() → integrated into Phase 6 ExecutionEngine
      │
+     ├── aegis.evolve     (Phase 9 — src/aegis/evolve/)
+     │     ├── OutcomeRecorder ← settled trade outcomes from Phase 6 SettlementManager
+     │     ├── DriftDetector   → auto-rollback trigger to Phase 3 ModelStore champion
+     │     ├── RetrainingPipeline → promotes new champion to Phase 3 ModelStore
+     │     └── OnlinePricingPolicy → daily weight updates feed Phase 6 PricingStrategy
+     │
      ▼
 aegis.datalake  (Phase 10 — src/aegis/datalake/)
      │
@@ -559,9 +612,10 @@ aegis.datalake  (Phase 10 — src/aegis/datalake/)
 | Phase 6 (`aegis-phase4/tests/unit/execute/test_capital_*.py`) | 55 | included above |
 | Phase 7 geospatial (`tests/unit/geo/`) | 60+ | included in main suite |
 | Phase 8 compliance (`tests/unit/compliance/`) | 80 | included in main suite |
+| Phase 9 self-evolution (`tests/unit/evolve/`) | 145 | included in main suite |
 | Phase 5 hardening (`aegis-harden/tests/`) | 216+ | ~95% (run separately) |
 | Phase 14 observability (`tests/unit/observability/`) | 42 | included in main suite |
 | Phase 15 DR (`aegis-phase15/tests/`) | 5 files | standalone (not in workspace) |
 | Phase 3 integration (`tests/integration/predict/`) | 4 | end-to-end |
 
-**Verified**: 2026-06-02. Phase 7 Geospatial Intelligence (60+ tests, real WTO/ECB/EMS data) and Phase 8 Regulatory & Compliance Engine (80 tests, 7-dimension risk matrix, 0 ruff violations) shipped. One pre-existing flaky test (`test_doctor_json`) fails in full-suite ordering; passes in isolation — known ordering issue, not a code defect.
+**Verified**: 2026-06-02. Phase 7 Geospatial Intelligence (60+ tests, real WTO/ECB/EMS data), Phase 8 Regulatory & Compliance Engine (80 tests, 7-dimension risk matrix), and Phase 9 Autonomous Self-Evolution (145 tests: outcome recording, weekly retraining + Optuna HPO, KS-distance drift detection, 4-weight REINFORCE online policy) shipped. All three phases at 0 ruff violations. One pre-existing flaky test (`test_doctor_json`) fails in full-suite ordering; passes in isolation — known ordering issue, not a code defect.

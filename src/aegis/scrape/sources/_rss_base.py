@@ -98,15 +98,47 @@ def _entry_to_raw(entry: Any, platform_str: str) -> dict[str, Any]:
     }
 
 
+# ADP-3 — conditional-GET cache. Per-feed ETag / Last-Modified validators so we
+# send ``If-None-Match`` / ``If-Modified-Since`` on every poll and skip parsing a
+# feed that has not changed (HTTP 304). feedparser does the conditional request
+# natively when handed ``etag=`` / ``modified=`` and exposes ``.status`` + the
+# fresh validators on the response. Single-event-loop access → a plain dict is safe.
+_FEED_VALIDATORS: dict[str, tuple[str | None, Any]] = {}
+
+
+def clear_feed_cache() -> None:
+    """Reset the conditional-GET validator cache (test/maintenance hook)."""
+    _FEED_VALIDATORS.clear()
+
+
 async def fetch_feed_entries(url: str, platform_str: str) -> list[dict[str, Any]]:
-    """Fetch and parse one RSS feed URL; return list of raw dicts (never raises)."""
+    """Fetch and parse one RSS feed URL; return list of raw dicts (never raises).
+
+    Uses ETag / Last-Modified conditional GET (ADP-3): when the server replies
+    ``304 Not Modified`` the feed is unchanged since the previous poll, so we
+    return ``[]`` (its signals are already persisted) instead of re-downloading
+    and re-parsing the whole body.
+    """
     _log = structlog.get_logger("aegis.scrape._rss_base")
+    etag, modified = _FEED_VALIDATORS.get(url, (None, None))
     try:
-        feed = await asyncio.to_thread(feedparser.parse, url)
-        return [_entry_to_raw(e, platform_str) for e in (feed.entries or [])]
+        feed = await asyncio.to_thread(feedparser.parse, url, etag=etag, modified=modified)
     except Exception as e:
         _log.warning("rss_fetch.failed", url=url, error=str(e))
         return []
+
+    status = getattr(feed, "status", None)
+    if status == 304:
+        _log.debug("rss_fetch.not_modified", url=url)
+        return []
+
+    # Persist fresh validators for the next poll (only when present).
+    new_etag = getattr(feed, "etag", None)
+    new_modified = getattr(feed, "modified", None) or getattr(feed, "updated", None)
+    if new_etag is not None or new_modified is not None:
+        _FEED_VALIDATORS[url] = (new_etag, new_modified)
+
+    return [_entry_to_raw(e, platform_str) for e in (feed.entries or [])]
 
 
 @dataclass(frozen=True, slots=True)

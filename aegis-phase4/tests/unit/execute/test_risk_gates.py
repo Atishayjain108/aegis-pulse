@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from aegis.execute.risk.gates import (
     GateChain,
+    compliance_ftc_gate,
     confidence_gate,
     default_chain,
     loss_probability_gate,
@@ -95,3 +96,23 @@ def test_default_chain_passes_clean_alert():
     out = chain.run(a)
     assert out.verdict == "ENTER"
     assert out.alert_id == a.alert_id
+
+
+def test_compliance_ftc_gate_blocks_deceptive_enter():
+    # CONN-2: a deceptive-advertising ENTER must be downgraded to BLOCK.
+    gate = compliance_ftc_gate()
+    a = _alert(
+        title="Miracle cure — guaranteed to cure cancer, FDA approved!",
+        summary_text="Lose 30 pounds in 3 days, 100% guaranteed weight loss!",
+    )
+    out = gate(a)
+    # aegis.compliance ships in this repo, so the deceptive text trips the FTC rules.
+    assert out.passed is False
+    assert out.reason is not None
+    assert out.reason.code == "AEGIS-EXEC-0014"
+
+
+def test_compliance_ftc_gate_ignores_non_enter():
+    gate = compliance_ftc_gate()
+    a = _alert(verdict="HOLD", title="guaranteed to cure cancer")
+    assert gate(a).passed is True

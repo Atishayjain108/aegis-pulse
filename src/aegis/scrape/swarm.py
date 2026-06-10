@@ -429,6 +429,14 @@ class SwarmOrchestrator:
             )
         self._persistence = _SwarmPersistence(pg_pool, redis, settings)
         self._synthesizer = _SwarmSynthesizer()
+        # ADP-4 / BRAIN-2: adaptive per-adapter scrape-budget allocator (UCB1).
+        # Enabled by default; set scrape.swarm_adaptive_budget=False to revert to
+        # a uniform per-adapter limit.
+        _scrape = getattr(settings, "scrape", settings)
+        self._adaptive_budget = getattr(_scrape, "swarm_adaptive_budget", True)
+        from aegis.scrape.budget import UCB1Allocator
+
+        self._allocator = UCB1Allocator()
         # Build platform → tier lookup for synthesis
         self._tier_map: dict[str, str] = {
             name.replace("-", "_"): entry[3]
@@ -450,10 +458,24 @@ class SwarmOrchestrator:
         for wave_num, agent_names in enumerate(waves, start=1):
             wave_start = time.monotonic()
             runs: list[AdapterRun] = []
+            # ADP-4: distribute this wave's budget by UCB1 score (productive
+            # adapters get more, quiet ones stay alive at min_limit).
+            wave_limits = (
+                self._allocator.allocate(agent_names, base_limit=limit)
+                if self._adaptive_budget
+                else None
+            )
             try:
-                runs = await self.pool.run_wave(agent_names, self._settings, self.http, limit)
+                runs = await self.pool.run_wave(
+                    agent_names, self._settings, self.http, limit, limits=wave_limits
+                )
             except Exception as exc:
                 _log.error("swarm.wave_error", wave=wave_num, error=str(exc))
+
+            # Feed realised yields back into the bandit for the next run.
+            if self._adaptive_budget:
+                for r in runs:
+                    self._allocator.record(r.agent_name, len(r.signals))
 
             new_signals: list[dict[str, Any]] = []
             failures = sum(1 for r in runs if not r.success)

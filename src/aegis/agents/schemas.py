@@ -274,6 +274,17 @@ class GraphResult(BaseModel):
         "timeout",
     ]
 
+    # Causal explanation layer — populated by aegis.predict.causal.explainer
+    explanation: str = ""
+    counterfactual: str = ""
+    primary_drivers: list[str] = Field(default_factory=list)
+
+    # Provenance (HALLU-1): did real LLM reasoning back this verdict, or did the
+    # pipeline silently degrade to heuristic-only text? Lets the dashboard badge a
+    # result so a confident-looking heuristic fallback is not mistaken for analysis.
+    llm_used: bool = False
+    reasoning_source: Literal["llm", "heuristic", "mixed"] = "heuristic"
+
     @field_validator("started_at", "finished_at")
     @classmethod
     def _utc_only(cls, v: datetime) -> datetime:

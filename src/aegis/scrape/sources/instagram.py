@@ -90,11 +90,10 @@ class InstagramAdapter(SourceAdapter[Any]):
         cfg = self._ig_config
         if not cfg.allow_red_tos:
             raise RuntimeError(
-                "InstagramAdapter is gated behind allow_red_tos=True.\n"
-                "Instagram actively defends against scraping (ToS RED).\n"
-                "If you accept the legal risk, set allow_red_tos=True in\n"
-                "InstagramConfig when constructing the adapter."
+                "InstagramAdapter is gated behind allow_red_tos=True. "
+                "Instagram scraping violates their ToS — only enable with explicit consent."
             )
+        self._tos_blocked = False
 
         try:
             import instaloader  # type: ignore[import-untyped]
@@ -133,6 +132,8 @@ class InstagramAdapter(SourceAdapter[Any]):
         limit: int = 30,
         **_: Any,
     ) -> AsyncIterator[Any]:
+        if getattr(self, "_tos_blocked", False):
+            return
         if self._loader is None:
             raise RuntimeError("InstagramAdapter.setup() must run before fetch_raw()")
 

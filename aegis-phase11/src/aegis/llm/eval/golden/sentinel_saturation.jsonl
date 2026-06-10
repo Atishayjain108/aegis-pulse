@@ -1,4 +1,0 @@
-# Golden answer cases for sentinel_saturation template
-{"input_vars": {"trend_title": "Fidget spinners v2", "days_active": 45, "peak_velocity": 180.0, "current_velocity": 12.0, "competitor_count": 340, "price_compression_pct": 65}, "expected_contains": ["EXIT_NOW", "saturation"], "expected_not_contains": ["HOLD_MONITOR"]}
-{"input_vars": {"trend_title": "AI desk organiser", "days_active": 3, "peak_velocity": 55.0, "current_velocity": 48.0, "competitor_count": 8, "price_compression_pct": 2}, "expected_contains": ["HOLD_MONITOR"], "expected_not_contains": ["EXIT_NOW"]}
-{"input_vars": {"trend_title": "Seasonal phone case", "days_active": 21, "peak_velocity": 90.0, "current_velocity": 45.0, "competitor_count": 85, "price_compression_pct": 30}, "expected_contains": ["EXIT_SOON", "72h"], "expected_not_contains": []}

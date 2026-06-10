@@ -151,6 +151,30 @@ async def complete_for_agent(
     """
     gw = await get_gateway()
     effective_temp = 0.1 if require_structured else temperature
+
+    # Multi-model council: when enabled and structured output is NOT required
+    # (council fuses free-form reasoning), debate across local models and
+    # return the synthesized answer. Falls back to single-model on any error.
+    cfg = getattr(gw, "_settings", None) or getattr(gw, "settings", None)
+    if cfg is not None and getattr(cfg, "council_enabled", False) and not require_structured:
+        try:
+            from aegis.llm.council import council_from_settings
+
+            council = council_from_settings(gw, cfg)
+            if council.n_models >= 2:
+                result = await council.deliberate(messages)
+                if result.final:
+                    _log.info(
+                        "agents_bridge.council",
+                        agent=agent_name,
+                        models=result.participating_models,
+                        rounds=result.rounds_run,
+                        synth=result.synth_model,
+                    )
+                    return result.final
+        except Exception as exc:
+            _log.warning("agents_bridge.council_failed", agent=agent_name, error=str(exc)[:200])
+
     response = await gw.complete(
         messages,
         temperature=effective_temp,

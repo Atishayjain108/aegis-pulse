@@ -228,6 +228,18 @@ class ComplianceEngine:
             duration_ms=round(duration_ms, 1),
         )
 
+        # Provenance (HALLU-2): record which dimensions queried a live external
+        # API vs fell back to an offline rule engine / hardcoded list.
+        data_sources = {
+            "trademark": "live",   # IPRChecker → USPTO PatentsView + EUIPO TMview
+            "patent": "live",      # IPRChecker → USPTO PatentsView
+            "fda": "live",         # FDAChecker → OpenFDA enforcement API
+            "counterfeit": "live" if self._cfg.clip_enabled else "static",
+            "ftc": "static",       # zero-I/O regex rule engine
+            "privacy": "static",   # offline jurisdiction rule engine
+            "aml": "live" if self._cfg.trade_gov_api_key else "static",
+        }
+
         return ComplianceRiskAssessment(
             product_sku=req.product_sku,
             overall_risk_score=overall,
@@ -242,6 +254,7 @@ class ComplianceEngine:
             ftc_violations=list(ftc_violations),
             privacy_risk=privacy_risk_obj,
             duration_ms=round(duration_ms, 1),
+            data_sources=data_sources,
         )
 
     # ------------------------------------------------------------------

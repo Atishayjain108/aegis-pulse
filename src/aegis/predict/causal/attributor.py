@@ -20,6 +20,7 @@ not replace).
 
 from __future__ import annotations
 
+import importlib.util as _importlib_util
 import logging
 import math
 from collections.abc import Sequence
@@ -126,14 +127,13 @@ class DeterministicAttributor:
 # ---------------------------------------------------------------------------
 # Optional DoWhy/EconML attributor
 # ---------------------------------------------------------------------------
+# Probe DoWhy availability without importing it — avoids loading matplotlib,
+# sympy, and sklearn at module import time (~9s cold-start penalty on Python 3.12).
+# The actual `import dowhy` happens inside _dowhy_refine() only when needed.
 try:  # pragma: no cover
-    import dowhy  # noqa: F401
-
-    _HAS_DOWHY = True
-except (ImportError, SyntaxError):  # pragma: no cover
-    # dowhy 0.12 has invalid escape sequences (\s) in graph.py that are
-    # SyntaxError in Python 3.12, not ImportError.
-    _HAS_DOWHY = False
+    _HAS_DOWHY: bool = _importlib_util.find_spec("dowhy") is not None
+except (ValueError, ModuleNotFoundError):  # pragma: no cover
+    _HAS_DOWHY: bool = False  # type: ignore[no-redef]
 
 
 @dataclass

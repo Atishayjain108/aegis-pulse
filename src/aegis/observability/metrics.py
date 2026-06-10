@@ -84,7 +84,7 @@ def _lookup_existing(name: str) -> Any:
     if not _PROMETHEUS_AVAILABLE:
         return None
     try:
-        from prometheus_client import REGISTRY  # noqa: PLC0415
+        from prometheus_client import REGISTRY
 
         collectors = REGISTRY._names_to_collectors  # type: ignore[attr-defined]
         # Counter appends _total; check both the bare name and _total-suffixed form.

@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=./_schema.json
+name: github-trending
+version: 1
+match:
+  source: github-trending
+delay_ms: 500
+jitter_ms: 200
+rate_per_min: 60
+retries: 3
+profile: standard
+honor_robots: true
+use_flaresolverr: false
+rotate_every: 20
+notes: GitHub trending HTML page.

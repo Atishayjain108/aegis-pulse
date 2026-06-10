@@ -1,0 +1,29 @@
+# .sops.yaml — AEGIS Pulse SOPS configuration
+#
+# This file controls which encryption keys are used for which files.
+# COMMIT THIS FILE to git — it only contains the public key.
+#
+# Setup:
+#   1. Generate age key: age-keygen -o ~/.config/sops/age/keys.txt
+#   2. Copy the "Public key:" line from the output
+#   3. Replace the placeholder below with your actual public key
+#
+# Encrypt:  sops --encrypt --input-type dotenv --output-type yaml .env > .env.sops.yaml
+# Decrypt:  sops --decrypt .env.sops.yaml
+# Edit:     sops .env.sops.yaml
+
+creation_rules:
+  # Encrypted environment variable files
+  - path_regex: \.env\.sops\.yaml$
+    age: >-
+      age1REPLACE_WITH_YOUR_PUBLIC_KEY
+
+  # Encrypted secrets directory
+  - path_regex: secrets/.*\.yaml$
+    age: >-
+      age1REPLACE_WITH_YOUR_PUBLIC_KEY
+
+  # Encrypted key material
+  - path_regex: keys/.*\.yaml$
+    age: >-
+      age1REPLACE_WITH_YOUR_PUBLIC_KEY

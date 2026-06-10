@@ -64,7 +64,8 @@ _NSE_BASE = "https://www.nseindia.com/api"
 _NSE_ENDPOINTS: tuple[tuple[str, str], ...] = (
     (f"{_NSE_BASE}/live-analysis-variations?index=gainers", "gainers"),
     (f"{_NSE_BASE}/live-analysis-variations?index=losers", "losers"),
-    (f"{_NSE_BASE}/live-analysis-stockswatched", "most_active"),
+    # live-analysis-stockswatched returns 404; pre-open covers all securities
+    (f"{_NSE_BASE}/market-data-pre-open?key=ALL", "pre_open"),
 )
 
 _BSE_URL = "https://api.bseindia.com/BseIndiaAPI/api/getScripHeaderData/w"
@@ -73,14 +74,26 @@ _BSE_URL = "https://api.bseindia.com/BseIndiaAPI/api/getScripHeaderData/w"
 def _extract_stocks(data: Any, category: str, exchange: str) -> list[dict[str, Any]]:
     """Parse raw JSON into normalised signal dicts. Returns [] on any failure."""
     try:
-        # NSE wraps results in ADVANCES_DECLINES; try common key variants
+        # NSE wraps results differently per endpoint:
+        # live-analysis-variations → data["allSec"]["data"] (20 stocks per section)
+        # market-data-pre-open    → data["data"] (list of {metadata: {...}})
+        # Legacy ADVANCES_DECLINES format also supported.
         if isinstance(data, dict):
-            stocks = (
-                data.get("ADVANCES_DECLINES")
-                or data.get("data")
-                or data.get("Table")
-                or []
-            )
+            all_sec = data.get("allSec")
+            if isinstance(all_sec, dict):
+                stocks = all_sec.get("data") or []
+            else:
+                pre_open_items = data.get("data")
+                if isinstance(pre_open_items, list) and pre_open_items and isinstance(pre_open_items[0], dict) and "metadata" in pre_open_items[0]:
+                    # market-data-pre-open: unwrap the metadata layer
+                    stocks = [item["metadata"] for item in pre_open_items if "metadata" in item]
+                else:
+                    stocks = (
+                        data.get("ADVANCES_DECLINES")
+                        or pre_open_items
+                        or data.get("Table")
+                        or []
+                    )
         elif isinstance(data, list):
             stocks = data
         else:
@@ -105,14 +118,21 @@ def _extract_stocks(data: Any, category: str, exchange: str) -> list[dict[str, A
 
             try:
                 pct_change = float(
-                    stock.get("change") or stock.get("pChange") or stock.get("CHANGE") or 0.0
+                    stock.get("net_price")        # live-analysis-variations
+                    or stock.get("pChange")        # pre-open metadata
+                    or stock.get("change")
+                    or stock.get("CHANGE")
+                    or 0.0
                 )
             except (TypeError, ValueError):
                 pct_change = 0.0
 
             try:
                 volume = int(
-                    stock.get("totalTradedVolume") or stock.get("VOLUME") or 0
+                    stock.get("trade_quantity")    # live-analysis-variations
+                    or stock.get("totalTradedVolume")
+                    or stock.get("VOLUME")
+                    or 0
                 )
             except (TypeError, ValueError):
                 volume = 0

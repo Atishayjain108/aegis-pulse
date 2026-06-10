@@ -96,7 +96,15 @@ async def assess_product(req: AssessRequest) -> dict[str, Any]:
         _log.error("compliance.api_assess_failed", error=str(exc))
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-    return result.model_dump(mode="json")
+    payload = result.model_dump(mode="json")
+    # CONN-1: publish the assessment onto the unified event bus (best-effort).
+    try:
+        from aegis.core.event_bus import STREAM_COMPLIANCE, publish_event
+
+        await publish_event(STREAM_COMPLIANCE, payload)
+    except Exception:  # pragma: no cover - defensive
+        pass
+    return payload
 
 
 @router.post("/assess/batch", response_model=list[dict[str, Any]])

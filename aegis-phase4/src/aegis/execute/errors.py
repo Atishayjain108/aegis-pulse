@@ -80,6 +80,12 @@ EXEC_RISK_TENANT_BLOCKED: Final = ErrorSpec(
     retryable=False,
     docs_path="docs/errors/AEGIS-EXEC-0013.md",
 )
+EXEC_RISK_COMPLIANCE_FTC: Final = ErrorSpec(
+    code="AEGIS-EXEC-0014",
+    message="FTC advertising-rule violation in alert text; ENTER blocked.",
+    retryable=False,
+    docs_path="docs/errors/AEGIS-EXEC-0014.md",
+)
 
 # ---------------------------------------------------------------------------
 # Kill-switch (0020..0024)
@@ -177,6 +183,7 @@ __all__ = [
     "EXEC_NOTIFIER_TIMEOUT",
     "EXEC_OUTBOX_INSERT_FAILED",
     "EXEC_OUTBOX_NO_POOL",
+    "EXEC_RISK_COMPLIANCE_FTC",
     "EXEC_RISK_CONFIDENCE_TOO_LOW",
     "EXEC_RISK_LOSS_PROB_TOO_HIGH",
     "EXEC_RISK_MARGIN_BELOW_FLOOR",

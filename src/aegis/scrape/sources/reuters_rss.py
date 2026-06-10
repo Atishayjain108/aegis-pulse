@@ -1,28 +1,27 @@
-"""Reuters RSS adapter — business, technology, and wealth feeds.
+"""Reuters RSS adapter — business, technology, and markets feeds.
 
-Feeds (three concurrent):
-  https://feeds.reuters.com/reuters/businessNews
-  https://feeds.reuters.com/reuters/technologyNews
-  https://feeds.reuters.com/reuters/wealth
+Reuters shut down their direct RSS feeds (feeds.reuters.com now returns 401/404).
+Replaced with Google News RSS search filtered to Reuters articles, which returns
+the same content via a publicly documented feed URL.
 
 PLATFORM: reuters | TIER: T3_search
-ToS Risk: AMBER — publicly listed Reuters RSS feeds.
+ToS Risk: AMBER — Google News RSS search (publicly documented).
 """
 from __future__ import annotations
 
 from aegis.schemas.enums import Platform, SourceTier, ToSRisk
 from aegis.scrape.sources._rss_base import RSSAdapter, RSSAdapterConfig
 
-SCRAPER_VERSION = "reuters-rss-0.1.0"
+SCRAPER_VERSION = "reuters-rss-0.2.0"
 
 
 class ReutersRSSAdapter(RSSAdapter):
-    """Reuters RSS adapter — three feeds merged and deduplicated by URL."""
+    """Reuters via Google News RSS — feeds.reuters.com is dead as of 2026."""
 
     _FEEDS = (
-        "https://feeds.reuters.com/reuters/businessNews",
-        "https://feeds.reuters.com/reuters/technologyNews",
-        "https://feeds.reuters.com/reuters/wealth",
+        "https://news.google.com/rss/search?q=reuters+business&hl=en-US&gl=US&ceid=US:en",
+        "https://news.google.com/rss/search?q=reuters+technology&hl=en-US&gl=US&ceid=US:en",
+        "https://news.google.com/rss/search?q=reuters+markets&hl=en-US&gl=US&ceid=US:en",
     )
     _PLATFORM = Platform.REUTERS
     _TIER = SourceTier.TIER_3_SEARCH

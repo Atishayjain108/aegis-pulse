@@ -168,4 +168,9 @@ class ComplianceRiskAssessment(BaseModel, frozen=True):
     duration_ms: float = 0.0
     cached: bool = False
 
+    # Provenance (HALLU-2): per-dimension data source — "live" (a real external
+    # API was queried) vs "static" (offline rule engine / hardcoded list). Lets a
+    # caller tell "checked and clear" apart from "not actually checked".
+    data_sources: dict[str, str] = Field(default_factory=dict)
+
     error_code: str | None = None

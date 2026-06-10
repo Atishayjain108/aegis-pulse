@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import os
 import sys
 from typing import Annotated, Any
 from uuid import UUID, uuid4
@@ -213,7 +214,7 @@ app.add_typer(killswitch_app, name="killswitch")
 
 @killswitch_app.command("state")
 def ks_state(
-    redis_url: Annotated[str, typer.Option("--redis-url")] = "redis://127.0.0.1:6379/0",
+    redis_url: Annotated[str, typer.Option("--redis-url")] = os.environ.get("AEGIS_REDIS_URL", "redis://127.0.0.1:6379/0"),
 ) -> None:
     """Print the current kill-switch state."""
     from aegis.execute.killswitch.switch import KillSwitch
@@ -232,7 +233,7 @@ def ks_state(
 @killswitch_app.command("trip")
 def ks_trip(
     reason: Annotated[str, typer.Option("--reason")] = "manual",
-    redis_url: Annotated[str, typer.Option("--redis-url")] = "redis://127.0.0.1:6379/0",
+    redis_url: Annotated[str, typer.Option("--redis-url")] = os.environ.get("AEGIS_REDIS_URL", "redis://127.0.0.1:6379/0"),
 ) -> None:
     """Trip the kill switch (halt dispatch)."""
     from aegis.execute.killswitch.switch import KillSwitch
@@ -259,7 +260,7 @@ def ks_trip(
 @killswitch_app.command("arm")
 def ks_arm(
     reason: Annotated[str, typer.Option("--reason")] = "manual",
-    redis_url: Annotated[str, typer.Option("--redis-url")] = "redis://127.0.0.1:6379/0",
+    redis_url: Annotated[str, typer.Option("--redis-url")] = os.environ.get("AEGIS_REDIS_URL", "redis://127.0.0.1:6379/0"),
 ) -> None:
     """Arm the kill switch (resume dispatch)."""
     from aegis.execute.killswitch.switch import KillSwitch

@@ -87,17 +87,17 @@ def init_tracing(service_name: str = "aegis") -> Any:
         return _tracer
 
     try:
-        from opentelemetry import trace  # noqa: PLC0415
-        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (  # noqa: PLC0415
+        from opentelemetry import trace
+        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
             OTLPSpanExporter,
         )
-        from opentelemetry.sdk.resources import (  # noqa: PLC0415
+        from opentelemetry.sdk.resources import (
             DEPLOYMENT_ENVIRONMENT,
             SERVICE_NAME,
             Resource,
         )
-        from opentelemetry.sdk.trace import TracerProvider  # noqa: PLC0415
-        from opentelemetry.sdk.trace.export import BatchSpanProcessor  # noqa: PLC0415
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
         resource = Resource.create(
             {
@@ -136,7 +136,7 @@ def get_tracer() -> Any:
 def instrument_fastapi(app: fastapi.FastAPI) -> None:  # type: ignore[name-defined]
     """Auto-instrument a FastAPI application with OTel request tracing."""
     try:
-        from opentelemetry.instrumentation.fastapi import (  # noqa: PLC0415
+        from opentelemetry.instrumentation.fastapi import (
             FastAPIInstrumentor,  # type: ignore[import-not-found]
         )
 
@@ -149,7 +149,7 @@ def instrument_fastapi(app: fastapi.FastAPI) -> None:  # type: ignore[name-defin
 def instrument_asyncpg() -> None:
     """Auto-instrument asyncpg with OTel query tracing."""
     try:
-        from opentelemetry.instrumentation.asyncpg import (  # noqa: PLC0415
+        from opentelemetry.instrumentation.asyncpg import (
             AsyncPGInstrumentor,  # type: ignore[import-not-found]
         )
 
@@ -162,7 +162,7 @@ def instrument_asyncpg() -> None:
 def instrument_redis() -> None:
     """Auto-instrument Redis with OTel command tracing."""
     try:
-        from opentelemetry.instrumentation.redis import (  # noqa: PLC0415
+        from opentelemetry.instrumentation.redis import (
             RedisInstrumentor,  # type: ignore[import-not-found]
         )
 
@@ -175,7 +175,7 @@ def instrument_redis() -> None:
 def instrument_httpx() -> None:
     """Auto-instrument httpx with OTel HTTP client tracing."""
     try:
-        from opentelemetry.instrumentation.httpx import (  # noqa: PLC0415
+        from opentelemetry.instrumentation.httpx import (
             HTTPXClientInstrumentor,  # type: ignore[import-not-found]
         )
 

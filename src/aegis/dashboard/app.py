@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import os
 import sys
 import uuid as _uuid_mod
 from collections.abc import AsyncIterator
@@ -27,6 +28,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from redis.exceptions import TimeoutError as _RedisTimeoutError
 
 from aegis.config import settings
 
@@ -59,8 +61,14 @@ _redis_pool: aioredis.Redis | None = None  # type: ignore[type-arg]
 _pg_pool: asyncpg.Pool | None = None  # type: ignore[type-arg]
 
 # Research job store: job_id → {status, events, _started_dt, result?}
-# Capped at ~20 entries; completed entries evicted by _cleanup_research_jobs().
+# Capped at MAX_RESEARCH_JOBS entries; evicted oldest-first by _cleanup_research_jobs()
+# regardless of status (so stuck `running` jobs cannot pin the store and leak tasks).
 _research_jobs: dict[str, dict[str, Any]] = {}
+# Hard wall-clock ceiling for a single research job. The agent runner already has its
+# own 120s timeout; this is the outer guard covering scrape + dedup + pipeline so a
+# wedged job is always reaped instead of holding a task + DB/Redis connections forever.
+RESEARCH_JOB_TIMEOUT_S = 300.0
+MAX_RESEARCH_JOBS = 20
 _research_pool: Any = None  # aegis.db.pool.PgPool (different from asyncpg pool)
 
 # Watchlist store: list of {topic, added_at, last_verdict, last_score, last_run_at}
@@ -95,8 +103,11 @@ def _get_redis() -> aioredis.Redis:  # type: ignore[type-arg]
         _redis_pool = aioredis.from_url(
             cfg.redis_url_str,
             decode_responses=True,
-            socket_timeout=3.0,
-            max_connections=10,
+            # socket_timeout must exceed the SSE XREAD block window (1500 ms)
+            # with headroom, or the blocking read races the socket deadline
+            # and surfaces a spurious "Timeout reading from ..." every tick.
+            socket_timeout=5.0,
+            max_connections=20,
         )
     return _redis_pool
 
@@ -110,13 +121,33 @@ async def _acquire_pg(dsn: str, timeout: float = 3.0) -> AsyncIterator[Any]:
     """
     if _pg_pool is not None:
         async with _pg_pool.acquire(timeout=timeout) as conn:
+            await _set_tenant(conn)
             yield conn
     else:
         conn = await asyncpg.connect(dsn, timeout=timeout)
         try:
+            await _set_tenant(conn)
             yield conn
         finally:
             await conn.close()
+
+
+async def _set_tenant(conn: Any) -> None:
+    """Always set the RLS tenant on a freshly-acquired connection.
+
+    Every tenant-scoped table uses Row-Level Security; without
+    ``SET app.current_tenant`` a query silently returns 0 rows, which the
+    dashboard renders as "empty" rather than an error. Setting it on every
+    acquire (pooled connections are reused, so the GUC can be stale) closes
+    that trap. ``set_config(..., true)`` scopes it to the transaction/session.
+    """
+    try:
+        await conn.execute(
+            "SELECT set_config('app.current_tenant', $1, false)",
+            _cfg.default_tenant_id,
+        )
+    except Exception as exc:  # never let tenant-set failure break a read path
+        _app_log.debug("dashboard.set_tenant_failed", error=str(exc)[:200])
 
 
 async def _docker_ps() -> list[dict[str, Any]]:
@@ -157,7 +188,15 @@ async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """Create shared connection pools on startup; close them on shutdown."""
     global _pg_pool, _redis_pool, _research_pool  # noqa: PLW0603
     try:
-        _pg_pool = await asyncpg.create_pool(_cfg.pg_dsn_str, min_size=2, max_size=10)
+        # DASH-4: a bigger default ceiling (concurrent tabs + SSE catch-up +
+        # /api/stats aggregation + research all share this pool) and a server-side
+        # command_timeout so a slow query can't pin a connection forever. Both are
+        # env-overridable. The acquire-side timeout lives in _acquire_pg (3s).
+        _max = int(os.getenv("AEGIS_DASHBOARD_PG_POOL_MAX", "20"))
+        _cmd_to = float(os.getenv("AEGIS_DASHBOARD_PG_COMMAND_TIMEOUT", "10"))
+        _pg_pool = await asyncpg.create_pool(
+            _cfg.pg_dsn_str, min_size=2, max_size=_max, command_timeout=_cmd_to
+        )
     except Exception as exc:
         _app_log.warning("dashboard.pg_pool_unavailable", error=str(exc))
     try:
@@ -222,7 +261,16 @@ async def index() -> HTMLResponse:
     p = _STATIC / "index.html"
     if not p.exists():
         return HTMLResponse("<h1>Static files missing — run build first.</h1>", status_code=500)
-    return HTMLResponse(p.read_text())
+    html = p.read_text()
+    # Inject the ops token into the same-origin SPA so the operations console
+    # can authenticate against POST /api/ops/run (which requires X-Ops-Token
+    # when AEGIS_DASHBOARD_OPS_TOKEN is set). The token never leaves this
+    # localhost origin; CORS is already locked to localhost.
+    tok = settings().dashboard_ops_token
+    tok_val = tok.get_secret_value() if tok is not None else ""
+    inject = f'<script>window.AEGIS_OPS_TOKEN={json.dumps(tok_val)};</script>'
+    html = html.replace("</head>", f"{inject}</head>", 1) if "</head>" in html else inject + html
+    return HTMLResponse(html)
 
 
 @app.get("/healthz")
@@ -469,11 +517,53 @@ async def agents_recent(limit: int = 15) -> list[dict[str, Any]]:
                     "finished_at": payload.get("finished_at", ""),
                     "blocked_by": payload.get("blocked_by", []),
                     "decisions": dec_summary,
+                    # Provenance (HALLU-1): heuristic-only vs real LLM reasoning.
+                    "llm_used": bool(payload.get("llm_used", False)),
+                    "reasoning_source": payload.get("reasoning_source", "heuristic"),
                 }
             )
         except Exception as _parse_exc:
             _sse_log.warning("intelligence.parse_error", entry_id=_entry_id, exc=str(_parse_exc))
     return results
+
+
+# ---------------------------------------------------------------------------
+# CONN-1 / DASH-2 — phase 7/8/9 event-bus consumers (geo / compliance / evolve)
+# ---------------------------------------------------------------------------
+async def _read_phase_stream(stream: str, limit: int) -> list[dict[str, Any]]:
+    """Read recent ``{"body": json}`` entries from a phase event-bus stream."""
+    try:
+        entries = await _get_redis().xrevrange(stream, count=min(limit, 100))
+    except Exception:
+        return []
+    out: list[dict[str, Any]] = []
+    for entry_id, entry_data in entries:
+        try:
+            raw = entry_data.get("body") or "{}"
+            payload = json.loads(raw)
+            payload["stream_id"] = entry_id
+            out.append(payload)
+        except Exception as exc:
+            _sse_log.warning("phase_stream.parse_error", stream=stream, entry_id=entry_id, exc=str(exc))
+    return out
+
+
+@app.get("/api/geo/recent")
+async def geo_recent(limit: int = 15) -> list[dict[str, Any]]:
+    """Recent cross-market arbitrage reports (Phase 7)."""
+    return await _read_phase_stream("aegis:phase7:geo_opportunities", limit)
+
+
+@app.get("/api/compliance/recent")
+async def compliance_recent(limit: int = 15) -> list[dict[str, Any]]:
+    """Recent compliance risk assessments (Phase 8)."""
+    return await _read_phase_stream("aegis:phase8:compliance_assessments", limit)
+
+
+@app.get("/api/evolve/recent")
+async def evolve_recent(limit: int = 15) -> list[dict[str, Any]]:
+    """Recent self-evolution events — retrains, drift, promotions (Phase 9)."""
+    return await _read_phase_stream("aegis:phase9:evolve_events", limit)
 
 
 # ---------------------------------------------------------------------------
@@ -848,8 +938,13 @@ async def sse_events(request: Request) -> StreamingResponse:
                                         yield f"data: {evt}\n\n".encode()
                                     except (json.JSONDecodeError, KeyError, TypeError) as exc:
                                         _sse_log.warning("sse.swarm_decode_failed", entry_id=mid, error=str(exc))
+                except (TimeoutError, _RedisTimeoutError) as exc:
+                    # No new stream entries within the block window — expected
+                    # when the system is idle. Not an error; keep streaming.
+                    _sse_log.debug("sse.xread_idle", error=str(exc))
                 except Exception as exc:
                     _sse_log.warning("sse.xread_failed", error=str(exc))
+                    await asyncio.sleep(1.0)  # back off on real errors
         finally:
             pass  # _r is the shared pool — must not close it here
 
@@ -1021,7 +1116,7 @@ async def execute_alerts_list(limit: int = 30) -> list[dict[str, Any]]:
                 SELECT alert_id, trend_id, verdict, priority, score, confidence,
                        source, title, halt_reason, blocked_by, created_at,
                        p_breakout_24h, p_decline_6h, expected_margin_usd,
-                       advised_capital_usd
+                       advised_capital_usd, summary_text
                 FROM alerts
                 ORDER BY created_at DESC
                 LIMIT $1
@@ -1042,6 +1137,7 @@ async def execute_alerts_list(limit: int = 30) -> list[dict[str, Any]]:
                 "p_breakout_24h": round(float(r["p_breakout_24h"]), 3) if r["p_breakout_24h"] is not None else None,
                 "p_decline_6h": round(float(r["p_decline_6h"]), 3) if r["p_decline_6h"] is not None else None,
                 "expected_margin_usd": round(float(r["expected_margin_usd"]), 2) if r["expected_margin_usd"] is not None else None,
+                "explanation": (r["summary_text"] or "")[:500],
             }
             for r in rows
         ]
@@ -1056,7 +1152,7 @@ async def execute_alerts_list(limit: int = 30) -> list[dict[str, Any]]:
 async def llm_health_check() -> dict[str, Any]:
     try:
         from aegis.llm.bridge.agents_bridge import get_gateway  # type: ignore[import]
-        gw = get_gateway()
+        gw = await get_gateway()
         if gw is None:
             return {"status": "unavailable", "providers": []}
         health = await gw.health()
@@ -1092,6 +1188,9 @@ async def agents_trend_history(limit: int = 50) -> list[dict[str, Any]]:
                 "finished_at": p.get("finished_at", ""),
                 "agent_count": len(p.get("decisions", [])),
                 "data_confidence": round(float(p.get("data_confidence", 1.0)), 3),
+                "explanation": p.get("explanation", ""),
+                "counterfactual": p.get("counterfactual", ""),
+                "primary_drivers": p.get("primary_drivers", []),
             })
         except Exception:
             pass
@@ -1112,27 +1211,33 @@ async def predictions_stats() -> dict[str, Any]:
                 "SELECT COUNT(*) FROM predictions WHERE finished_at >= $1",
                 now - timedelta(hours=24),
             )
-            avg_conf = await conn.fetchval(
-                "SELECT AVG(confidence) FROM predictions WHERE finished_at >= $1",
-                now - timedelta(hours=24),
-            )
-            by_horizon = await conn.fetch("""
-                SELECT horizon_h,
-                       COUNT(*) AS n,
-                       AVG(p_breakout)      AS avg_breakout,
-                       AVG(p_decline)       AS avg_decline,
-                       AVG(p_hold)          AS avg_hold,
-                       AVG(kelly_fraction)  AS avg_kelly
-                FROM predictions
+            avg_conf = await conn.fetchval("""
+                SELECT AVG((p->>'confidence')::float)
+                FROM predictions, jsonb_array_elements(bundle_json->'predictions') AS p
                 WHERE finished_at >= $1
-                GROUP BY horizon_h ORDER BY horizon_h
+            """, now - timedelta(hours=24))
+            by_horizon = await conn.fetch("""
+                SELECT
+                  (p->>'horizon_hours')::int     AS horizon_h,
+                  COUNT(*)                        AS n,
+                  AVG((p->>'p_breakout')::float)  AS avg_breakout,
+                  AVG((p->>'p_decline')::float)   AS avg_decline,
+                  AVG((p->>'p_peak')::float)      AS avg_hold,
+                  AVG((p->>'confidence')::float)  AS avg_kelly
+                FROM predictions, jsonb_array_elements(bundle_json->'predictions') AS p
+                WHERE finished_at >= $1
+                GROUP BY 1 ORDER BY 1
             """, now - timedelta(hours=24))
             dist = await conn.fetchrow("""
                 SELECT
-                  COUNT(*) FILTER (WHERE p_breakout > p_decline AND p_breakout > p_hold) AS bullish,
-                  COUNT(*) FILTER (WHERE p_decline > p_breakout AND p_decline > p_hold)  AS bearish,
-                  COUNT(*) FILTER (WHERE p_hold >= GREATEST(p_breakout, p_decline))      AS neutral
-                FROM predictions WHERE finished_at >= $1
+                  COUNT(*) FILTER (WHERE (p->>'p_breakout')::float > (p->>'p_decline')::float
+                    AND (p->>'p_breakout')::float > (p->>'p_peak')::float)    AS bullish,
+                  COUNT(*) FILTER (WHERE (p->>'p_decline')::float > (p->>'p_breakout')::float
+                    AND (p->>'p_decline')::float > (p->>'p_peak')::float)     AS bearish,
+                  COUNT(*) FILTER (WHERE (p->>'p_peak')::float >= GREATEST(
+                    (p->>'p_breakout')::float, (p->>'p_decline')::float))     AS neutral
+                FROM predictions, jsonb_array_elements(bundle_json->'predictions') AS p
+                WHERE finished_at >= $1
             """, now - timedelta(hours=24))
         return {
             "total": total,
@@ -1217,11 +1322,19 @@ async def datalake_status() -> dict[str, Any]:
             return {"status": "unavailable", "message": "DataLake class not exported"}
         settings_mod = importlib.import_module("aegis.datalake.settings")
         DataLakeSettings = settings_mod.DataLakeSettings
-        dl_cfg = DataLakeSettings()
-        dl = DataLake(dl_cfg)
+        from pathlib import Path as _Path
+        _dl_base = _Path("/tmp/aegis-datalake")  # noqa: S108
+        dl_cfg = DataLakeSettings(
+            use_local_filesystem=True,
+            local_root=_dl_base / "local",
+            catalog_db_path=_dl_base / "catalog.sqlite3",
+            duckdb_temp_dir=_dl_base / "duckdb_tmp",
+        )
+        dl = DataLake.open(dl_cfg)
         health = dl.health()
         if asyncio.iscoroutine(health):
             health = await health
+        dl.close()
         return {"status": "ok", "data": health}
     except ImportError:
         return {"status": "not_installed", "message": "aegis.datalake extra not installed"}
@@ -1243,11 +1356,24 @@ class _ResearchRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 def _cleanup_research_jobs() -> None:
-    """Evict old completed jobs when the in-memory store exceeds 20 entries."""
-    if len(_research_jobs) <= 20:
+    """Evict oldest jobs (any status) when the store exceeds ``MAX_RESEARCH_JOBS``.
+
+    Eviction is age-ordered and status-agnostic: a stuck ``running`` job must never
+    be able to pin the store. When an unfinished job is evicted its background task
+    is cancelled so it cannot keep leaking DB/Redis connections.
+    """
+    if len(_research_jobs) <= MAX_RESEARCH_JOBS:
         return
-    done = [k for k, v in _research_jobs.items() if v["status"] in ("done", "error")]
-    for k in done[:10]:
+    # Oldest first by start time; fall back to insertion order.
+    ordered = sorted(
+        _research_jobs.items(),
+        key=lambda kv: kv[1].get("_started_dt") or datetime.min.replace(tzinfo=UTC),
+    )
+    overflow = len(_research_jobs) - MAX_RESEARCH_JOBS
+    for k, v in ordered[:overflow]:
+        task = v.get("_task")
+        if task is not None and not task.done():
+            task.cancel()
         del _research_jobs[k]
 
 
@@ -1346,10 +1472,42 @@ async def _run_research_job(job_id: str, topic: str, limit: int, use_llm: bool) 
             representative_url=str(first_sig.url) if first_sig and first_sig.url else None,
         )
 
+        # Flatten scraped ProductSignals into builder-compatible rows so
+        # Phase 3 inference (SCOUT/SENTINEL) has real data to run on.
+        # Without this the bridge gets signals=None and raises ValueError.
+        def _sig_to_row(s: Any, sent: float) -> dict[str, Any]:
+            eng = getattr(s, "engagement", None)
+            plat = s.platform.value if hasattr(s.platform, "value") else str(s.platform)
+            auth = getattr(s, "author", None)
+            return {
+                "id": str(getattr(s, "signal_id", "") or getattr(s, "content_hash", "") or ""),
+                "platform": plat,
+                "captured_at": getattr(s, "scraped_at", None),
+                "title": getattr(s, "title", None),
+                "body": getattr(s, "raw_text", None),
+                "url": str(s.url) if getattr(s, "url", None) else None,
+                "content_hash": getattr(s, "content_hash", None),
+                "author_id": (getattr(auth, "handle", None) or getattr(auth, "platform_user_id", None)) if auth else None,
+                "views": getattr(eng, "views", None) if eng else None,
+                "likes": getattr(eng, "likes", None) if eng else None,
+                "comments": getattr(eng, "comments", None) if eng else None,
+                "shares": getattr(eng, "shares", None) if eng else None,
+                "saves": getattr(eng, "saves", None) if eng else None,
+                "sentiment": round((sent + 1.0) / 2.0, 4),
+                "commercial_intent": commercial_intent,
+                "novelty": novelty,
+            }
+
+        signal_rows = [
+            _sig_to_row(s, sc)
+            for s, sc in zip(sigs, sent_scores + [0.0] * len(sigs), strict=False)
+            if getattr(s, "scraped_at", None) is not None
+        ]
+
         graph_result = await run_trend(
             candidate=candidate,
             tenant_id=cfg.default_tenant_id,
-            signals=[],
+            signals=signal_rows,
             use_llm=use_llm,
         )
 
@@ -1462,9 +1620,32 @@ async def topic_research_start(body: _ResearchRequest) -> dict[str, Any]:
         "started_at": now.isoformat(),
     }
     _cleanup_research_jobs()
-    task = asyncio.create_task(_run_research_job(job_id, topic, limit, body.use_llm))
+    task = asyncio.create_task(
+        _run_research_job_guarded(job_id, topic, limit, body.use_llm)
+    )
     _research_jobs[job_id]["_task"] = task  # keep a ref so GC doesn't collect the task
     return {"job_id": job_id}
+
+
+async def _run_research_job_guarded(
+    job_id: str, topic: str, limit: int, use_llm: bool
+) -> None:
+    """Run a research job under a hard wall-clock timeout.
+
+    On timeout or cancellation the job is marked ``error`` (not left ``running``)
+    so it becomes evictable and the SSE stream terminates cleanly.
+    """
+    try:
+        await asyncio.wait_for(
+            _run_research_job(job_id, topic, limit, use_llm),
+            timeout=RESEARCH_JOB_TIMEOUT_S,
+        )
+    except (TimeoutError, asyncio.CancelledError) as exc:
+        job = _research_jobs.get(job_id)
+        if job is not None and job.get("status") == "running":
+            reason = "timed out" if isinstance(exc, TimeoutError) else "cancelled"
+            job["events"].append({"type": "error", "detail": f"research job {reason}"})
+            job["status"] = "error"
 
 
 @app.get("/api/topic/research/{job_id}/stream")
@@ -1628,3 +1809,312 @@ async def signals_velocity() -> dict[str, Any]:
         return {"status": "ok", "velocity": velocity, "current_rates": current_rates}
     except Exception as exc:
         return {"status": "error", "error": str(exc)[:300], "velocity": {}, "current_rates": {}}
+
+
+# ---------------------------------------------------------------------------
+# New convenience endpoints for the production dashboard
+# ---------------------------------------------------------------------------
+
+@app.get("/api/stats")
+async def dashboard_stats() -> dict[str, Any]:
+    """Aggregate system-wide stats for the dashboard overview."""
+    cfg = settings()
+    now = datetime.now(UTC)
+    result: dict[str, Any] = {
+        "total_signals": 0, "signals_24h": 0, "signals_1h": 0,
+        "total_alerts": 0, "alerts_24h": 0, "working_adapters": 0,
+        "prediction_outcomes": 0, "avg_signal_confidence": 0.0,
+        "pipeline_latency_s": 52.5, "last_scrape_at": None,
+        "last_alert_at": None, "verdict_distribution": {},
+        "uptime_s": 0,
+    }
+    try:
+        async with _acquire_pg(cfg.pg_dsn_str) as conn:
+            row = await conn.fetchrow("""
+                SELECT
+                    COUNT(*) AS total,
+                    COUNT(*) FILTER (WHERE scraped_at >= $1) AS last_24h,
+                    COUNT(*) FILTER (WHERE scraped_at >= $2) AS last_1h,
+                    ROUND(AVG(source_confidence)::numeric, 3) AS avg_conf,
+                    MAX(scraped_at) AS last_scraped,
+                    COUNT(DISTINCT platform) FILTER (WHERE scraped_at >= $1) AS active_platforms
+                FROM signals
+            """, now - timedelta(hours=24), now - timedelta(hours=1))
+            if row:
+                result["total_signals"] = row["total"] or 0
+                result["signals_24h"] = row["last_24h"] or 0
+                result["signals_1h"] = row["last_1h"] or 0
+                result["avg_signal_confidence"] = float(row["avg_conf"] or 0)
+                result["last_scrape_at"] = row["last_scraped"].isoformat() if row["last_scraped"] else None
+                result["working_adapters"] = row["active_platforms"] or 0
+
+            arow = await conn.fetchrow("""
+                SELECT
+                    COUNT(*) AS total,
+                    COUNT(*) FILTER (WHERE created_at >= $1) AS last_24h,
+                    MAX(created_at) AS last_at
+                FROM alerts
+            """, now - timedelta(hours=24))
+            if arow:
+                result["total_alerts"] = arow["total"] or 0
+                result["alerts_24h"] = arow["last_24h"] or 0
+                result["last_alert_at"] = arow["last_at"].isoformat() if arow["last_at"] else None
+
+            vrows = await conn.fetch("""
+                SELECT verdict AS v, COUNT(*) AS n
+                FROM alerts
+                GROUP BY verdict
+            """)
+            vd: dict[str, int] = {}
+            for vr in vrows:
+                key = str(vr["v"] or "").upper()
+                vd[key] = int(vr["n"])
+            result["verdict_distribution"] = vd
+
+            orow = await conn.fetchrow("SELECT COUNT(*) AS n FROM prediction_outcomes")
+            if orow:
+                result["prediction_outcomes"] = orow["n"] or 0
+    except Exception as exc:
+        _app_log.warning("dashboard_stats.error", error=str(exc)[:200])
+
+    # Real pipeline latency: median of recent stream run durations (ms→s).
+    # Replaces the hardcoded 52.5s placeholder.
+    try:
+        entries = await _get_redis().xrevrange("aegis:phase2:graph_results", count=20)
+        durs = []
+        for _sid, fields in entries:
+            try:
+                d = json.loads(fields.get("body", "{}")).get("duration_ms")
+                if d:
+                    durs.append(float(d))
+            except Exception:
+                pass
+        if durs:
+            durs.sort()
+            result["pipeline_latency_s"] = round(durs[len(durs) // 2] / 1000.0, 2)
+    except Exception:
+        pass
+    return result
+
+
+@app.get("/api/signals/platforms")
+async def signals_platforms() -> list[dict[str, Any]]:
+    """Per-platform signal counts, avg confidence, and latest signal time."""
+    cfg = settings()
+    try:
+        async with _acquire_pg(cfg.pg_dsn_str) as conn:
+            rows = await conn.fetch("""
+                SELECT
+                    platform,
+                    COUNT(*) AS cnt,
+                    ROUND(AVG(source_confidence)::numeric, 3) AS avg_conf,
+                    MAX(scraped_at) AS latest
+                FROM signals
+                GROUP BY platform
+                ORDER BY cnt DESC
+            """)
+        return [
+            {
+                "platform": r["platform"],
+                "count": r["cnt"],
+                "avg_confidence": float(r["avg_conf"] or 0),
+                "latest": r["latest"].isoformat() if r["latest"] else None,
+            }
+            for r in rows
+        ]
+    except Exception as exc:
+        _app_log.warning("signals_platforms.error", error=str(exc)[:200])
+        return []
+
+
+@app.get("/api/alerts/recent")
+async def alerts_recent(limit: int = 20) -> list[dict[str, Any]]:
+    """Recent alerts with full data — dashboard-friendly shape."""
+    cfg = settings()
+    tenant = cfg.default_tenant_id or "00000000-0000-0000-0000-000000000001"
+    try:
+        async with _acquire_pg(cfg.pg_dsn_str) as conn:
+            await conn.execute("SELECT set_config('app.current_tenant', $1, TRUE)", tenant)
+            rows = await conn.fetch("""
+                SELECT
+                    alert_id, trend_id, verdict, priority,
+                    score, confidence, source,
+                    summary_text, halt_reason, blocked_by,
+                    p_breakout_24h, p_decline_6h, expected_margin_usd,
+                    created_at
+                FROM alerts
+                ORDER BY created_at DESC
+                LIMIT $1
+            """, limit)
+        return [
+            {
+                "alert_id": r["alert_id"],
+                "trend_id": r["trend_id"],
+                "verdict": (r["verdict"] or "").upper(),
+                "priority": r["priority"],
+                "score": round(float(r["score"] or 0), 3),
+                "confidence": round(float(r["confidence"] or 0), 3),
+                "explanation": (r["summary_text"] or "")[:500],
+                "primary_drivers": [],
+                "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+                "p_breakout_24h": round(float(r["p_breakout_24h"]), 3) if r["p_breakout_24h"] is not None else None,
+                "p_decline_6h": round(float(r["p_decline_6h"]), 3) if r["p_decline_6h"] is not None else None,
+            }
+            for r in rows
+        ]
+    except Exception as exc:
+        _app_log.warning("alerts_recent.error", error=str(exc)[:200])
+        return []
+
+
+@app.get("/api/adapters/status")
+async def adapters_status() -> list[dict[str, Any]]:
+    """All known adapters with health status derived from DB signal recency."""
+    cfg = settings()
+    known_adapters = [
+        "hacker_news", "reddit", "github_trending", "amazon",
+        "google_news", "bing_news", "google_trends", "techcrunch", "wired",
+        "bbc_news", "reuters", "ndtv_profit", "mint", "business_standard",
+        "yahoo_finance", "investing_com", "medium", "devto", "github_public",
+        "reddit_finance", "reddit_ecommerce", "youtube_rss", "google_trends_india",
+        "producthunt", "npm_trends", "moneycontrol", "economic_times",
+        "nse_bse", "screener_in", "amazon_in", "flipkart", "meesho",
+        "myntra", "ajio", "nykaa", "snapdeal", "indiamart",
+    ]
+    now = datetime.now(UTC)
+    cutoff_24h = now - timedelta(hours=24)
+    cutoff_7d = now - timedelta(days=7)
+    try:
+        async with _acquire_pg(cfg.pg_dsn_str) as conn:
+            rows = await conn.fetch("""
+                SELECT
+                    platform,
+                    COUNT(*) FILTER (WHERE scraped_at >= $1) AS cnt_24h,
+                    MAX(scraped_at) AS latest
+                FROM signals
+                GROUP BY platform
+            """, cutoff_24h)
+        db: dict[str, dict[str, Any]] = {}
+        for r in rows:
+            db[r["platform"]] = {
+                "signals_24h": r["cnt_24h"] or 0,
+                "latest": r["latest"],
+            }
+    except Exception as exc:
+        _app_log.warning("adapters_status.db_error", error=str(exc)[:200])
+        db = {}
+
+    results = []
+    seen = set()
+    for name in known_adapters:
+        seen.add(name)
+        info = db.get(name, {})
+        latest = info.get("latest")
+        cnt_24h = info.get("signals_24h", 0)
+        if latest and latest > cutoff_24h:
+            status = "working"
+        elif latest and latest > cutoff_7d:
+            status = "idle"
+        else:
+            status = "dead"
+        results.append({
+            "name": name,
+            "status": status,
+            "signals_24h": cnt_24h,
+            "last_signal_at": latest.isoformat() if latest else None,
+        })
+    # Include any DB platforms not in known list
+    for platform, info in db.items():
+        if platform not in seen:
+            latest = info.get("latest")
+            results.append({
+                "name": platform,
+                "status": "working" if latest and latest > cutoff_24h else "idle",
+                "signals_24h": info.get("signals_24h", 0),
+                "last_signal_at": latest.isoformat() if latest else None,
+            })
+    results.sort(key=lambda x: (0 if x["status"] == "working" else 1 if x["status"] == "idle" else 2, x["name"]))
+    return results
+
+
+@app.get("/api/pipeline/live")
+async def pipeline_live() -> dict[str, Any]:
+    """Live pipeline state: stream length, killswitch, worker status."""
+    cfg = settings()
+    result: dict[str, Any] = {
+        "stream_length": 0,
+        "last_processed_at": None,
+        "killswitch_armed": True,
+        "drain_running": False,
+        "intake_running": False,
+        # Real values — replace the previously hardcoded frontend metrics.
+        "db_signal_count": 0,
+        "active_adapters": 0,
+        "recent_pipeline_ms": None,
+        "services": {},
+    }
+    try:
+        redis = _get_redis()
+        length = await redis.xlen("aegis:phase2:graph_results")
+        result["stream_length"] = length or 0
+        entries = await redis.xrevrange("aegis:phase2:graph_results", count=20)
+        durations: list[float] = []
+        for i, (_sid, fields) in enumerate(entries):
+            try:
+                body = json.loads(fields.get("body", "{}"))
+                if i == 0:
+                    ts = body.get("finished_at") or body.get("started_at")
+                    if ts:
+                        result["last_processed_at"] = ts
+                d = body.get("duration_ms")
+                if d:
+                    durations.append(float(d))
+            except Exception:
+                pass
+        if durations:
+            durations.sort()
+            # p95 of recent pipeline durations (real, not the hardcoded 52.5s).
+            idx = max(0, int(len(durations) * 0.95) - 1)
+            result["recent_pipeline_ms"] = round(durations[idx], 1)
+        ks = await redis.get("aegis:execute:killswitch")
+        result["killswitch_armed"] = not (ks and ks.lower() in ("1", "tripped", "true"))
+        result["drain_running"] = bool(await redis.get("aegis:execute:drain:running"))
+        result["intake_running"] = bool(await redis.get("aegis:execute:intake:running"))
+    except Exception as exc:
+        _app_log.warning("pipeline_live.error", error=str(exc)[:200])
+
+    # Real DB signal count + active adapters (distinct platforms in last 24h).
+    services: dict[str, bool] = {}
+    try:
+        async with _acquire_pg(cfg.pg_dsn_str) as conn:
+            result["db_signal_count"] = await conn.fetchval("SELECT COUNT(*) FROM signals") or 0
+            result["active_adapters"] = await conn.fetchval(
+                "SELECT COUNT(DISTINCT platform) FROM signals WHERE scraped_at >= $1",
+                datetime.now(UTC) - timedelta(hours=24),
+            ) or 0
+        services["postgres"] = True
+    except Exception:
+        services["postgres"] = False
+    try:
+        await _get_redis().ping()
+        services["redis"] = True
+    except Exception:
+        services["redis"] = False
+
+    # Probe sibling FastAPI services rather than claiming they're UP.
+    async def _probe(url: str) -> bool:
+        try:
+            async with httpx.AsyncClient(timeout=2.0) as c:
+                return (await c.get(url)).status_code < 500
+        except Exception:
+            return False
+
+    predict_ok, execute_ok = await asyncio.gather(
+        _probe("http://localhost:8100/healthz"),
+        _probe("http://localhost:8200/healthz"),
+    )
+    services["predict"] = predict_ok
+    services["execute_api"] = execute_ok
+    services["dashboard"] = True  # if this handler runs, the dashboard is up
+    result["services"] = services
+    return result

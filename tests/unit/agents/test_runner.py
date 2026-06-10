@@ -29,8 +29,8 @@ import pytest
 # minimal-test environment.
 pytest.importorskip("langgraph")
 
-from aegis.agents import runner
-from aegis.agents.schemas import AgentVerdict, GraphResult, Priority
+from aegis.agents import runner  # noqa: E402
+from aegis.agents.schemas import AgentVerdict, GraphResult, Priority  # noqa: E402
 
 
 class TestRunnerHappyPath:

@@ -76,6 +76,7 @@ class IntakeWorker:
 
     __slots__ = (
         "_consumer_name",
+        "_eviction_task",
         "_lock",
         "_pending",
         "_pipeline",
@@ -102,6 +103,7 @@ class IntakeWorker:
         self._lock = asyncio.Lock()
         self._stop = asyncio.Event()
         self._task: asyncio.Task[None] | None = None
+        self._eviction_task: asyncio.Task[None] | None = None
 
     # ------------------------------------------------------------------ public
     async def start(self) -> None:
@@ -113,6 +115,9 @@ class IntakeWorker:
         await self._ensure_groups()
         self._stop.clear()
         self._task = asyncio.create_task(self._run(), name="execute-intake")
+        self._eviction_task = asyncio.create_task(
+            self._eviction_loop(), name="execute-intake-eviction"
+        )
         _log.info(
             "execute.intake.started",
             consumer_name=self._consumer_name,
@@ -121,11 +126,13 @@ class IntakeWorker:
 
     async def stop(self) -> None:
         self._stop.set()
-        if self._task is not None:
-            self._task.cancel()
-            with contextlib.suppress(asyncio.CancelledError, Exception):
-                await self._task
-            self._task = None
+        for task in (self._task, self._eviction_task):
+            if task is not None:
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await task
+        self._task = None
+        self._eviction_task = None
         _log.info("execute.intake.stopped")
 
     async def submit_phase2_dict(self, msg: dict[str, Any]) -> None:
@@ -161,6 +168,27 @@ class IntakeWorker:
             except Exception as exc:
                 _log.error("execute.intake.read_failed", error=str(exc))
                 await asyncio.sleep(1.0)
+
+    async def _eviction_loop(self) -> None:
+        """Periodically submit expired pending merges that never got a counterpart."""
+        while not self._stop.is_set():
+            try:
+                await asyncio.sleep(5.0)
+                async with self._lock:
+                    evicted = self._evict_expired(time.monotonic())
+                for stale_ci in evicted:
+                    try:
+                        await self._pipeline.submit(stale_ci)
+                    except Exception as exc:
+                        _log.warning(
+                            "execute.intake.eviction_loop_submit_failed",
+                            trend_id=stale_ci.trend_id,
+                            error=str(exc),
+                        )
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                _log.error("execute.intake.eviction_loop_failed", error=str(exc))
 
     async def _read_once(self) -> None:
         streams = {STREAM_PHASE2: ">", STREAM_PHASE3: ">"}
@@ -333,6 +361,8 @@ def _parse_phase2_dict(msg: dict[str, Any], *, tenant_id: UUID) -> ComposerInput
         phase2_blocked_by=_tuple("blocked_by"),
         phase2_title=msg.get("title"),
         phase2_narrative=str(msg.get("narrative", "")),
+        phase2_explanation=str(msg.get("explanation", "")),
+        phase2_primary_drivers=_tuple("primary_drivers"),
         capital_budget_usd=_f("capital_budget_usd"),
     )
 
@@ -413,6 +443,8 @@ def _merge_inputs(a: ComposerInput, b: ComposerInput) -> ComposerInput:
         phase2_blocked_by=b.phase2_blocked_by or a.phase2_blocked_by,
         phase2_title=pick(a.phase2_title, b.phase2_title),
         phase2_narrative=b.phase2_narrative or a.phase2_narrative,
+        phase2_explanation=b.phase2_explanation or a.phase2_explanation,
+        phase2_primary_drivers=b.phase2_primary_drivers or a.phase2_primary_drivers,
         phase3_p_breakout_24h=pick(a.phase3_p_breakout_24h, b.phase3_p_breakout_24h),
         phase3_p_decline_6h=pick(a.phase3_p_decline_6h, b.phase3_p_decline_6h),
         phase3_p_saturation=pick(a.phase3_p_saturation, b.phase3_p_saturation),

@@ -40,7 +40,7 @@ app = typer.Typer(
 )
 
 
-def _result_to_dict(result) -> dict:
+def _result_to_dict(result: ComplianceVerdictResult) -> dict:
     return {
         "trend_id": result.trend_id,
         "verdict": result.verdict.value,
@@ -72,7 +72,7 @@ def _result_to_dict(result) -> dict:
     }
 
 
-def _print_human(result) -> None:
+def _print_human(result: ComplianceVerdictResult) -> None:
     color = {"clear": typer.colors.GREEN, "flag": typer.colors.YELLOW, "block": typer.colors.RED}
     typer.echo(typer.style(f"  {result.verdict.value.upper()}", fg=color.get(result.verdict.value), bold=True), nl=False)
     typer.echo(f"   risk={result.risk_score:.3f}  confidence={result.confidence:.2f}")

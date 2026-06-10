@@ -1,0 +1,142 @@
+{
+  "$defs": {
+    "PlaybookMatch": {
+      "additionalProperties": false,
+      "description": "How a playbook matches an incoming URL or scrape target.",
+      "properties": {
+        "source": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source"
+        },
+        "domain": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "minLength": 3,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Domain"
+        },
+        "path_contains": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Path Contains"
+        }
+      },
+      "title": "PlaybookMatch",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Per-source scrape policy. Loaded from YAML.",
+  "properties": {
+    "name": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    },
+    "version": {
+      "maximum": 1000000,
+      "minimum": 1,
+      "title": "Version",
+      "type": "integer"
+    },
+    "match": {
+      "$ref": "#/$defs/PlaybookMatch"
+    },
+    "delay_ms": {
+      "maximum": 60000,
+      "minimum": 50,
+      "title": "Delay Ms",
+      "type": "integer"
+    },
+    "jitter_ms": {
+      "default": 0,
+      "maximum": 60000,
+      "minimum": 0,
+      "title": "Jitter Ms",
+      "type": "integer"
+    },
+    "rate_per_min": {
+      "maximum": 600,
+      "minimum": 1,
+      "title": "Rate Per Min",
+      "type": "integer"
+    },
+    "retries": {
+      "maximum": 8,
+      "minimum": 0,
+      "title": "Retries",
+      "type": "integer"
+    },
+    "profile": {
+      "default": "standard",
+      "enum": [
+        "minimal",
+        "standard",
+        "stealth",
+        "tor"
+      ],
+      "title": "Profile",
+      "type": "string"
+    },
+    "honor_robots": {
+      "default": true,
+      "title": "Honor Robots",
+      "type": "boolean"
+    },
+    "use_flaresolverr": {
+      "default": false,
+      "title": "Use Flaresolverr",
+      "type": "boolean"
+    },
+    "rotate_every": {
+      "default": 10,
+      "maximum": 10000,
+      "minimum": 1,
+      "title": "Rotate Every",
+      "type": "integer"
+    },
+    "notes": {
+      "default": "",
+      "maxLength": 512,
+      "title": "Notes",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name",
+    "version",
+    "match",
+    "delay_ms",
+    "rate_per_min",
+    "retries"
+  ],
+  "title": "Playbook",
+  "type": "object"
+}

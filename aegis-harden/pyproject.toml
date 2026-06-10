@@ -1,0 +1,125 @@
+[project]
+name = "aegis-harden"
+version = "0.5.0"
+description = "AEGIS Pulse — Phase 5: Adversarial Hardening (TLS/HTTP2 fingerprint diversity, per-source playbooks, honeypot avoidance, ML defense, poisoning detection)."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+authors = [{ name = "AEGIS Pulse" }]
+license = { text = "Proprietary" }
+dependencies = [
+  # Core
+  "pydantic>=2.7,<3",
+  "pydantic-settings>=2.3,<3",
+  "structlog>=24.1,<26",
+  "typer>=0.15.4,<0.16",
+  "anyio>=4.3,<5",
+  "pyyaml>=6.0.1,<7",
+  # Numerics — needed by smoothing + poisoning detectors
+  "numpy>=1.26.4,<3",
+]
+
+[project.optional-dependencies]
+# Heavy ML deps — only required for full smoothing/poisoning suite
+ml = [
+  "scikit-learn>=1.4,<2",
+]
+# Prometheus metrics — graceful no-op when absent
+metrics = [
+  "prometheus-client>=0.20,<1",
+]
+# Test toolchain
+test = [
+  "pytest>=8.1,<9",
+  "pytest-asyncio>=0.23,<1",
+  "pytest-cov>=5.0,<7",
+  "hypothesis>=6.100,<7",
+  # Required by tests/integration/test_phase1_adapter_patch.py — exercises
+  # AFTER.py against a real mock httpx transport. Not a runtime dep.
+  "httpx>=0.27,<1",
+]
+
+[project.scripts]
+aegis-harden = "aegis.harden.cli.main:app"
+
+[build-system]
+requires = ["hatchling>=1.21"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aegis"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+addopts = "-ra -q --strict-markers"
+filterwarnings = [
+  "ignore::DeprecationWarning",
+  "ignore::ResourceWarning",
+]
+markers = [
+  "integration: integration tests (slower; may require external services)",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["tests/data"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "DTZ", "PL", "SIM", "RET", "TCH"]
+ignore = [
+  "PLR0913",  # allow >5 args on factory funcs
+  "PLR2004",  # magic values in tests are fine (assertions read better as literals)
+  "B008",     # Pydantic / typer default-arg patterns trip this
+  "PLC0415",  # late imports are intentional in CLI lazy paths
+  # `TC*` (typing-only-import) rules push runtime imports into TYPE_CHECKING
+  # blocks. The Pydantic schemas and CLI helpers are runtime-needed even
+  # when only used in annotations; these rules generate false positives.
+  "TC001", "TC002", "TC003",
+  "SIM108",  # collapse-to-ternary often hurts readability
+]
+
+[tool.ruff.lint.per-file-ignores]
+"src/aegis/harden/fingerprint/**" = [
+  "E501",     # JA3/JA4/UA strings are intentionally long; one entry per line
+]
+"src/aegis/harden/cli/**" = [
+  "E501",     # long single-line ternaries in CLI are tolerable
+  "PLR0912",  # CLI command bodies are linear and fine
+]
+"src/aegis/harden/honeypot/**" = [
+  "PLR0912",  # one branchy function — by design (DOM signal accumulator)
+]
+"src/aegis/harden/metrics/**" = [
+  "E501",     # bucket lists are wide
+]
+"src/aegis/harden/playbooks/**" = [
+  "E501",     # one wide raise statement w/ error context
+]
+"src/aegis/harden/detect/**" = [
+  "E501",     # one Phase 3 adapter example line in docstring
+]
+"tests/**" = [
+  "DTZ001",   # naive datetimes are fine in tests
+  "E501",     # long lines in test data are tolerable
+  "PLR0912",  # complex test fixtures are tolerable
+  "F401",     # tests can shadow names freely
+  "BLE001",   # tests can catch Exception narrowly
+  "SIM114",
+  "SIM108",
+]
+
+[tool.mutmut]
+# mutmut 2.x config — scalar strings, not lists.
+# Paths whose Python files get mutated.
+paths_to_mutate = "src/aegis/harden/"
+# Skip files where mutations are uninformative (config wiring, no-op stubs,
+# Typer dispatch — already covered by CLI tests).
+paths_to_exclude = "src/aegis/harden/utils/logging.py:src/aegis/harden/metrics/__init__.py:src/aegis/harden/cli/main.py"
+# Test runner. PYTHONPATH=src so `aegis.harden` resolves without an install.
+# `-x` stops on first failure (faster mutmut), `--no-cov` skips coverage,
+# `-p no:hypothesis` skips slow property tests during mutation runs.
+runner = "env PYTHONPATH=src python -m pytest -x --no-cov -p no:cacheprovider -p no:hypothesis tests/unit"
+# Pytest test directory hint.
+tests_dir = "tests/unit"

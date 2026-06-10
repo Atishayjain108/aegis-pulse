@@ -94,7 +94,15 @@ async def analyze_product(req: AnalyzeRequest) -> dict[str, Any]:
         _log.error("geo.analyze_failed", error=str(exc))
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-    return report.model_dump(mode="json")
+    payload = report.model_dump(mode="json")
+    # CONN-1: publish the result onto the unified event bus (best-effort).
+    try:
+        from aegis.core.event_bus import STREAM_GEO, publish_event
+
+        await publish_event(STREAM_GEO, payload)
+    except Exception:  # pragma: no cover - defensive
+        pass
+    return payload
 
 
 @router.get("/fx", response_model=FXResponse)

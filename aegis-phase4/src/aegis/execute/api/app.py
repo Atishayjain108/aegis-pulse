@@ -11,9 +11,12 @@ asyncio task spawned by the CLI.
 
 from __future__ import annotations
 
+import asyncio
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
+from uuid import UUID
 
 import structlog
 from fastapi import FastAPI
@@ -34,7 +37,9 @@ from aegis.execute.config import ExecuteSettings, get_execute_settings
 from aegis.execute.dashboard import STATIC_DIR as _STATIC_DIR
 from aegis.execute.engine import ExecutionEngine
 from aegis.execute.killswitch.switch import KillSwitch
+from aegis.execute.pipeline import Pipeline
 from aegis.execute.store.repository import AlertRepository
+from aegis.execute.workers.intake_worker import IntakeWorker
 
 _log = structlog.get_logger(__name__)
 
@@ -69,6 +74,12 @@ def build_app(
         timeout_s=settings.approval_timeout_s,
     )
 
+    _pipeline = Pipeline(
+        repository=_repo,
+        killswitch=_killswitch,
+        bus=_bus,
+    )
+
     @asynccontextmanager
     async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         _log.info(
@@ -87,10 +98,72 @@ def build_app(
         app.state.capital_engine = _engine
         app.state.approval_broker = _broker
         app.state.plan_store = {}
+
+        # Connect Postgres pool when none was injected (uvicorn entry point).
+        # Sets the pool directly on _repo so AlertRepository uses it without
+        # needing aegis.db (which is not bundled in the Phase 4 image).
+        _lifespan_pool: Any = pool
+        _owned_pool = False
+        if _lifespan_pool is None:
+            pg_dsn = os.environ.get("AEGIS_PG_DSN", "")
+            if pg_dsn:
+                import asyncpg  # type: ignore[import-untyped]
+                for _attempt in range(5):
+                    try:
+                        _lifespan_pool = await asyncpg.create_pool(
+                            pg_dsn, min_size=2, max_size=10
+                        )
+                        _owned_pool = True
+                        _repo._pool = _lifespan_pool  # inject into existing repo
+                        app.state.audit_pool = _lifespan_pool
+                        _log.info("execute.api.pg_pool_created", attempt=_attempt + 1)
+                        break
+                    except Exception as _exc:
+                        _log.warning(
+                            "execute.api.pg_pool_failed",
+                            attempt=_attempt + 1,
+                            error=str(_exc),
+                        )
+                        if _attempt < 4:
+                            await asyncio.sleep(2.0 * (_attempt + 1))
+
+        # Connect Redis and start the intake worker (reads Phase 2/3 streams).
+        # When redis_client was injected (tests), use it directly.
+        # When running under uvicorn, connect from AEGIS_REDIS_URL env var.
+        _lifespan_redis: Any = redis_client
+        _owned_redis = False
+        if _lifespan_redis is None:
+            redis_url = os.environ.get("AEGIS_REDIS_URL", "")
+            if redis_url:
+                try:
+                    import redis.asyncio as _redis_mod
+                    _lifespan_redis = await _redis_mod.from_url(
+                        redis_url, decode_responses=False
+                    )
+                    _owned_redis = True
+                except Exception as _exc:
+                    _log.warning("execute.api.redis_connect_failed", error=str(_exc))
+
+        tenant_id_str = os.environ.get(
+            "AEGIS_EXECUTE_TENANT_ID",
+            os.environ.get("AEGIS_DEFAULT_TENANT_ID", "00000000-0000-0000-0000-000000000001"),
+        )
+        _intake = IntakeWorker(
+            pipeline=_pipeline,
+            tenant_id=UUID(tenant_id_str),
+            redis_client=_lifespan_redis,
+        )
+        await _intake.start()
+
         try:
             yield
         finally:
             _log.info("execute.api.lifespan_shutdown")
+            await _intake.stop()
+            if _owned_redis and _lifespan_redis is not None:
+                await _lifespan_redis.aclose()
+            if _owned_pool and _lifespan_pool is not None:
+                await _lifespan_pool.close()
 
     app = FastAPI(
         title="AEGIS Pulse — Execute",

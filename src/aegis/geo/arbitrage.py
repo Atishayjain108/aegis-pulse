@@ -210,6 +210,7 @@ class CrossMarketAnalyzer:
 
         # --- 7. Demand + market size ---
         demand_intensity = float(dest_demand.get("demand_intensity", dest_cfg.market_size_score * 0.6))
+        demand_source = str(dest_demand.get("demand_source", "synthetic"))
         market_size = dest_cfg.market_size_score
 
         # --- 8. Composite opportunity score ---
@@ -236,6 +237,7 @@ class CrossMarketAnalyzer:
             gross_margin_usd=gross_margin_usd,
             gross_margin_pct=gross_margin_pct,
             demand_intensity=demand_intensity,
+            demand_source=demand_source,
             market_size_score=market_size,
             opportunity_score=opportunity_score,
             fx_rate_used=fx_rate_origin_to_usd.quantize(Decimal("0.000001")),

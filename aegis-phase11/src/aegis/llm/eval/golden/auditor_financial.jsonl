@@ -1,3 +1,0 @@
-# Golden answer cases for auditor_financial template
-{"input_vars": {"trend_title": "Ergonomic laptop stand", "supplier_unit_cost": 4.50, "selling_price": 29.99, "platform_fee_pct": 15, "shipping_cost": 3.00, "ad_cost_per_unit": 4.00, "monthly_demand_estimate": 500}, "expected_contains": ["PROCEED", "margin"], "expected_not_contains": ["BLOCK"]}
-{"input_vars": {"trend_title": "Premium widget", "supplier_unit_cost": 25.00, "selling_price": 27.00, "platform_fee_pct": 15, "shipping_cost": 5.00, "ad_cost_per_unit": 6.00, "monthly_demand_estimate": 100}, "expected_contains": ["BLOCK"], "expected_not_contains": ["PROCEED"]}

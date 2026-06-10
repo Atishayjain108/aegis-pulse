@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=./_schema.json
+name: default
+version: 1
+match: {}
+delay_ms: 1000
+jitter_ms: 500
+rate_per_min: 30
+retries: 3
+profile: standard
+honor_robots: true
+use_flaresolverr: false
+rotate_every: 10
+notes: |
+  Conservative defaults for any source without a dedicated playbook.
+  Calibrated for low-friction public APIs.

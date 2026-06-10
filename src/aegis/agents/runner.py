@@ -52,6 +52,72 @@ if TYPE_CHECKING:  # pragma: no cover
 
 _log = structlog.get_logger("aegis.agents.runner")
 
+# ---------------------------------------------------------------------------
+# Langfuse LLM tracing — optional; degrades gracefully when unavailable.
+# Uses the native Langfuse Python SDK (no langchain dependency).
+# Pattern mirrors HARDEN_AVAILABLE / _langfuse_available from harden_shim.py.
+# ---------------------------------------------------------------------------
+try:
+    import os as _os
+
+    from langfuse import Langfuse as _Langfuse  # type: ignore[import-untyped]
+
+    _langfuse_available: bool = bool(
+        _os.getenv("LANGFUSE_PUBLIC_KEY") and _os.getenv("LANGFUSE_SECRET_KEY")
+    )
+except Exception:
+    _Langfuse = None  # type: ignore[assignment,misc]
+    _langfuse_available: bool = False  # type: ignore[no-redef]
+
+# ---------------------------------------------------------------------------
+# Causal explainer — optional; degrades gracefully when unavailable.
+# Same pattern as Langfuse block above.
+# ---------------------------------------------------------------------------
+try:
+    from aegis.predict.causal.explainer import generate_explanation as _gen_exp
+
+    _explainer_available: bool = True
+except Exception:
+    _gen_exp = None  # type: ignore[assignment]
+    _explainer_available: bool = False  # type: ignore[no-redef]
+
+
+def _make_langfuse_trace(trend_id: str, candidate: TrendCandidate) -> tuple[Any, Any] | tuple[None, None]:
+    """Return (langfuse_client, trace) or (None, None) when unavailable.
+
+    The trace captures the full TrendCandidate as input so Langfuse shows
+    the exact signal values that drove each pipeline run.
+    """
+    if not _langfuse_available or _Langfuse is None:
+        return None, None
+    try:
+        import os
+
+        lf = _Langfuse(
+            public_key=os.environ["LANGFUSE_PUBLIC_KEY"],
+            secret_key=os.environ["LANGFUSE_SECRET_KEY"],
+            host=os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com"),
+        )
+        trace = lf.trace(
+            name="aegis.run_trend",
+            input={
+                "trend_id": trend_id,
+                "title": candidate.title,
+                "velocity_1h": candidate.velocity_1h,
+                "velocity_6h": candidate.velocity_6h,
+                "commercial_intent": candidate.commercial_intent,
+                "coordination_risk": candidate.coordination_risk,
+                "signal_count": candidate.signal_count,
+                "platforms": candidate.platforms,
+            },
+            session_id=trend_id,
+            tags=["aegis-pulse", "phase2-agents"],
+        )
+        return lf, trace
+    except Exception as exc:
+        _log.debug("langfuse.trace_init_failed", error=str(exc))
+        return None, None
+
 
 # Compiled-graph cache. Keyed by a small tuple of construction params
 # so most callers reuse a single compiled graph.
@@ -129,6 +195,9 @@ async def run_trend(
         candidate, tenant_id=tenant_id, signals=signals, swarm_context=swarm_context
     )
 
+    # Langfuse native trace — (client, trace) or (None, None) when not configured.
+    _lf_client, _lf_trace = _make_langfuse_trace(candidate.trend_id, candidate)
+
     try:
         compiled = await _get_graph(
             llm_router=llm_router,
@@ -172,6 +241,52 @@ async def run_trend(
         )
 
     result = build_graph_result(final_state, started_at=started_at)
+
+    # Best-effort causal explanation — non-blocking; never affects verdict.
+    if _explainer_available and _gen_exp is not None:
+        try:
+            tc = candidate
+            exp, cf, drivers = _gen_exp(
+                trend_id=tc.trend_id,
+                verdict=_VERDICT_TO_PHASE4.get(result.final_verdict.value, "HOLD"),
+                score=result.final_score,
+                confidence=result.final_confidence,
+                velocity_1h=tc.velocity_1h,
+                velocity_6h=tc.velocity_6h,
+                velocity_24h=tc.velocity_24h,
+                sentiment=tc.sentiment,
+                commercial_intent=tc.commercial_intent,
+                novelty=tc.novelty,
+                coordination_risk=tc.coordination_risk,
+                signal_count=tc.signal_count,
+                unique_authors=tc.unique_authors,
+                platforms=list(tc.platforms),
+            )
+            result = result.model_copy(update={
+                "explanation": exp,
+                "counterfactual": cf,
+                "primary_drivers": drivers,
+            })
+        except Exception as exc:
+            _log.warning("explainer.failed", trend_id=candidate.trend_id, error=str(exc))
+
+    # Best-effort Langfuse trace finalisation — non-blocking.
+    if _lf_trace is not None and _lf_client is not None:
+        try:
+            _lf_trace.update(
+                output={
+                    "verdict": result.final_verdict.value,
+                    "score": round(result.final_score, 4),
+                    "confidence": round(result.final_confidence, 4),
+                    "halt_reason": result.halt_reason,
+                    "agents_ran": [d.agent for d in result.decisions],
+                },
+            )
+            _lf_client.flush()
+            trace_url = _lf_trace.get_trace_url()
+            _log.debug("langfuse.trace", trace_url=trace_url, trend_id=candidate.trend_id)
+        except Exception:
+            pass  # tracing is best-effort; never affect the result
 
     # Best-effort snapshot. Never blocks on failure.
     if snapshot_manager is not None:
@@ -266,6 +381,13 @@ async def _publish_phase2_result(
             }
             for d in result.decisions
         ],
+        # Causal explanation layer
+        "explanation": result.explanation,
+        "counterfactual": result.counterfactual,
+        "primary_drivers": result.primary_drivers,
+        # Provenance (HALLU-1) — lets the dashboard badge heuristic-only verdicts.
+        "llm_used": result.llm_used,
+        "reasoning_source": result.reasoning_source,
     }
     body = json.dumps(payload, default=str)
     await redis_client.xadd(

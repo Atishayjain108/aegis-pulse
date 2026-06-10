@@ -49,15 +49,15 @@ def init_sentry() -> None:
         return
 
     try:
-        import sentry_sdk  # noqa: PLC0415
-        from sentry_sdk.integrations.logging import LoggingIntegration  # noqa: PLC0415
+        import sentry_sdk
+        from sentry_sdk.integrations.logging import LoggingIntegration
 
         integrations = [
             LoggingIntegration(level=None, event_level=None),
         ]
 
         try:
-            from sentry_sdk.integrations.fastapi import (  # noqa: PLC0415
+            from sentry_sdk.integrations.fastapi import (
                 FastApiIntegration,  # type: ignore[import-not-found]
             )
 
@@ -66,7 +66,7 @@ def init_sentry() -> None:
             pass
 
         try:
-            from sentry_sdk.integrations.asyncpg import (  # noqa: PLC0415
+            from sentry_sdk.integrations.asyncpg import (
                 AsyncPGIntegration,  # type: ignore[import-not-found]
             )
 
@@ -75,7 +75,7 @@ def init_sentry() -> None:
             pass
 
         try:
-            from sentry_sdk.integrations.httpx import (  # noqa: PLC0415
+            from sentry_sdk.integrations.httpx import (
                 HttpxIntegration,  # type: ignore[import-not-found]
             )
 

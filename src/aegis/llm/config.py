@@ -12,7 +12,7 @@ Author: AEGIS Engineering
 
 from __future__ import annotations
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -46,16 +46,38 @@ class LLMSettings(BaseSettings):
         description="Ollama server base URL",
     )
     ollama_model: str = Field(
-        default="qwen2.5:14b",
+        default="llama3.1:8b",
         description="Default Ollama chat model",
     )
     ollama_embed_model: str = Field(
-        default="bge-m3",
+        default="nomic-embed-text",
         description="Ollama embedding model",
     )
     ollama_coder_model: str = Field(
-        default="qwen2.5-coder:14b",
+        default="qwen2.5-coder:7b",
         description="Ollama model for code tasks",
+    )
+
+    # ------------------------------------------------------------------
+    # Multi-model council (debate → critique → synthesize loop)
+    # ------------------------------------------------------------------
+    council_enabled: bool = Field(
+        default=False,
+        description="Enable multi-model council orchestration for agent reasoning",
+    )
+    council_models: str = Field(
+        default="llama3.1:8b,qwen2.5-coder:7b",
+        description="Comma-separated Ollama models that form the council",
+    )
+    council_rounds: int = Field(
+        default=1,
+        ge=0,
+        le=3,
+        description="Critique/refinement rounds after the initial draft (0 = no debate)",
+    )
+    council_synth_model: str = Field(
+        default="llama3.1:8b",
+        description="Model that synthesizes the final answer from all council outputs",
     )
     disable_ollama: bool = Field(
         default=False,
@@ -85,6 +107,9 @@ class LLMSettings(BaseSettings):
 
     groq_api_key: str = Field(
         default="",
+        # Accept both the prefixed and unprefixed env var so a bare
+        # GROQ_API_KEY in .env is honored (matches Groq's own convention).
+        validation_alias=AliasChoices("AEGIS_GROQ_API_KEY", "GROQ_API_KEY"),
         description="Groq API key (free tier — sign up at groq.com)",
     )
     groq_model: str = Field(

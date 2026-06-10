@@ -1,0 +1,67 @@
+# =====================================================================
+# AEGIS Pulse — Dashboard Command Center
+#
+# Multi-stage build: install deps into a venv, copy into slim runtime.
+# Runs as non-root (uid 10001) with tini as PID 1.
+# =====================================================================
+
+ARG PYTHON_VERSION=3.12.7
+
+# ---------- stage 1: builder ----------
+FROM python:${PYTHON_VERSION}-slim-bookworm AS builder
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install uv
+
+WORKDIR /build
+
+# Copy workspace members needed by the dashboard
+COPY pyproject.toml uv.lock ./
+COPY src/ ./src/
+COPY aegis-phase4/ ./aegis-phase4/
+COPY aegis-harden/ ./aegis-harden/
+
+# Install all packages (dashboard needs agents, predict, execute, etc.)
+RUN uv sync --all-packages --all-extras --no-dev
+
+# ---------- stage 2: runtime ----------
+FROM python:${PYTHON_VERSION}-slim-bookworm AS runtime
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates tini curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd -g 10001 aegis \
+    && useradd -u 10001 -g aegis -s /sbin/nologin aegis
+
+WORKDIR /app
+
+COPY --from=builder /build/.venv /app/.venv
+COPY --from=builder /build/src /app/src
+COPY --from=builder /build/aegis-phase4 /app/aegis-phase4
+COPY --from=builder /build/aegis-harden /app/aegis-harden
+
+ENV PATH="/app/.venv/bin:$PATH" \
+    PYTHONPATH="/app/src:/app/aegis-phase4/src"
+
+RUN chown -R aegis:aegis /app
+
+USER aegis
+
+EXPOSE 8300
+
+HEALTHCHECK --interval=10s --timeout=2s --start-period=20s --retries=3 \
+    CMD curl -fsS http://localhost:8300/healthz || exit 1
+
+ENTRYPOINT ["tini", "--"]
+CMD ["uvicorn", "aegis.dashboard.app:app", "--host", "0.0.0.0", "--port", "8300", "--log-level", "warning"]

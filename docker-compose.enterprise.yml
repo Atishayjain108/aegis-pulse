@@ -1,0 +1,138 @@
+# =====================================================================
+# AEGIS Pulse — Enterprise hardening overlay
+# =====================================================================
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.enterprise.yml up -d
+#
+# This overlay:
+#   • Tightens resource caps for production-scale WSL2 / single-node hosts
+#   • Reduces Ollama context to 8 k and loads only 1 model to save RAM
+#   • Removes the docker.sock mount from the dashboard (no shell ops in prod)
+#   • Restricts OLLAMA_ORIGINS from "*" to the service mesh only
+#   • Disables the ops console in the dashboard via AEGIS_DISABLE_OPS_CONSOLE
+#   • Adds WSL2-friendly sysctl hints via ulimits where Docker Desktop honours them
+#
+# Secrets: set AEGIS_EXECUTE_HMAC_KEY, POSTGRES_PASSWORD, MINIO_ROOT_PASSWORD
+# in a .env.prod file or via your secrets manager — never use dev defaults.
+# =====================================================================
+
+name: aegis-pulse
+
+services:
+
+  postgres:
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 6G
+        reservations:
+          memory: 1G
+    command:
+      - "postgres"
+      - "-c"
+      - "wal_level=logical"
+      - "-c"
+      - "max_wal_senders=4"
+      - "-c"
+      - "max_replication_slots=4"
+      - "-c"
+      - "shared_preload_libraries=timescaledb"
+      - "-c"
+      - "listen_addresses=*"
+      - "-c"
+      - "shared_buffers=1GB"
+      - "-c"
+      - "effective_cache_size=3GB"
+      - "-c"
+      - "work_mem=16MB"
+      - "-c"
+      - "maintenance_work_mem=256MB"
+      - "-c"
+      - "max_connections=100"
+      - "-c"
+      - "timescaledb.max_background_workers=4"
+
+  redis:
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 1536M
+        reservations:
+          memory: 512M
+
+  minio:
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 2G
+        reservations:
+          memory: 256M
+
+  predict:
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 4G
+        reservations:
+          memory: 512M
+
+  execute-api:
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          memory: 128M
+
+  execute-drain:
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+        reservations:
+          memory: 64M
+
+  dashboard:
+    environment:
+      AEGIS_DISABLE_OPS_CONSOLE: "true"
+    volumes: []
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          memory: 128M
+
+  ollama:
+    environment:
+      OLLAMA_ORIGINS: "http://aegis-litellm:8080,http://aegis-dashboard:8300"
+      OLLAMA_NUM_CTX: "8192"
+      OLLAMA_MAX_LOADED_MODELS: "1"
+    deploy:
+      resources:
+        limits:
+          cpus: "4.0"
+          memory: 8G
+        reservations:
+          memory: 2G
+
+  prometheus:
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+
+  grafana:
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
