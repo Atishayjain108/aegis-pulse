@@ -1,0 +1,52 @@
+name: ci
+
+# Fast quality gate (audit P0-1): ruff + the unit suite + Phase 4 suite on every
+# push/PR. This is the lane that was missing — the integration.yml header
+# referenced a "default ci workflow" that did not exist, so nothing ran ruff or
+# the 2,800-test unit suite automatically and a red suite shipped for ~8 days.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    env:
+      AEGIS_ENV: test
+      AEGIS_DISABLE_OLLAMA: "1"
+      AEGIS_AGENT_HMAC_KEY: test-key-do-not-use-in-prod
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Sync dependencies (all workspace members + extras)
+        run: uv sync --all-packages --all-extras
+
+      - name: Ruff (lint gate — must be zero violations)
+        run: uv run ruff check .
+
+      - name: Unit suite + coverage floor (78%)
+        run: >-
+          uv run python -m pytest tests/unit/ -q -p no:hypothesis
+
+      - name: Phase 4 (execute) unit suite
+        run: >-
+          uv run python -m pytest aegis-phase4/tests/ -q -p no:hypothesis --no-cov
+
+      - name: Security fixtures (prompt injection)
+        run: >-
+          uv run python -m pytest tests/security/ -q -p no:hypothesis --no-cov

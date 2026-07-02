@@ -1,0 +1,11 @@
+# Local pre-commit gate (audit P0-1 companion). Install with:
+#   uv run pre-commit install
+# Runs ruff on staged files so a lint failure never reaches CI.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+        args: [--check]
