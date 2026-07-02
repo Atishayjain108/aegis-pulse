@@ -285,3 +285,41 @@ Examined live verdicts from the `aegis:phase2:graph_results` stream + the runner
 1. **Empirical hallucination rate on the LLM-augmented path** — 20/20 live verdicts were heuristic-only (no LLM keys active / Ollama path not exercised on these), so I could not sample 30 *LLM-augmented* verdicts to cross-check factual claims. The deterministic-path rate is 0 by construction; the LLM-path rate is bounded by architecture (Phase 2) but not measured on live traffic.
 2. **Confidence-vs-correctness calibration on live data** — requires settled outcomes joined to predictions over a window; the settle loop is stalled (P6-3), so a fresh live calibration curve could not be computed this session. The historical fit (Brier skill on 322 samples) exists but is a week old.
 3. **Adversarial/contradictory-source handling** — the heuristic blends sources deterministically and flags low `data_confidence`, but a crafted contradictory-source fixture test was not run this session (candidate for a follow-up alongside the Phase 2 injection suite).
+
+---
+
+## PHASE 7 — API & UI/UX
+
+Live-tested the three served APIs (predict :8100, execute :8200, dashboard :8300).
+
+| Check | Result |
+|---|---|
+| Health endpoints | all **200**, fast (predict 52 ms, execute 10 ms, dashboard 17 ms) |
+| predict input validation | **422** on empty body and on non-JSON — pydantic validation works |
+| execute killswitch GET, no auth | **200** — live confirmation of P2-2 (unauthenticated by default) |
+| dashboard `/api/stats` | 200 but **1.46 s** |
+| Load: predict `/healthz`, 300 reqs @30 concurrent | 288 req/s, 100% success, **p50 50 ms → p95 579 ms → p99 626 ms** |
+
+| ID | Sev | Component | Finding | Evidence |
+|---|---|---|---|---|
+| P7-1 | Medium | Predict serving | **Single-worker serving tier; tail latency degrades sharply under modest concurrency.** `Dockerfile.predict` runs `uvicorn --workers 1`. A trivial `/healthz` under 30-way concurrency goes from p50 50 ms to p95 579 ms / p99 626 ms — requests queue behind one worker. Fine for internal single-caller use; would fall over if exposed or driven by the swarm at fan-out. Raise workers or front with a process manager. | live load probe; `Dockerfile.predict:97` |
+| P7-2 | Medium | Dashboard | `/api/stats` takes **1.46 s** — slow for a dashboard aggregate, and a likely downstream symptom of the P4-1 chunk bloat (planner scanning ~1,000 chunks). Would present as a sluggish UI. | live curl |
+
+(Full per-route valid/invalid/malformed matrix and a k6/locust sustained load test were not run — see Could Not Verify.)
+
+---
+
+## PHASE 8 — OBSERVABILITY
+
+The Phase 14 stack (OTel→Jaeger, Prometheus, Grafana, Loki, 24 metrics, Sentry hooks) is **built and the containers are healthy** — but the live deployment's alerting/capture last mile is disconnected.
+
+| ID | Sev | Component | Finding | Evidence |
+|---|---|---|---|---|
+| P8-1 | **High** | Metrics / alerting | **Prometheus has near-zero visibility and there is no alerting at all.** The scrape config defines only 2 jobs: `prometheus` (self) and `aegis` (app metrics at `host.docker.internal:8001`) — and that one is **DOWN** (`dial tcp … connection`). None of the 19 containers (postgres, redis, predict, execute, dashboard, …) are scraped. There are **no alert rules and no Alertmanager**. So metrics that are collected never page anyone, and most services emit nothing Prometheus can see. | live `/api/v1/targets` (1 up, 1 down); `config/prometheus/*.yml` (2 jobs, 0 alert files) |
+| P8-2 | **High** | Error tracking | **Sentry is off** — `AEGIS_SENTRY_DSN=` is empty, so `init_sentry()` is a documented no-op. Combined with the broad-except-logs-only policy (P1-6), the freshness alerts being log-only (P5-3), and P8-1, **no failure in this system pages a human**. Everything found in this audit that "fails silently" is silent precisely because the last mile — Sentry + Prometheus alerts — is not wired. This is the single highest-leverage fix for the "run a week unattended" goal. | `.env.example:35`; Phase 14 no-op behavior |
+| P8-3 | Low | Observability | Structured logging is genuinely good (structlog, consistent event keys, correlation_ids throughout — visible in every log sample this audit) and Loki/Promtail ship it. The gap is not log *quality*, it's that logs are the *only* channel — nothing escalates. | log samples across phases |
+
+### Could Not Verify (Phase 7–8)
+1. **k6/locust sustained load test** and full per-route fuzzing — not run (no load tool installed; used a Python concurrent probe for a first-order req/s + tail-latency read).
+2. **Whether the `aegis:8001` metrics target is down by config or by the app not starting its metrics server** — the target is unreachable from Prometheus; root-causing (wrong host in a container context vs `start_metrics_server` never called) needs a follow-up.
+3. **Jaeger trace completeness** — Jaeger is healthy and OTel is wired, but I did not drive a request end-to-end and confirm a full trace span tree this session.
