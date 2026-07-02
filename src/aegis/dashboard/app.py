@@ -286,6 +286,15 @@ async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """Create shared connection pools on startup; close them on shutdown."""
     global _pg_pool, _redis_pool, _research_pool, _llm_probe_task  # noqa: PLW0603
     _require_ops_token_in_prod()  # ENV-2: fail fast, before any pool exists
+    # audit P8-2: actually initialise error tracking at startup. init_sentry is a
+    # no-op when sentry-sdk is absent or AEGIS_SENTRY_DSN is empty, so this is
+    # safe in dev and turns real error tracking on the moment a DSN is set.
+    try:
+        from aegis.observability import init_sentry
+
+        init_sentry()
+    except Exception as exc:  # never let observability wiring block startup
+        _app_log.debug("dashboard.sentry_init_skipped", error=str(exc))
     try:
         # DASH-4: a bigger default ceiling (concurrent tabs + SSE catch-up +
         # /api/stats aggregation + research all share this pool) and a server-side

@@ -181,6 +181,13 @@ def create_app(
 
     @asynccontextmanager
     async def _lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
+        # audit P8-2: init error tracking (no-op without sentry-sdk / DSN).
+        try:
+            from aegis.observability import init_sentry
+
+            init_sentry()
+        except Exception as exc:  # never block serving on observability wiring
+            logger.debug("predict.sentry_init_skipped: %s", exc)
         # Pre-load both predictors so first request isn't penalised.
         runner._ensure_predictors()
         logger.info("aegis-predict serving ready")

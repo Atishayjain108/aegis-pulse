@@ -1,12 +1,9 @@
 # Prometheus scrape configuration for the AEGIS Pulse local stack.
 #
-# Targets:
-#   * Prometheus itself (sanity / meta-metrics)
-#   * The AEGIS Pulse application's /metrics endpoint
-#   * cAdvisor / node-exporter if the user adds them later
-#
-# Retention is set on the docker-compose command-line (15 days);
-# scrape intervals here are conservative to keep laptop load low.
+# audit P8-1: previously only two jobs existed (prometheus self + a single
+# host.docker.internal:8001 target that was DOWN), so Prometheus had near-zero
+# visibility and there were no alert rules. This config scrapes each service
+# that exposes /metrics by its compose service name and loads alert rules.
 
 global:
   scrape_interval: 15s
@@ -16,27 +13,40 @@ global:
     project: aegis-pulse
     env: local
 
+rule_files:
+  - /etc/prometheus/alerts.yml
+
 scrape_configs:
   # ----- Prometheus itself --------------------------------------------------
   - job_name: prometheus
     static_configs:
-      - targets:
-          - "localhost:9090"
+      - targets: ["localhost:9090"]
 
-  # ----- AEGIS Pulse application -------------------------------------------
-  # The app exposes its central CollectorRegistry on the configured
-  # AEGIS_PROMETHEUS_PORT.  The default is 8001 (kept distinct from the
-  # dashboard on 8000).  When the app runs on the host (not inside compose),
-  # use ``host.docker.internal`` so Prometheus running in compose can reach it.
-  - job_name: aegis
+  # ----- Phase 3 predict server (uvicorn :8000 inside compose) --------------
+  - job_name: predict
     metrics_path: /metrics
     static_configs:
-      - targets:
-          - "host.docker.internal:8001"
-        labels:
-          service: aegis-pulse
+      - targets: ["predict:8000"]
+        labels: {service: aegis-predict}
 
-  # ----- Optional: cadvisor (uncomment if you add the container) ----------
-  # - job_name: cadvisor
-  #   static_configs:
-  #     - targets: ["cadvisor:8080"]
+  # ----- Phase 4 execute-api ------------------------------------------------
+  - job_name: execute-api
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["execute-api:8200"]
+        labels: {service: aegis-execute-api}
+
+  # ----- Command Center dashboard -------------------------------------------
+  - job_name: dashboard
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["dashboard:8300"]
+        labels: {service: aegis-dashboard}
+
+  # ----- Host-side app metrics (when the app runs on the host, not compose) -
+  # Down is EXPECTED when nothing runs on :8001; kept for host-mode operation.
+  - job_name: aegis-host
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["host.docker.internal:8001"]
+        labels: {service: aegis-host}
