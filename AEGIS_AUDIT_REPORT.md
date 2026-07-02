@@ -371,3 +371,75 @@ Computed live from `signals` (8,797 rows).
 ### Could Not Verify (Phase 10)
 1. **Accuracy spot-check of 20 normalized signals vs raw source** — not performed this session; completeness and dedup are measured, but field-level accuracy (does the normalized title/sentiment match the source) was not sampled.
 2. **Source-event → signal-availability latency** — not instrumented end-to-end this session; the confidence gate reports `signal_freshness` but true ingestion latency per source was not measured.
+
+---
+
+## PHASE 11 — CONSOLIDATED REPORT
+
+**56 distinct findings across Phases 0–10. 0 Critical · ~16 High · ~28 Medium · ~12 Low.** No single defect loses data or exposes a secret today — but a consistent structural theme runs through nearly all of them.
+
+### Executive summary (plain language)
+
+AEGIS Pulse is **more real than its dashboards suggest, and less finished than its docs claim** — in both directions. The verdict engine is genuinely well-built: heuristic-first, so a scraped-in prompt injection *cannot* produce a wrong number (I tested it); deterministic and reproducible; and honest enough to stamp its own confidence `UNVERIFIED` rather than bluff. A mid-run service restart lost zero data. Deduplication is excellent. Dependencies for the three worst CVE-classes were already pinned. That is a real foundation.
+
+But the system has one pervasive weakness that shows up in phase after phase: **it cannot tell the difference between "working" and "silently broken," because the last mile of failure-reporting is not connected.** The weekly retrain loop has never run (a `pool=`/`db_pool=` typo). The calibration it spent months building never reaches a live verdict (a `"default"`-vs-UUID tenant mismatch). The unit suite is red and has been for over a week. Coverage is under its own floor. It ingested **zero signals for four straight days (Jun 27–30)** and nothing paged. **Not one of the 8,797 stored signals has a price** — so the "cross-market arbitrage" that's meant to make it superior to single-purpose marketplace tools is running on category-median fallbacks, not real prices. And every one of those was invisible because broad exception handlers demote failures to log lines, no CI runs the gates, Prometheus scrapes almost nothing, and Sentry is switched off.
+
+**The 5 issues most likely to burn a real user today:**
+1. **P10-1 — 0% price coverage.** The arbitrage engine, the product's differentiator, has no observed price data to work with. (High)
+2. **P6-1 — calibration is inert.** A tenant-key mismatch means every live verdict ships raw, known-miscalibrated confidence and the ENTER-safety gate never fires. The trust machinery exists but never reaches the user. (High)
+3. **P1-1 — the learning loop is dead.** The weekly retrain `TypeError`s on every firing; the system does not actually self-evolve. (High)
+4. **P8-2 / P8-1 — nothing pages a human.** Sentry off, no Prometheus alert rules, no per-service scraping. Every silent failure in this report is silent for this reason. (High)
+5. **P3-1 — the intake path drops verdicts on any transient error** (ACK-in-finally, at-most-once, no DLQ). A missed ENTER is a missed opportunity with no trace. (High)
+
+**Autonomy read — can it run a week unattended?** Not yet, and the blocker is honesty-of-signal, not raw capability. Today a human must tail logs to know if it's alive (it went dark for 4 days and only the logs knew). The *smallest* set of changes that would let it run a week without overstating itself: (a) wire Sentry + a handful of Prometheus alert rules on the failure paths the code already logs (P8-1/P8-2) — this alone converts "silent" into "paged"; (b) fix the retrain call and the calibration tenant key (P1-1, P6-1) — one line each, reactivating the learning and trust loops; (c) add the missing unit/ruff CI lane (P0-1) so red never ships again; (d) make intake ACK-on-success (P3-1) so a hiccup doesn't eat a verdict. None of these are large. The gap between AEGIS today and a trustworthy unattended operator is mostly last-mile plumbing, not intelligence.
+
+### Readiness scorecard
+
+| Phase | Result | Critical | High | Notes |
+|---|---|---|---|---|
+| 0 — Inventory | **Pass** | 0 | 1 | docs stale; no CI lane |
+| 1 — Stability & bugs | **Partial** | 0 | 4 | red suite, dead retrain, coverage < floor; ruff clean |
+| 2 — Security | **Partial** | 0 | 3 | no real secrets; 113 dep CVEs; default-open APIs; injection tested-safe on verdict |
+| 3 — Infrastructure | **Partial** | 0 | 2 | good limits/restart; at-most-once intake + LRU eviction risk |
+| 4 — Database | **Partial** | 0 | 1 | mature TSDB; chunk bloat, no rollback, compression off |
+| 5 — Scrapers | **Fail** | 0 | 1 | 6/37 fresh, commerce data-starved; monitor works but log-only |
+| 6 — AI grounding | **Partial** | 0 | 2 | hallucination ~0 (strength); calibration inert; no per-signal provenance |
+| 7 — API/UX | **Partial** | 0 | 0 | validates input; single-worker tail latency; slow stats |
+| 8 — Observability | **Fail** | 0 | 2 | good logging; no alerting, no error tracking, near-blind Prometheus |
+| 9 — Load/Chaos | **Pass** | 0 | 0 | durable path survived restart with zero loss |
+| 10 — Data quality | **Partial** | 0 | 2 | 100% core completeness, 0.07% dupes; **0% price**, 4-day blackout |
+
+### Prioritized roadmap
+
+**Fix now (hours each, high leverage, mostly one-liners):**
+- P1-1 retrain `pool=`→`db_pool=` (reactivate learning loop) — *review before enabling*
+- P6-1 pass canonical tenant UUID into `run_trend`/dashboard/CLI (make calibration reach verdicts)
+- P1-15 purge stale `meesho/ajio/nykaa/indiamart` from `topic_classifier` (make the suite green)
+- P0-1 add the missing unit+ruff CI workflow (stop red from shipping)
+- P8-2 set `AEGIS_SENTRY_DSN`; P8-1 add per-service Prometheus scrape + a few alert rules on the failure logs that already exist
+- P3-1 ACK-on-success in the intake worker (stop dropping verdicts)
+
+**This week:**
+- P10-1 / P5-1 / P5-2 — trace why commerce adapters pass manual probes but don't persist; get *some* real price data flowing (this is the mission-critical one)
+- P2-1 dependency bumps (aiohttp→3.10.11, jinja2→3.1.6, urllib3→2.7.0, starlette→0.49.1, cryptography→44.0.1) — mostly patch-level
+- P2-2 execute-api prod fail-fast on empty bearer; P2-3 auth on the unified API before it ships
+- P4-1 `drop_chunks` to clear the 936 empty chunks; P4-2 enable compression on signals/media
+- P6-3 restore the settle→calibration refresh cadence
+
+**This month:**
+- P1-6 replace silent-degradation with failure-counter + alert on every feature-guarding except
+- P2-5 guardrail the LLM `reasoning` field; P6-2 populate per-signal provenance in verdicts
+- P2-4 parameterize the settlement RLS setter; P2-7 defusedxml; P2-8 non-pickle Redis codec
+- P1-9 resolve the comply/compliance split-brain (merge or kill)
+
+**Backlog:**
+- P3-2 switch Redis to `noeviction`; P9-1 consumer reaper; P4-3 add migration rollback discipline; P7-1 multi-worker predict; P0-4 pin mutable image tags; P4-4 measure index usage over an uptime window.
+
+### CI note
+There is no automated unit/lint gate (P0-1) — every "test" in this report was run by hand. Nothing here is truly "automated" until the CI lane exists; it is the top backlog-to-fix-now item because it's what keeps all the other fixes from regressing.
+
+### Consolidated "Could Not Verify"
+Fresh-volume boot (destructive); LLM-augmented-path hallucination rate (no live LLM traffic sampled); live confidence-vs-correctness calibration (settle loop stalled); full 37-adapter live probe (inferred from DB freshness); timestamp-normalization spot-check vs 20 raw sources; migration up/down (no down path exists); trivy/hadolint image scan and gitleaks (tools absent — used detect-secrets + manual); k6/locust sustained load; per-signal accuracy spot-check; induced P3-1 drop and multi-hour soak. Each is noted in its phase section.
+
+---
+*Audit complete: Phases 0–11. Branch `audit/full-system-20260702`, 10 commits. One trivial fix applied during audit (P1-5 killswitch logging + regression test); all other findings flagged for review, not applied, per directive.*
