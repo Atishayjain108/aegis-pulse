@@ -1,0 +1,30 @@
+src/aegis/scrape/sources/github_trending.py                    123     15     18      5    86%   109, 114, 116, 125-130, 135, 216-218, 231->229, 277-278
+src/aegis/scrape/sources/google_news_rss.py                    112      6     22      5    92%   163, 166->exit, 178->166, 205, 258-260, 267
+src/aegis/scrape/sources/hacker_news.py                        103     16     22      7    82%   108, 118->exit, 128, 134-139, 147, 149, 155, 172-173, 229-231
+src/aegis/scrape/sources/investing_com_rss.py                   14      1      0      0    93%   32
+src/aegis/scrape/sources/medium_rss.py                          19      3      0      0    84%   34, 37-38
+src/aegis/scrape/sources/mint_rss.py                            14      1      0      0    93%   34
+src/aegis/scrape/sources/ndtv_profit.py                         14      1      0      0    93%   27
+src/aegis/scrape/sources/reddit_rss.py                         153     24     36      8    81%   62, 65, 146, 151, 159, 166, 170-183, 195-196, 202-204, 208-210, 284->288, 352-354
+src/aegis/scrape/sources/reuters_rss.py                         14      1      0      0    93%   33
+src/aegis/scrape/sources/wired_rss.py                           14      1      0      0    93%   26
+src/aegis/scrape/sources/yahoo_finance_rss.py                   21      4      0      0    81%   36, 39-41
+src/aegis/scrape/stealth.py                                     80      7     14      2    86%   302->307, 364->362, 619-627
+src/aegis/scrape/swarm.py                                      266      7     76      6    96%   170, 179->182, 183->173, 335-336, 419, 422, 432-433, 557->580
+src/aegis/scrape/swarm_agents.py                               165      2     32      2    98%   115->exit, 284-285
+src/aegis/scrape/topic.py                                      380     28    112     13    92%   372->371, 385->387, 394->396, 402->401, 410->414, 418->416, 502-510, 596-601, 621, 821-822, 884->890, 895-896, 931-932, 946-947, 984-985, 997-998, 1016-1017, 1026-1028, 1029->1033, 1034-1036, 1126->1129
+src/aegis/trust/calibration.py                                 103      9     46      9    88%   31, 46, 60, 64, 101, 122, 151, 161, 164
+src/aegis/trust/claim_emitter.py                               130     21     16      6    82%   125-126, 196-197, 229-232, 241-243, 304-305, 310-311, 339-340, 372, 379-381
+--------------------------------------------------------------------------------------------------------
+TOTAL                                                        27912   5642   5598    732    77%
+
+163 files skipped due to complete coverage.
+Coverage XML written to file coverage.xml
+
+FAIL Required test coverage of 78% not reached. Total coverage: 77.48%
+=========================== short test summary info ============================
+SKIPPED [1] tests/unit/datalake/test_storage.py:121: S3 backend probes endpoint on construction
+SKIPPED [1] tests/unit/geo/test_phase6_bridge.py:49: Phase 6 is available — skipping unavailability test
+SKIPPED [1] tests/unit/scrape/test_anomaly_detector.py:50: pyod optional extra not installed
+FAILED tests/unit/scrape/test_adapter_router.py::TestTopicClassifier::test_affinity_names_resolve_in_swarm_registry
+1 failed, 2870 passed, 3 skipped, 1 warning in 2000.87s (0:33:20)

@@ -7,6 +7,7 @@ from uuid import uuid4
 
 import httpx
 import pytest
+
 from aegis.execute.api import build_app
 from aegis.execute.bridge.types import ComposerInput
 from aegis.execute.bus import EventBus
@@ -182,3 +183,36 @@ async def test_stream_route_is_registered(fake_repo, settings):
     app = build_app(settings=settings, repo=fake_repo, bus=bus)
     paths = {getattr(r, "path", None) for r in app.routes}
     assert "/stream" in paths
+
+
+async def test_killswitch_audit_failure_is_logged_not_silent(fake_repo, settings, monkeypatch):
+    """Regression (audit 2026-07-02): a failing killswitch_audit INSERT must not
+    500 the endpoint, and must emit a WARNING instead of being silently swallowed."""
+    from aegis.execute.api.routes import killswitch as ks_route
+
+    class _BrokenPool:
+        def acquire(self):
+            raise RuntimeError("audit db down")
+
+    warnings: list[dict] = []
+    monkeypatch.setattr(
+        ks_route._log, "warning", lambda event, **kw: warnings.append({"event": event, **kw})
+    )
+
+    rc = _StubRedis()
+    ks = KillSwitch(redis_client=rc)
+    app = build_app(settings=settings, repo=fake_repo, killswitch=ks)
+    app.state.audit_pool = _BrokenPool()
+    async with await _client(app) as c:
+        r_trip = await c.post("/killswitch/trip", json={"reason": "incident-9"})
+        assert r_trip.status_code == 200
+        assert r_trip.json()["state"] == "TRIPPED"
+        r_arm = await c.post("/killswitch/arm", json={"reason": "resolved"})
+        assert r_arm.status_code == 200
+        assert r_arm.json()["state"] == "ARMED"
+
+    assert [w["event"] for w in warnings] == [
+        "execute.killswitch.audit_write_failed",
+        "execute.killswitch.audit_write_failed",
+    ]
+    assert {w["action"] for w in warnings} == {"trip", "arm"}

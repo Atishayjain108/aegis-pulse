@@ -12,11 +12,14 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from aegis.execute.api.auth import require_bearer
 from aegis.execute.killswitch.switch import KillSwitch
+
+_log = structlog.get_logger("aegis.execute.api.killswitch")
 
 router = APIRouter(prefix="/killswitch", tags=["killswitch"])
 
@@ -66,8 +69,8 @@ async def trip(
                     principal,
                     body.reason,
                 )
-        except Exception:
-            pass
+        except Exception as exc:
+            _log.warning("execute.killswitch.audit_write_failed", action="trip", error=str(exc))
     return {"state": "TRIPPED", "reason": body.reason}
 
 
@@ -88,8 +91,8 @@ async def arm(
                     principal,
                     body.reason,
                 )
-        except Exception:
-            pass
+        except Exception as exc:
+            _log.warning("execute.killswitch.audit_write_failed", action="arm", error=str(exc))
     return {"state": "ARMED", "reason": body.reason}
 
 
