@@ -175,3 +175,53 @@ Tools: `detect-secrets 1.5.0` (gitleaks/trufflehog not installed), `pip-audit`, 
 2. **gitleaks/trufflehog** — not installed; used detect-secrets + targeted history greps instead. History is only 12 commits, so coverage is high, but a dedicated entropy scanner would be more thorough.
 3. **Live SSRF probe** — no user-supplied-URL fetch endpoint was found in the served apps (scrapers fetch predetermined feeds), so SSRF surface looks low, but this was by code-read, not by fuzzing an exposed endpoint.
 4. **Whether P2-2/P2-3 are exploitable in the current deploy** — both are loopback-bound now; the finding is about default posture, not a live open port.
+
+---
+
+## PHASE 3 — INFRASTRUCTURE & DOCKER
+
+Verified against the live 17-container stack + compose file.
+
+### Posture (verified)
+- **Every long-running service has a restart policy (`unless-stopped`) and `deploy.resources.limits`.** Only `ollama-init` lacks both — correct, it's a one-shot (`restart: no`).
+- **Healthchecks on 16/19 services.** Missing on `execute-drain` and `promtail` (both port-less workers) and `ollama-init` (one-shot). P3-3 below.
+- **Startup ordering is gated properly**: app services `depends_on` postgres/redis with `condition: service_healthy`; grafana waits on prometheus; promtail on loki. No obvious race — the boot test (§1.7) restarted cleanly.
+- **Graceful shutdown exists**: intake/drain workers use an `asyncio.Event` stop flag + task cancel + a `_flush` of buffered half-inputs on shutdown.
+- **Delivery is properly at-least-once**: the outbox drainer claims rows with `SELECT … FOR UPDATE SKIP LOCKED`, transitions pending→delivering→delivered/retry/failed with `max_attempts` and backoff. Once an alert reaches the DB outbox, it will not be silently lost.
+
+### Phase 3 findings
+
+| ID | Sev | Component | Finding | Evidence |
+|---|---|---|---|---|
+| P3-1 | **High** | Redis / durability | **The Phase 2→Phase 4 intake path is at-most-once and drops verdicts on any transient error.** `intake_worker._handle()` calls `self._ack(stream, entry_id)` in a `finally` block, so when `submit_phase2_dict()` raises (pipeline error, DB blip), the message is logged at ERROR **and then ACKed** — removed from the consumer-group pending list, never retried, no dead-letter. There is no DLQ or max-retry on intake. A crash strictly between submit and ack is the *only* window a message survives; a handled exception loses it permanently. For "convert opportunities before others," a dropped ENTER verdict is a missed opportunity with no trace. Fix: ACK only on success (or after DLQ-publish); leave failures pending for `XAUTOCLAIM` retry. | `aegis-phase4/src/aegis/execute/workers/intake_worker.py:232-254` |
+| P3-2 | **High** | Redis / durability | **Redis is configured `maxmemory 1gb` + `allkeys-lru`** (docker-compose.yml:94-101). Under memory pressure Redis will evict *any* key by LRU — including the `aegis:phase2:graph_results` bus stream, swarm results, and any not-yet-consumed intake entries → silent in-flight data loss upstream of P3-1. A message bus must use `noeviction` (or `volatile-*` with TTLs only on disposable keys). Combined with P3-1, the ingestion→verdict path has two independent silent-loss vectors. | docker-compose.yml redis `command` |
+| P3-3 | Low | Docker | `execute-drain` and `promtail` have no healthcheck. Both are port-less so there's nothing to curl, but a `pgrep`/liveness probe would let compose restart a wedged worker instead of leaving it "up" but stalled. | compose matrix |
+| P3-4 | Low | Docker | 3 base/app images pin mutable tags (`minio:latest`, `flaresolverr:latest`, `prefect:3-latest`) — see P0-4; a re-pull can change behavior under you. Digest-pin or version-pin. | compose |
+
+### Could Not Verify (Phase 3)
+1. **Kill-a-service-mid-run chaos test** — deferred to Phase 9 (soak/chaos) to avoid disrupting the live stack mid-audit; P3-1/P3-2 are proven by code + config, not yet by an induced crash.
+2. **Behaviour under real memory pressure** (P3-2 eviction actually firing) — would require driving Redis past 1 GB; reasoned from config, not induced.
+
+---
+
+## PHASE 4 — DATABASE (TimescaleDB)
+
+Verified live against the running `aegis-postgres` (TimescaleDB pg16), 8,797 signals.
+
+### Posture (verified)
+- **16 hypertables**, sensible partitioning. Retention policies present: signals/media 90 days, velocity_snapshots 180 days. **3 continuous aggregates** with refresh policies (30 min / 2 h / 12 h cadences). This is a mature TimescaleDB setup, not a bare table.
+- **10 purpose-built indexes on `signals`** (tenant+ts, platform+ts, tier+ts, author+ts, tags GIN, content_hash, intent+ts, external-unique, ts, pk) — query patterns are clearly considered.
+
+### Phase 4 findings
+
+| ID | Sev | Component | Finding | Evidence |
+|---|---|---|---|---|
+| P4-1 | **High** | TimescaleDB | **Severe chunk bloat on the primary hypertable: 958 chunks, 936 empty (~98%).** Chunk ranges span **2007-10-09 → 2026-07-03** (~19 years) though only 22 distinct days actually hold data (May 2–Jul 2). Every planner run must consider chunk exclusion across ~1,000 chunks. Root cause is historical: signals were once inserted with very old `scraped_at` values (bulk test data or a since-fixed timestamp bug), creating chunks that were later emptied but never dropped. **The 90-day retention policy is not reclaiming them: 867 chunks have `range_end` older than 90 days, yet the retention job reports `Success` (34 runs, 0 failures, last 2026-07-02 07:00).** So retention *runs* but does not drop these old/empty chunks — a real gap to root-cause (likely the policy was added after the bloat and its dimension scoping doesn't match, or the chunks predate the policy's `drop_after` reference). Live `scraped_at` is currently clean (no future/ancient rows), so the timestamp bug appears fixed — but the catalog bloat it left behind persists. Fix: manual `drop_chunks('signals', older_than => INTERVAL '90 days')` to clear the backlog, then confirm the policy keeps it clear. | live TimescaleDB queries; chunk range + job_stats |
+| P4-2 | Medium | TimescaleDB | **Compression is disabled on `signals` and `media`** (`compression_enabled = f`) despite both being append-heavy, time-ordered, and having 90-day retention. Native columnar compression would cut storage and speed range scans materially. Retention without compression leaves the middle of the lifecycle uncompressed. | `timescaledb_information.hypertables` |
+| P4-3 | Medium | Migrations | **Migrations are forward-only with no rollback path.** 27 raw-SQL files (0001–0027), zero `down`/rollback scripts, and `alembic/versions/` has no `downgrade()` bodies. The directive's "run all migrations up then down" is not possible — there is no down. A bad migration in prod can only be fixed by writing a new forward migration, never rolled back. Acceptable for a solo project but a real operational risk as it grows. | `ls db/migrations`; grep alembic |
+| P4-4 | Low | Indexes | 10 indexes on `signals` all show `idx_scan = 0` — but `pg_stat` was reset by today's container restart (~1 h uptime), so this is **not** evidence they're unused. Flagged only as: 10 indexes on a high-insert table is real write amplification; whether all 10 earn their keep needs a measurement window with stats intact (Phase 9). | `pg_stat_user_indexes`; uptime |
+
+### Could Not Verify (Phase 4)
+1. **Migration up→down→up reversibility** — no down path exists (P4-3), so the round-trip test is inapplicable rather than passed.
+2. **EXPLAIN ANALYZE against real query load** — index-usage stats were reset on restart; a meaningful "indexes defined vs used" read needs an uptime window (deferred to Phase 9 soak).
+3. **Backup/restore actually exercised** — pgBackRest binary is not installed in this environment (P1-4 shows the MinIO bucket-ensure is also broken); a real backup→restore round-trip was not run. The `backup_pre_phaseCD_*.dump` file proves `pg_dump` has been used manually, but the automated DR path is unverified end-to-end.
