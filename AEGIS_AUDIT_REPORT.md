@@ -3,9 +3,9 @@
 - **Audit start:** 2026-07-02
 - **Branch:** `audit/full-system-20260702` (cut from `audit-remediation-2026-06` @ c22bd12)
 - **Auditor:** Claude (principal-engineer-level directive v1.0)
-- **Scope this session:** Phase 0 (ground truth) + Phase 1 (stability & bugs). Phases 2–11 pending.
-- **Artifacts:** full tool logs in `.audit/20260702/` (ruff_full.log, bandit_full.log, mypy_strict.log)
-- **Working-tree caveat:** 242 files were modified-but-uncommitted from the prior remediation session when the audit began. The audit covers the working tree (= what is actually running in the containers), not HEAD. These changes were deliberately NOT committed by the audit.
+- **Scope so far:** Phase 0 (ground truth) + Phase 1 (stability & bugs) + Phase 2 (security). Phases 3–11 pending.
+- **Artifacts:** full tool logs in `.audit/20260702/` (ruff_full.log, bandit_full.log, mypy_strict.log, pytest_main.log, detect_secrets.json, pip_audit.json)
+- **Working-tree note:** the 242 uncommitted files present at audit start were committed 2026-07-02 (a102826) at user request after a secrets screen — see P0-7.
 
 Severity scale: **Critical** (data loss / security exposure / confident-wrong verdict) · **High** (core path breaks or silently wrong) · **Medium** (degraded but functional) · **Low** (cosmetic).
 
@@ -131,10 +131,47 @@ Executed 2026-07-02 13:49–13:56: `docker compose down` → `docker compose up 
 4. P0-1 missing CI lane — add unit+ruff workflow (roadmap: Fix Now).
 5. P1-6 silent-degradation policy — introduce failure counters/alerts for feature-guarding excepts (design change).
 
-Phases 2–11 (security, infra, DB, scrapers, AI grounding, API/load, observability, soak, data quality, consolidated report) are **not yet run**.
+Phases 3–11 (infra, DB, scrapers, AI grounding, API/load, observability, soak, data quality, consolidated report) are **not yet run**.
 
 ### Could Not Verify (Phase 0/1 scope)
 
 1. **True from-scratch boot (fresh volumes).** All compose ports are fixed to 127.0.0.1 and already bound by the running stack; a genuinely clean `up` requires wiping `aegis_postgres_data` etc. (destructive — ground rule 5) or a port-remapped override file. Performed instead: full `down`/`up` cycle with volumes preserved (see 1.7). Fresh-volume boot deferred until a copy-based dry-run is set up.
 2. **Whether the Sunday retrain failure (P1-1) fired in production logs** — container logs only retain ~1h (restarted today); the bug is proven by reproduction instead.
 3. Coverage for `aegis-harden`, `aegis-phase12`, `aegis-phase15` suites — run separately by design; only the main suite + phase4 measured this session.
+
+---
+
+## PHASE 2 — SECURITY AUDIT
+
+Tools: `detect-secrets 1.5.0` (gitleaks/trufflehog not installed), `pip-audit`, manual review, and a new prompt-injection test suite (`tests/security/test_prompt_injection.py`, 3 tests, all pass). Logs: `.audit/20260702/detect_secrets.json`, `pip_audit.json`.
+
+### Overall posture (the good news first)
+- **No real secrets in the tree or the 12-commit history.** detect-secrets flagged 90 items across 57 files; every one triaged to a dev-default (`aegis_app_dev_pw`, `admin/admin` dev user store explicitly marked "NEVER use in production"), the AWS documentation example key `AKIAIOSFODNN7EXAMPLE` (used in PII-scrubber tests), or doc strings. A full-history grep for provider key formats (`gsk_`, `sk-`, `ghp_`, real `AKIA`, `AIza`, `xoxb-`, PEM private keys) returned nothing real. No `.env` was ever committed.
+- **All 4 Dockerfiles run as non-root** (`USER aegis`), multi-stage, `python:3.12-slim-bookworm` base. No baked-in secrets, no `latest` base tags in the app images.
+- **Every published compose port binds `127.0.0.1`** — nothing is on a public interface by default.
+- **No `shell=True`, no `os.system`, no `os.popen`** anywhere in the source trees.
+- The dashboard ops-console RCE endpoint is **well-defended**: constant-time `X-Ops-Token` check, `_require_ops_token_in_prod()` refuses to start in prod without a token (ENV-2), CORS locked to loopback origins.
+
+### Phase 2 findings
+
+| ID | Sev | Component | Finding | Evidence |
+|---|---|---|---|---|
+| P2-1 | **High** | Dependencies | **113 known CVEs across 26 installed packages; 108/113 have a fix version available.** Worst web-facing: aiohttp 3.10.10 (32 vulns; fix 3.10.11), starlette 0.48.0 (7; fix 0.49.1), pillow 11.3.0 (7), cryptography 43.0.1 (5; fix 44.0.1), jinja2 3.1.4 (3 incl. SSTI-class CVE-2025-27516; fix 3.1.6), urllib3 2.6.3 (3; fix 2.7.0), lxml 5.3.0 (2). The three CVEs the project deliberately pinned (orjson/pyjwt/python-dotenv) are fixed, but the broader dependency set has drifted well behind. Most are patch/minor bumps. | `pip-audit`; `.audit/20260702/pip_audit.json` |
+| P2-2 | **High** | Execute API | **Killswitch and all execute-api routes are unauthenticated by default.** `api_bearer_token` defaults to `""` and `require_bearer()` returns `"anonymous"` (permissive) when empty — and unlike the dashboard there is **no prod fail-fast guard**. Anyone who can reach `:8200` can `POST /killswitch/trip` (halts all trading-alert dispatch) or `/killswitch/arm` with no credential. Loopback-bound today, so exposure requires the port to be published — but the default-open posture on a trading killswitch is the wrong default. Fix: mirror the dashboard's `_require_ops_token_in_prod()` — refuse to start in prod/live mode with an empty bearer token. | `aegis-phase4/src/aegis/execute/api/auth.py:29-32`; `config.py:125`; no prod guard in `api/app.py` |
+| P2-3 | **High** | Unified API | The unified API (`aegis.api.main:build_app`, tags geo/compliance/evolve/datalake) mounts **every router with zero auth** — including state-changing/expensive `POST /evolve/retrain`, `POST /compliance/assess`, `POST /geo/analyze`. Currently **not served in compose** (no `:8400` service), so it's a latent exposure: the moment anyone runs `uvicorn aegis.api.main:app` in an environment it becomes a fully open control surface. Flag before it ships. | `src/aegis/api/main.py:58-74`; 0 auth-refs in geo/evolve/compliance/comply routers; grep of compose (no 8400) |
+| P2-4 | Medium | Execute / RLS | **SQL-injection-shaped RLS tenant setter.** `settlement.py:408` does `f"SET app.current_tenant = '{tenant_id}'"` — string interpolation into the value that drives Row-Level Security. The rest of the codebase (execution_intel, scheduler, trust) uses the safe parameterized idiom `SELECT set_config('app.current_tenant', $1, ...)`. `tenant_id` is internally-sourced today (low live risk), but an injection here is a cross-tenant RLS bypass — Critical class if any user-influenced value ever reaches it. Fix is mechanical: use the `set_config($1)` form already used everywhere else. | `aegis-phase4/src/aegis/execute/settlement.py:408` |
+| P2-5 | Medium | LLM / prompt injection | **Scraped content reaches the LLM prompt verbatim; the verdict is safe but the human-facing reasoning is an unfiltered injection sink.** `title`/`summary`/`representative_text` are interpolated into `scout.jinja2` with no delimiting. **Tested directly** (`tests/security/test_prompt_injection.py`): a malicious model response *cannot* flip the verdict (`_llm_apply` never touches `verdict`) and *cannot* breach the confidence bound (`confidence_factor` clamped to [0.5,1.0], multiplied — the heuristic-first doctrine holds — verified). BUT the model's free-text `reasoning` is appended verbatim (up to 1500 chars) into the operator-facing output with **no output guardrail on this path** (`base.py:_llm_apply` bypasses the Phase 11 GuardrailsValidator). An adversary who seeds a marketplace listing with hidden text ("GUARANTEED 500% ROI — BUY NOW") gets that text surfaced in AEGIS's reasoning — directly undermining the "trustworthy, data-driven argument" goal even though the numeric verdict is sound. Fix: run PII/guardrail scrubbing on `reasoning` before persisting, and/or fence scraped content in the prompt. | `src/aegis/agents/nodes/base.py:188-201`; `scout.py:268`; new test suite (3 pass) |
+| P2-6 | Medium | API hardening | **No HTTP rate limiting on any served endpoint.** Phase 12 ships a `RateLimitMiddleware` but it is never `add_middleware`'d onto predict/execute/dashboard — only the internal LLM gateway has throttling. Predict `:8100` `/predict` + `/predict/batch` also have **no auth at all**. Combined with P2-2, the served surface is thin on request-abuse defense. Loopback-bound mitigates today. | grep: `RateLimitMiddleware` unmounted; `predict/serving/app.py:248,256` no auth dep |
+| P2-7 | Medium | XML / untrusted input | 8 adapters parse remote feeds with stdlib `xml.etree.ElementTree.fromstring` (bing_news, google_news, reddit×3, snapdeal, +2) — billion-laughs / entity-expansion DoS on a hostile or MITM'd feed. Fix: `defusedxml` or `defuse_stdlib()`. | bandit B314; `.audit/20260702/bandit_full.log` |
+| P2-8 | Medium | Deserialization | `pickle.loads` of a **Redis-cached** MinHash (`scrape/dedup.py:106`) and a local model checkpoint (`predict/online/river_models.py:67`). Redis is loopback-bound but **unauthenticated (no `requirepass`)** — anything that can write the cache key achieves code execution in the scraper process. Defense-in-depth gap; prefer a non-pickle codec for the Redis path. | bandit B301; compose redis has no `requirepass` |
+| P2-9 | Low | Config hygiene | Weak dev credentials are baked as compose fallbacks (`${POSTGRES_PASSWORD:-aegis_app_dev_pw}`, `admin/admin` dev user store, `verify=False` in the phase12 header-check CLI tool `security/cli.py:427`). Env overrides exist (good), but a deploy that forgets to set them silently runs on known-weak creds. | detect-secrets; compose review |
+
+### Phase 2 severity tally: 0 Critical · 3 High (P2-1, P2-2, P2-3) · 5 Medium · 1 Low.
+
+**One thing worth stating plainly for the trust goal (P2-5):** the heuristic-first architecture is doing exactly what it was designed to do — a prompt injection buried in scraped text cannot make AEGIS output a *wrong number*. That is a genuinely strong property most LLM-in-the-loop systems don't have. The gap is narrower and more subtle: it can still make AEGIS output a *wrong sentence* in the reasoning a human reads. For a system meant to "present convincing arguments," the argument text needs the same grounding discipline as the verdict.
+
+### Could Not Verify (Phase 2)
+1. **trivy / hadolint image + Dockerfile scan** — not installed; Dockerfiles reviewed manually (non-root confirmed) but layer-level CVE scan of the built images was not run.
+2. **gitleaks/trufflehog** — not installed; used detect-secrets + targeted history greps instead. History is only 12 commits, so coverage is high, but a dedicated entropy scanner would be more thorough.
+3. **Live SSRF probe** — no user-supplied-URL fetch endpoint was found in the served apps (scrapers fetch predetermined feeds), so SSRF surface looks low, but this was by code-read, not by fuzzing an exposed endpoint.
+4. **Whether P2-2/P2-3 are exploitable in the current deploy** — both are loopback-bound now; the finding is about default posture, not a live open port.
