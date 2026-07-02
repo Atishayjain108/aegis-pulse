@@ -7,6 +7,7 @@ Two public functions:
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -14,6 +15,31 @@ if TYPE_CHECKING:
 
     from aegis.db.pool import PgPool
     from aegis.schemas.signal import ProductSignal
+
+# audit P4-1: how far before ingestion an article's posted_at may anchor the
+# hypertable partition column `ts`. Beyond this (or any future date), we anchor
+# to scraped_at instead so old content can't fragment the time-series into
+# ancient chunks. 45 days comfortably covers slow news cycles / late discovery.
+_MAX_EVENT_TIME_BACKDATE = timedelta(days=45)
+
+
+def _clamp_event_time(
+    posted_at: datetime | None, scraped_at: datetime
+) -> datetime:
+    """Return the value to use for the `ts` partition/recency column.
+
+    Uses ``posted_at`` when it is a sane, recent, non-future timestamp; otherwise
+    anchors to ``scraped_at`` (ingestion time). Keeps recent content idempotent
+    under ``ON CONFLICT (platform, external_id, ts)`` while preventing a
+    2011-dated article from creating a 2011 chunk.
+    """
+    if posted_at is None:
+        return scraped_at
+    if posted_at > scraped_at:  # future publish date → nonsense, use ingestion
+        return scraped_at
+    if posted_at < scraped_at - _MAX_EVENT_TIME_BACKDATE:  # too old to anchor here
+        return scraped_at
+    return posted_at
 
 
 async def insert_signals(
@@ -65,8 +91,16 @@ async def insert_signals(
                 if row:
                     author_id = row["author_id"]
 
-            ts = signal.posted_at if signal.posted_at is not None else signal.provenance.scraped_at
             scraped_at = signal.provenance.scraped_at
+            # audit P4-1 root cause: `ts` is the hypertable partition column AND
+            # the recency-window key for trust/settlement/dedup queries. Setting
+            # it to a very old (or future) article `posted_at` fragmented the
+            # time-series into thousands of ancient 1-day chunks (ranges back to
+            # 2011) and made "recent signals" windows miss freshly-scraped old
+            # content. Clamp: use posted_at only when it is within a sane window
+            # of ingestion time; otherwise anchor to scraped_at. Recent content
+            # keeps a stable posted_at → ON CONFLICT idempotency is preserved.
+            ts = _clamp_event_time(signal.posted_at, scraped_at)
             eng = signal.engagement
             prov = signal.provenance
             conf = signal.confidence
