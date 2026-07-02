@@ -225,3 +225,39 @@ Verified live against the running `aegis-postgres` (TimescaleDB pg16), 8,797 sig
 1. **Migration up→down→up reversibility** — no down path exists (P4-3), so the round-trip test is inapplicable rather than passed.
 2. **EXPLAIN ANALYZE against real query load** — index-usage stats were reset on restart; a meaningful "indexes defined vs used" read needs an uptime window (deferred to Phase 9 soak).
 3. **Backup/restore actually exercised** — pgBackRest binary is not installed in this environment (P1-4 shows the MinIO bucket-ensure is also broken); a real backup→restore round-trip was not run. The `backup_pre_phaseCD_*.dump` file proves `pg_dump` has been used manually, but the automated DR path is unverified end-to-end.
+
+---
+
+## PHASE 5 — DATA PIPELINE & SCRAPER AUDIT
+
+Live-tested a representative sample + read live freshness from the DB and the running autonomous scheduler logs. Full per-adapter live validation of all 37 is deferred (see Could Not Verify), but the shape of the problem is clear and verified.
+
+### Scraper health table (from live DB freshness + live probes, 2026-07-02)
+
+| Platform | Signals 24h | Signals 7d | Last seen | Status | Notes |
+|---|---:|---:|---|---|---|
+| google_news | 1,250 | 2,232 | 2026-07-02 | **healthy** | dominant source |
+| hacker_news | 530 | 619 | 2026-07-02 | **healthy** | live probe: 3/3 emitted, 1.2 s |
+| reddit | 210 | 617 | 2026-07-02 | healthy | |
+| bing_news | 316 | 527 | 2026-07-02 | healthy | |
+| github_trending | 11 | 49 | 2026-07-02 | degraded | low yield |
+| amazon | 2 | 22 | 2026-07-02 | degraded | live probe works (3/3), but near-zero in prod |
+| myntra | 0 | 10 | 2026-07-01 | degraded | |
+| reddit_ecommerce | 0 | 3 | 2026-07-01 | degraded | |
+| amazon_in | 0 | 0 | 2026-06-20 | **dead** | 12 days silent; flagged by monitor |
+| google_trends_india | 0 | 0 | 2026-06-23 | **dead** | flagged by monitor |
+| youtube_rss | 0 | 0 | 2026-06-23 | **dead** | flagged by monitor |
+| *(26 other registered adapters)* | 0 | 0 | never | **absent** | never produced a DB signal |
+
+### Findings
+
+| ID | Sev | Component | Finding | Evidence |
+|---|---|---|---|---|
+| P5-1 | **High** | Data quality / core mission | **AEGIS is running almost entirely on news RSS, not marketplace data.** Of 37 registered adapters, only 6 produced signals in the last 24 h and 5 of those are news feeds (google/bing/hacker_news/reddit + amazon bestseller titles). 26 registered adapters have never landed a DB signal; the India-commerce layer (amazon_in, flipkart, meesho, myntra, nykaa, ajio, snapdeal, indiamart) is effectively non-productive in prod. The confidence gate confirms it live: `signal_freshness` 0.125–0.157 (≈87% of signals >24 h old). For the stated goal — "superior to single-function marketplace tools" — the actual buy-side/commerce signal is the thin part. This matches the documented "residential-proxy ceiling," but the effect on intelligence quality is the headline: the product's differentiator (cross-marketplace arbitrage) is data-starved. | live DB freshness; scheduler confidence-gate logs |
+| P5-2 | Medium | Scrape orchestration | **Adapters work in isolation but don't persist through the swarm path.** Live `aegis scrape --source flipkart` returns 200 + 3 parsed signals, and `amazon` emits 3/3 — yet flipkart has 0 DB rows in 7 d and amazon only 22. The single-adapter CLI path and the swarm/autonomous path diverge (confirmed in CLAUDE.md as separate code flows); the swarm path is dropping or not persisting what the adapters can fetch. Worth tracing end-to-end: an adapter that passes a manual probe but yields nothing in prod is the most deceptive failure mode. | live probes vs DB counts |
+| P5-3 | Low→Medium | Freshness monitoring | **CREDIT: freshness monitoring exists, runs, and works.** `scheduler/health_checker._check_adapter_zero_yield` fires every 5 min and correctly caught the exact dead set live: `health.adapter_zero_yield count=3 platforms=['amazon_in','youtube_rss','google_trends_india']`; stream-staleness detection triggers an emergency scrape. **The gap:** alerts go only to structlog — there is no external alert (Sentry/Telegram/email) for "source dead N days," and the only self-heal action (`emergency_scrape`) cannot fix a WAF-blocked commerce adapter, so it detects-but-cannot-heal and re-flags indefinitely. A human must be reading logs. | live autonomous logs |
+
+### Could Not Verify (Phase 5)
+1. **Full live validation of all 37 adapters** — tested hacker_news, google_news, amazon, flipkart, amazon_in directly; the rest are inferred dead/absent from DB freshness, not each individually probed (would mean 30+ live network calls, several against WAF-protected sites). The health table's "dead/absent" rows are from DB evidence, not per-adapter live failure capture.
+2. **Timestamp normalization (IST vs UTC) spot-check** — live `scraped_at` is currently clean (all UTC, no future/ancient rows), but the P4-1 chunk bloat back to 2007 proves a *past* timestamp bug existed; whether source-provided publish-times (vs scrape-time) are correctly normalized to UTC across all adapters was not spot-checked against 20 raw sources this session.
+3. **robots.txt / rate-limit compliance per adapter** — not audited this session; the ConcurrencyGovernor caps global concurrency but per-site robots respect was not verified.
