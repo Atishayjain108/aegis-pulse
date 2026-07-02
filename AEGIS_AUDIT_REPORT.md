@@ -39,7 +39,7 @@ Full corrected map: see `ARCHITECTURE_ACTUAL.md` (written this session). Key ver
 | P0-4 | Medium | Docker | 3 images float on mutable tags: `minio/minio:latest`, `flaresolverr:latest`, `prefecthq/prefect:3-latest`. A re-pull can silently change behavior. | docker-compose.yml:126,158,602 |
 | P0-5 | Low | Scrape | 4 unregistered adapter files remain as dead-code candidates: `ajio.py`, `meesho.py`, `nykaa.py`, `indiamart.py` (removed from swarm registry 2026-06-24 but files kept). | registry dump vs `ls sources/` |
 | P0-6 | Low | Config | Commerce adapter credentials (eBay/BestBuy/Etsy) bypass the pydantic-settings layer; documented only in `docs/FREE_COMMERCE_SETUP.md`, absent from auto-generated `.env.example`. | prior session obs 4802–4804, confirmed by grep |
-| P0-7 | Low | Repo | 242 uncommitted modified files at audit start — a full remediation batch living only in the working tree. One `git checkout .` away from being lost. | `git status --short \| wc -l` |
+| P0-7 | Low | Repo | 242 uncommitted files at audit start — far worse than it looked: 121 were **untracked**, including entire subpackages (`memory/`, `mentor/`, `trust/`, `intelligence/`, `execution_intel/`, `predict/online/`), migrations 0012–0027, ~80 test files, and the CI workflow itself. Weeks of work existed only on disk. **RESOLVED 2026-07-02** at user request: committed as a102826 (330 files, +47,751 lines) after a secrets screen (generic + provider-key-format grep over all staged files: clean); the 2.4 MB Postgres dump `backup_pre_phaseCD_20260618_0129.dump` was excluded and gitignored. These files were already inside the Phase 0/1 audit scope (working-tree audit): ruff/bandit/mypy/compileall/pytest all covered them. | `git status`; commit a102826 |
 
 ---
 
