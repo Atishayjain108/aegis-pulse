@@ -323,3 +323,51 @@ The Phase 14 stack (OTel→Jaeger, Prometheus, Grafana, Loki, 24 metrics, Sentry
 1. **k6/locust sustained load test** and full per-route fuzzing — not run (no load tool installed; used a Python concurrent probe for a first-order req/s + tail-latency read).
 2. **Whether the `aegis:8001` metrics target is down by config or by the app not starting its metrics server** — the target is unreachable from Prometheus; root-causing (wrong host in a container context vs `start_metrics_server` never called) needs a follow-up.
 3. **Jaeger trace completeness** — Jaeger is healthy and OTel is wired, but I did not drive a request end-to-end and confirm a full trace span tree this session.
+
+---
+
+## PHASE 9 — LOAD, STRESS & CHAOS
+
+### Chaos test (executed live)
+Restarted `execute-drain` + `execute-api` mid-flight, then checked recovery and data integrity:
+- Both containers recovered; `execute /healthz` → **200** within 8 s.
+- Phase 2 stream length **preserved (84 → 84)** — no bus loss.
+- Outbox unchanged (**36 delivered**) — the durable delivery path survived the restart cleanly.
+
+**Verdict: the at-least-once delivery path is genuinely resilient** — a mid-run restart lost nothing. This is a real strength and the correct counterpoint to P3-1.
+
+| ID | Sev | Component | Finding | Evidence |
+|---|---|---|---|---|
+| P9-1 | Medium | Redis consumer group | The `aegis-execute-intake` group has **21 registered consumers for effectively one worker** — a consumer-name leak across restarts (each restart registers a new consumer, none reaped). Harmless now but unbounded; `XGROUP DELCONSUMER` on shutdown or a periodic reaper would fix it. Also confirms P3-1: group `pending=0, lag=0` across 84 entries means every message was ACKed (nothing ever left pending for retry). | live `XINFO GROUPS` |
+| P9-2 | Low (now) | Redis eviction | P3-2 (allkeys-lru evicting the bus) is **not currently firing** — Redis is at 2.05 MB of a 1 GB cap with 84 stream entries. The risk is real under a sustained campaign but was not triggered in this session; reported honestly as latent, not active. | live `INFO memory` |
+
+### Could Not Verify (Phase 9)
+1. **Inducing an actual P3-1 drop** — would require injecting a deliberately-failing message into the live intake stream and confirming it's ACKed-and-lost; not done to avoid polluting the live pipeline. P3-1 stands on code + the pending=0 evidence, not an induced loss.
+2. **Sustained multi-hour soak** for memory growth / crash loops — out of scope for this session's time budget; the stack has been up ~2 h healthy with no observed growth, but that is not a soak.
+
+---
+
+## PHASE 10 — DATA QUALITY & QUANTITY SCORECARD
+
+Computed live from `signals` (8,797 rows).
+
+| Dimension | Measured | Read |
+|---|---|---|
+| title populated | **100%** | good |
+| url populated | **100%** | good |
+| source_confidence populated | **100%** | good |
+| author_id populated | 47.3% | expected (news RSS often has no author) |
+| **price_amount populated** | **0.0%** | **critical for the mission** |
+| Dedup effectiveness | 3 dupes / 4,224 (**0.07%**) | excellent |
+| Volume last 4 active days | Jul 2: 2,326 · Jul 1: 1,490 · Jun 26: 356 · Jun 25: 52 | spiky |
+| Ingestion gap | **Jun 27–30: zero signals (4-day blackout)** | unalerted |
+
+| ID | Sev | Component | Finding | Evidence |
+|---|---|---|---|---|
+| P10-1 | **High** | Data quality / mission | **Not a single signal in the database has a price (0.0% of 8,797).** The T2_commerce price-extraction fix was committed, but because the commerce adapters don't land signals (P5-1), the arbitrage/pricing engine has **no price data to operate on**. Every "cross-market margin" or "arbitrage opportunity" the system can produce is computed from category-median fallbacks, not observed marketplace prices. For a product positioned as superior to marketplace tools, the single most important field for that claim is empty. | `SELECT … price_amount IS NOT NULL` → 0.0% |
+| P10-2 | **High** | Ingestion continuity | **A 4-day ingestion blackout (Jun 27–30) passed with no alert.** Volume is spiky (52 → 356 → 0×4 days → 1,490 → 2,326), not steady. Nothing paged during the outage (consistent with P8-1/P8-2 — no alerting). A market-intelligence system that can go dark for four days unnoticed cannot be "trusted to catch opportunities before others." | daily volume query |
+| P10-3 | Low (credit) | Dedup | Deduplication is working very well — 0.07% duplicate retention across 4,224 recent rows. The MinHash/semantic dedup investment is paying off (even though the *optional* embedding layer P1-3 is broken, the primary layers work). | dup-rate query |
+
+### Could Not Verify (Phase 10)
+1. **Accuracy spot-check of 20 normalized signals vs raw source** — not performed this session; completeness and dedup are measured, but field-level accuracy (does the normalized title/sentiment match the source) was not sampled.
+2. **Source-event → signal-availability latency** — not instrumented end-to-end this session; the confidence gate reports `signal_freshness` but true ingestion latency per source was not measured.
