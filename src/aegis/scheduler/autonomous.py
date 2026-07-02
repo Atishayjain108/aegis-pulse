@@ -530,7 +530,7 @@ async def job_weekly_retrain() -> None:
             min_size=1,
             max_size=2,
         )
-        pipeline = RetrainingPipeline(pool=pool)
+        pipeline = RetrainingPipeline(db_pool=pool)
         result = await pipeline.run_weekly_retrain()
         log.info("scheduler.retrain.done", status=getattr(result, "status", "unknown"))
         await pool.close()

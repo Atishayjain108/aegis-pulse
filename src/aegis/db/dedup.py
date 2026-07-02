@@ -384,7 +384,10 @@ async def _semantic_dedup_pass(
     try:
         from aegis.llm.bridge.agents_bridge import get_gateway
 
-        gateway = get_gateway()
+        # P1-3 fix (audit 2026-07-02): get_gateway is async — the missing await
+        # meant `gateway` was a coroutine and `gateway.embed(...)` raised
+        # AttributeError, silently disabling this layer even when enabled.
+        gateway = await get_gateway()
         if gateway is None:
             return signals, 0
         kept: list[ProductSignal] = []

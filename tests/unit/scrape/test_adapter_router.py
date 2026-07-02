@@ -91,9 +91,14 @@ class TestAdapterRouter:
         recs = AdapterRouter().route("wireless earbuds buy")
         assert recs[0].adapter_name in ("amazon", "amazon_in", "flipkart")
 
-    def test_supplier_topic_routes_to_indiamart(self):
+    def test_supplier_topic_routes_to_registered_adapter(self):
+        # indiamart was WAF-gated and dropped from the registry (audit P1-15);
+        # supplier topics now route to registered adapters only.
         recs = AdapterRouter().route("wholesale manufacturer bulk")
-        assert recs[0].adapter_name == "indiamart"
+        from aegis.scrape.swarm import _REGISTRY
+
+        assert recs, "supplier topic must route somewhere"
+        assert recs[0].adapter_name in _REGISTRY
 
     def test_regulatory_topic_routes_to_news(self):
         recs = AdapterRouter().route("FDA recall medicine")
@@ -146,7 +151,8 @@ class TestAdapterRouter:
             "anything at all", explicit_topic_type=TopicType.SUPPLIER_DISCOVERY
         )
         assert recs[0].topic_type == TopicType.SUPPLIER_DISCOVERY
-        assert recs[0].adapter_name == "indiamart"
+        # top supplier adapter is now a registered one (indiamart dropped, P1-15)
+        assert recs[0].adapter_name == "amazon_in"
 
     def test_unhealthy_adapter_ranked_below_healthy(self):
         """SwarmAgentPool-style tracker: DOWN nse_bse loses its top spot."""

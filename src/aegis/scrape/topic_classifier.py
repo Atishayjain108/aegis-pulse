@@ -121,8 +121,12 @@ _KW: dict[str, TopicType] = {
 # for final ranking.
 ADAPTER_AFFINITY: dict[TopicType, dict[str, float]] = {
     TopicType.ECOMMERCE_PRODUCT: {
-        "amazon": 0.95, "amazon_in": 0.95, "flipkart": 0.92, "meesho": 0.88,
-        "myntra": 0.82, "nykaa": 0.78, "snapdeal": 0.72, "ajio": 0.70,
+        # Only swarm-registered, runnable adapters (audit P1-15): meesho/nykaa/ajio
+        # have no free path (WAF-gated) and were dropped from the registry — routing
+        # to them produced nothing. ebay/bestbuy/etsy are the key-gated real-API path.
+        "amazon": 0.95, "amazon_in": 0.95, "flipkart": 0.92,
+        "myntra": 0.82, "snapdeal": 0.72,
+        "ebay": 0.80, "bestbuy": 0.75, "etsy": 0.70,
         "google_trends_india": 0.80, "reddit_ecommerce": 0.85,
         "producthunt": 0.60,
     },
@@ -142,8 +146,10 @@ ADAPTER_AFFINITY: dict[TopicType, dict[str, float]] = {
         "techcrunch": 0.85, "devto": 0.75, "reddit_ecommerce": 0.60,
     },
     TopicType.SUPPLIER_DISCOVERY: {
-        "indiamart": 0.96, "amazon_in": 0.75, "meesho": 0.70,
-        "google-news": 0.65, "reddit_ecommerce": 0.60,
+        # indiamart/meesho unregistered (WAF-gated); route supplier topics to the
+        # registered B2B-adjacent adapters + news for now (audit P1-15).
+        "amazon_in": 0.75, "ebay": 0.70,
+        "google-news": 0.65, "bing-news": 0.60, "reddit_ecommerce": 0.60,
     },
     TopicType.REGULATORY: {
         "google-news": 0.90, "bing-news": 0.88, "reuters": 0.85,
@@ -155,8 +161,9 @@ ADAPTER_AFFINITY: dict[TopicType, dict[str, float]] = {
     },
     TopicType.GLOBAL_ARBITRAGE: {
         "amazon": 0.85, "amazon_in": 0.90, "flipkart": 0.88,
+        "ebay": 0.82, "bestbuy": 0.70,
         "yahoo_finance": 0.72, "investing_com": 0.70,
-        "google_trends_india": 0.85, "indiamart": 0.75,
+        "google_trends_india": 0.85,
     },
     TopicType.CONSUMER_TREND: {
         "reddit_ecommerce": 0.88, "producthunt": 0.80,

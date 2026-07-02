@@ -190,7 +190,10 @@ class TestSemanticLayer:
 
         import aegis.llm.bridge.agents_bridge as bridge
 
-        monkeypatch.setattr(bridge, "get_gateway", lambda: _BoomGateway())
+        async def _fake_get_gateway():
+            return _BoomGateway()
+
+        monkeypatch.setattr(bridge, "get_gateway", _fake_get_gateway)
         sigs = [_sig("first title here"), _sig("second title here")]
         kept, dropped = await _semantic_dedup_pass(sigs)
         # Embed failure → layer skipped, signals unchanged.
@@ -214,7 +217,10 @@ class TestSemanticLayer:
 
         import aegis.llm.bridge.agents_bridge as bridge
 
-        monkeypatch.setattr(bridge, "get_gateway", lambda: _FakeGateway())
+        async def _fake_get_gateway():
+            return _FakeGateway()
+
+        monkeypatch.setattr(bridge, "get_gateway", _fake_get_gateway)
         sigs = [_sig(t) for t in vectors]
         kept, dropped = await _semantic_dedup_pass(sigs)
         assert dropped == 1

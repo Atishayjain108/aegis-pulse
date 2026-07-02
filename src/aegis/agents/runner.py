@@ -181,7 +181,16 @@ async def run_trend(
     """
     started_at = datetime.now(tz=UTC)
 
-    # Buyer-demand stamp: fetch Google Trends ONCE per query here (harvest/entry)
+    # P6-1 fix (audit 2026-07-02): the trust/calibration maps, skill snapshots and
+    # RLS-scoped signal rows all live under the canonical tenant UUID. Callers
+    # (dashboard/CLI analyze) historically passed the literal string "default",
+    # which never matched that UUID — so calibration silently never applied and
+    # every verdict shipped raw UNVERIFIED confidence. Resolve the placeholder to
+    # the real tenant UUID once, here, so every downstream lookup keys correctly.
+    if tenant_id in ("default", "", None):
+        from aegis.config import settings as _cfg
+
+        tenant_id = str(_cfg().default_tenant_id)
     # and stash it on the candidate so SCOUT reads the stamped value instead of
     # re-querying Trends per node and getting 429'd. Fail-open + auto-disabled
     # under AEGIS_ENV=test (see aegis.agents.nodes._demand.stamp_demand).

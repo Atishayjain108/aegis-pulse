@@ -438,12 +438,32 @@ class BackupManager:
         return "unknown"
 
     async def _ensure_minio_bucket(self) -> None:
-        """Create MinIO backup bucket if it does not exist."""
+        """Create MinIO backup bucket if it does not exist.
+
+        P1-4 fix (audit 2026-07-02): the old call ``S3StorageBackend()`` passed
+        none of the four required kwargs and invoked a non-existent
+        ``ensure_bucket`` method, so it always fell into the except and the
+        bucket was never actually ensured. The backend ensures the bucket in its
+        constructor, so building it correctly is sufficient.
+        """
         try:
+            from aegis.config import settings as _settings
             from aegis.datalake.storage import S3StorageBackend  # optional dep
 
-            backend = S3StorageBackend()
-            await asyncio.to_thread(backend.ensure_bucket, self._minio_bucket)
+            mc = _settings().minio
+            scheme = "https" if mc.secure else "http"
+
+            def _build() -> None:
+                S3StorageBackend(
+                    bucket=self._minio_bucket,
+                    endpoint_url=f"{scheme}://{mc.endpoint}",
+                    access_key=mc.access_key.get_secret_value(),
+                    secret_key=mc.secret_key.get_secret_value(),
+                    region=mc.region,
+                    use_ssl=mc.secure,
+                )  # constructor calls _ensure_bucket()
+
+            await asyncio.to_thread(_build)
         except Exception as exc:
             _log.warning("pgbackrest.minio_bucket_check_skipped", reason=str(exc))
 
