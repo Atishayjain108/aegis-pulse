@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 import structlog
+from defusedxml.ElementTree import fromstring as _safe_fromstring  # audit P2-7
 
 from aegis.schemas.enums import (
     ContentModality,
@@ -74,7 +75,7 @@ def _parse_rss_feed(xml_text: str) -> list[dict[str, Any]]:
     """Parse Snapdeal RSS XML. Returns [] on any XML/parse failure."""
     items: list[dict[str, Any]] = []
     try:
-        root = ET.fromstring(xml_text)  # noqa: S314
+        root = _safe_fromstring(xml_text)
         channel = root.find("channel")
         if channel is None:
             return []

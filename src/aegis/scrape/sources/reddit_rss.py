@@ -20,6 +20,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 import httpx
+from defusedxml.ElementTree import fromstring as _safe_fromstring  # audit P2-7
 
 from aegis.core.logging import get_logger
 from aegis.schemas.enums import (
@@ -204,7 +205,7 @@ class RedditRSSAdapter(SourceAdapter[dict[str, Any]]):
                 continue
 
             try:
-                root = ET.fromstring(xml_bytes)  # noqa: S314
+                root = _safe_fromstring(xml_bytes)
             except ET.ParseError as e:
                 log.warning("reddit_rss.xml_parse_error", error=str(e), sub=sub)
                 continue

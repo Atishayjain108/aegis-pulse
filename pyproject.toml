@@ -41,7 +41,7 @@ dependencies = [
   "typing-extensions>=4.12,<5",      # rationale: >=4.12 needed by pydantic v2 + Annotated/TypeVar generics; <5 avoids next major
   # --- Async HTTP / networking ---
   "httpx[http2]>=0.27,<0.30",        # rationale: HTTP/2 support + timeouts-everywhere API; >=0.28 used by Phase 3 serving bench
-  "aiohttp==3.10.10",                # rationale: needed by several upstream libs (praw-async, apify)
+  "aiohttp==3.10.11",                # rationale: needed by several upstream libs; 3.10.11 patches 2026 CVE set (audit P2-1)
   "aiodns==3.2.0",                   # rationale: async DNS; required for aiohttp high-concurrency
   # --- Database / storage ---
   "asyncpg==0.29.0",                 # rationale: fastest Python PG driver; supports TimescaleDB fine
@@ -67,7 +67,7 @@ dependencies = [
   "tenacity==9.0.0",                 # rationale: retry/backoff DSL used inside resilient_call()
   "aiobreaker==1.2.0",               # rationale: circuit breaker for asyncio (pybreaker fork)
   # --- Secrets / crypto ---
-  "cryptography==43.0.1",            # rationale: HMAC for Phase 2 msg signing + Ed25519 in Phase 20
+  "cryptography==44.0.1",            # rationale: HMAC + Ed25519; 44.0.1 patches CVE-2024-12797 + 2026 set (audit P2-1)
   "pyjwt[crypto]==2.13.0",           # rationale: dashboard auth in Phase 4; 2.13.0 fixes PYSEC-2026-120 + PYSEC-2025-183
   # --- Config / env ---
   "python-dotenv==1.2.2",            # rationale: .env loading in dev; 1.2.2 fixes CVE-2026-28684
@@ -79,7 +79,7 @@ dependencies = [
   "typer>=0.15.4,<0.16",             # rationale: comply CLI + predict CLI; <0.16 avoids click generic subscript compat break
   "rich==13.9.2",                    # rationale: pretty tracebacks + progress bars in dev
   # --- Templating (Phase 2 LLM prompt registry) ---
-  "jinja2==3.1.4",                   # rationale: prompt templates for agent nodes; FileSystemLoader + StrictUndefined
+  "jinja2==3.1.6",                   # rationale: prompt templates; 3.1.6 patches CVE-2024-56326/56201 + CVE-2025-27516 (audit P2-1)
   # --- Datetime / timezones ---
   # (zoneinfo is stdlib on 3.12; no extra dep)
   "langgraph>=0.2,<0.5",
@@ -103,6 +103,7 @@ scrape = [
   "snscrape==0.7.0.20230622",        # rationale: X/Twitter best-effort; pinned to last functional release
   "instaloader==4.13.1",             # rationale: Instagram public data
   "feedparser==6.0.11",              # rationale: RSS/Atom for news + blogs
+  "defusedxml==0.7.1",               # rationale: safe XML parsing of remote feeds (audit P2-7 — XXE/billion-laughs guard)
   "beautifulsoup4==4.12.3",          # rationale: defensive HTML parse fallback
   "lxml==5.3.0",                     # rationale: bs4 C backend, ~10× faster than html.parser
   "curl-cffi==0.7.3",                # rationale: curl-impersonate Python binding for JA3/JA4 diversity

@@ -60,6 +60,19 @@ def build_app(
     All collaborators are injectable so tests can pass stubs.
     """
     settings = settings or get_execute_settings()
+
+    # audit P2-2: refuse to start unauthenticated in a non-dev/test env. The
+    # killswitch (halts all trading-alert dispatch) and capital routes must not
+    # be open. Empty api_bearer_token = permissive; only tolerate that in dev/test.
+    _env = os.getenv("AEGIS_ENV", "dev").lower()
+    if not settings.api_bearer_token and _env not in ("dev", "test"):
+        raise RuntimeError(
+            "execute-api refuses to start in "
+            f"AEGIS_ENV={_env!r} without AEGIS_EXECUTE_API_BEARER_TOKEN set — "
+            "an empty bearer token leaves the killswitch and capital routes "
+            "unauthenticated (audit P2-2)."
+        )
+
     _bus = bus or EventBus()
     _repo = repo if repo is not None else AlertRepository(pool=pool)
     _killswitch = killswitch or KillSwitch(

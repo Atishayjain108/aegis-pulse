@@ -404,8 +404,11 @@ class SettlementManager:
             return
         async with self._pool.acquire() as conn:  # type: ignore[union-attr]
             if tenant_id:
+                # audit P2-4: parameterized set_config (not f-string SET) — this
+                # value drives RLS, so string interpolation was a cross-tenant
+                # injection vector. Matches the safe idiom used everywhere else.
                 await conn.execute(
-                    f"SET app.current_tenant = '{tenant_id}'"
+                    "SELECT set_config('app.current_tenant', $1, false)", tenant_id
                 )
             await conn.execute(
                 """

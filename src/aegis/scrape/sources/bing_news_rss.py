@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Any
 from urllib.parse import quote_plus
 
 import httpx
+from defusedxml.ElementTree import fromstring as _safe_fromstring  # audit P2-7
 
 from aegis.core.logging import get_logger
 from aegis.schemas.enums import (
@@ -156,7 +157,7 @@ class BingNewsRSSAdapter(SourceAdapter[dict[str, Any]]):
             return
 
         try:
-            root = ET.fromstring(xml_bytes)  # noqa: S314
+            root = _safe_fromstring(xml_bytes)
         except ET.ParseError as e:
             log.warning("bing_news_rss.xml_parse_error", error=str(e), query=query)
             return

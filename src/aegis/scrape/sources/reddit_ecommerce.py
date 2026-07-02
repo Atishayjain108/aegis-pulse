@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 import structlog
+from defusedxml.ElementTree import fromstring as _safe_fromstring  # audit P2-7
 
 from aegis.schemas.enums import (
     ContentModality,
@@ -156,7 +157,7 @@ class RedditEcommerceAdapter(SourceAdapter[dict[str, Any]]):
                 _log.warning("reddit_ecommerce.rate_limited", subreddit=sub)
                 return []
             resp.raise_for_status()
-            root = ET.fromstring(resp.content)  # noqa: S314
+            root = _safe_fromstring(resp.content)
         except httpx.HTTPStatusError as e:
             _log.warning("reddit_ecommerce.http_error", status=e.response.status_code, sub=sub)
             return []
