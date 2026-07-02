@@ -804,3 +804,45 @@ def test_join_brand_title_dedupes_brand_prefix() -> None:
     assert join_brand_title("Nike", "Air Max 90") == "Nike Air Max 90"
     # empty brand returns name alone.
     assert join_brand_title("", "Air Max") == "Air Max"
+
+
+def test_flipkart_parse_populates_structured_price():
+    """Audit P10-1: a parsed price must land in the STRUCTURED price field (not
+    just raw_json) and mark the signal as commerce, so price_amount persists and
+    the arbitrage engine has real prices."""
+    adapter = FlipkartAdapter(FlipkartConfig())
+    ctx = ScrapeContext()
+    raw = {
+        "title": "Wireless Earbuds Pro",
+        "url": "https://www.flipkart.com/p/itm123",
+        "raw_json": {
+            "disc_price": 1299.0,
+            "orig_price": 1999.0,
+            "currency": "INR",
+            "discount_pct": 35.0,
+            "score": 10,
+        },
+    }
+    sig = adapter.parse(raw, ctx)
+    assert sig is not None
+    assert sig.price is not None, "structured price must be populated"
+    assert float(sig.price.amount) == 1299.0
+    assert sig.price.currency == "INR"
+    assert float(sig.price.original_amount) == 1999.0
+    assert sig.price.is_on_sale is True
+    # tier stays T3_search (platform→tier validator), but price now persists.
+    from aegis.schemas.signal import SourceTier
+
+    assert sig.tier == SourceTier.TIER_3_SEARCH
+
+
+def test_flipkart_parse_without_price_stays_search_tier():
+    adapter = FlipkartAdapter(FlipkartConfig())
+    ctx = ScrapeContext()
+    raw = {"title": "Some Product", "url": "https://www.flipkart.com/p/x", "raw_json": {}}
+    sig = adapter.parse(raw, ctx)
+    assert sig is not None
+    assert sig.price is None
+    from aegis.schemas.signal import SourceTier
+
+    assert sig.tier == SourceTier.TIER_3_SEARCH

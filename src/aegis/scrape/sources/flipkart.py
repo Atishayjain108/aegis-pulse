@@ -20,6 +20,7 @@ import json
 import os
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from decimal import Decimal
 from math import log1p
 from typing import TYPE_CHECKING, Any
 
@@ -37,6 +38,7 @@ from aegis.schemas.enums import (
 from aegis.schemas.signal import (
     ConfidenceMetadata,
     EngagementMetrics,
+    Price,
     ProductSignal,
     ScrapeProvenance,
     compute_content_hash,
@@ -498,9 +500,33 @@ class FlipkartAdapter(SourceAdapter[dict[str, Any]]):
 
             score = float(raw_json.get("score") or 0.0)
 
+            # audit P10-1: promote parsed price into the STRUCTURED price field
+            # (was only in platform_specific/raw_json → price_amount stayed NULL,
+            # so the arbitrage engine saw 0% price coverage). When a real price
+            # exists, tag the signal as commerce so it carries buy-side value.
+            # Flipkart is pinned to T3_search by the platform→tier validator, but
+            # a structured price can still ride on a T3 signal — set it so
+            # price_amount persists (was NULL → 0% price coverage, audit P10-1).
+            disc = raw_json.get("disc_price")
+            orig = raw_json.get("orig_price")
+            price_obj: Price | None = None
+            if disc is not None:
+                try:
+                    price_obj = Price(
+                        amount=Decimal(str(disc)),
+                        currency=str(raw_json.get("currency", "INR")),
+                        original_amount=(
+                            Decimal(str(orig)) if orig is not None else None
+                        ),
+                        is_on_sale=bool(orig and disc and float(orig) > float(disc)),
+                    )
+                except (ArithmeticError, ValueError, TypeError):
+                    price_obj = None
+
             return ProductSignal(
                 platform=Platform.FLIPKART,
                 tier=SourceTier.TIER_3_SEARCH,
+                price=price_obj,
                 external_id=external_id,
                 url=url,  # type: ignore[arg-type]
                 title=title[:512],
