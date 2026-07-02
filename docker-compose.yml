@@ -97,8 +97,12 @@ services:
       - "yes"
       - "--maxmemory"
       - "1gb"
+      # audit P3-2: Redis is a message BUS here (phase2/phase3/outbox streams).
+      # allkeys-lru would silently evict un-consumed stream entries under memory
+      # pressure = in-flight verdict loss. noeviction rejects writes instead of
+      # dropping data, surfacing pressure as a loud error we can act on.
       - "--maxmemory-policy"
-      - "allkeys-lru"
+      - "noeviction"
     ports:
       - "127.0.0.1:6380:6379"
     volumes:

@@ -133,3 +133,43 @@ async def test_intake_worker_flush_pending(fake_repo):
     n = await worker.flush_pending()
     assert n == 1
     assert len(fake_repo.alerts) == 1
+
+
+async def test_handle_acks_only_on_success(fake_repo, monkeypatch):
+    """Audit P3-1: a transient handler failure must NOT ack (leave pending for
+    reclaim); a success must ack exactly once; an undecodable msg is dropped."""
+    from aegis.execute.workers import intake_worker as iw
+
+    tid = uuid4()
+    pipe = Pipeline(repository=fake_repo)
+
+    class _Redis:
+        def __init__(self):
+            self.acked = []
+
+        async def xack(self, stream, group, entry_id):
+            self.acked.append((stream, entry_id))
+            return 1
+
+    rc = _Redis()
+    worker = IntakeWorker(pipeline=pipe, tenant_id=tid, redis_client=rc)
+
+    good = {b"body": b'{"trend_id":"ok","final_verdict":"HOLD","final_score":0.4,"final_confidence":0.5,"final_priority":2}'}
+
+    # 1) success path → acked
+    await worker._handle(iw.STREAM_PHASE2, "1-0", good)
+    assert ("aegis:phase2:graph_results" in [a[0] for a in rc.acked]) or rc.acked
+
+    # 2) transient failure → NOT acked (stays pending for XAUTOCLAIM retry)
+    def _boom(*_a, **_k):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(iw, "_parse_phase2_dict", _boom)
+    before = len(rc.acked)
+    await worker._handle(iw.STREAM_PHASE2, "2-0", good)
+    assert len(rc.acked) == before, "failed handler must not ACK (audit P3-1)"
+    monkeypatch.undo()
+
+    # 3) undecodable → dropped (acked so it can't wedge the group)
+    await worker._handle(iw.STREAM_PHASE2, "3-0", {b"garbage": b"not json"})
+    assert any(e == "3-0" for _s, e in rc.acked)

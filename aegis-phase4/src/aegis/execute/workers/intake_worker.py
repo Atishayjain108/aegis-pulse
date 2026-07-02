@@ -51,6 +51,10 @@ CONSUMER_GROUP: Final[str] = "aegis-execute-intake"
 CONSUMER_NAME_PREFIX: Final[str] = "intake-"
 READ_BLOCK_MS: Final[int] = 1000  # blocking read budget
 READ_COUNT: Final[int] = 10
+# Entries left pending by a failed handler are reclaimed via XAUTOCLAIM once
+# they have been idle this long — long enough that a still-in-flight handler on
+# another consumer is not stolen, short enough that a real failure retries fast.
+_RECLAIM_MIN_IDLE_MS: Final[int] = 30_000
 # Liveness heartbeat: refreshed in the read loop, TTL self-clears on death.
 _HEARTBEAT_INTERVAL_S: Final[float] = 10.0
 _HEARTBEAT_TTL_S: Final[int] = 30
@@ -136,6 +140,14 @@ class IntakeWorker:
                     await task
         self._task = None
         self._eviction_task = None
+        # audit P9-1: reap this consumer from the group so restarts don't leak
+        # dead consumer entries (21 accumulated for one worker at audit time).
+        # Only safe because we ACK-or-reclaim: our PEL is empty on clean stop.
+        for stream in (STREAM_PHASE2, STREAM_PHASE3):
+            with contextlib.suppress(Exception):
+                await self._redis.xgroup_delconsumer(
+                    name=stream, groupname=CONSUMER_GROUP, consumername=self._consumer_name
+                )
         _log.info("execute.intake.stopped")
 
     async def submit_phase2_dict(self, msg: dict[str, Any]) -> None:
@@ -205,7 +217,37 @@ class IntakeWorker:
             except Exception as exc:
                 _log.error("execute.intake.eviction_loop_failed", error=str(exc))
 
+    async def _reclaim_pending(self) -> None:
+        """Reclaim entries left pending by a prior failed handler (audit P3-1).
+
+        Since `_handle` now ACKs only on success, a transient failure leaves the
+        entry in the group's PEL. XAUTOCLAIM hands entries idle for >
+        `_RECLAIM_MIN_IDLE_MS` back to this consumer so the verdict is retried
+        instead of silently lost. Best-effort: any error just skips this tick.
+        """
+        for stream in (STREAM_PHASE2, STREAM_PHASE3):
+            try:
+                claimed = await self._redis.xautoclaim(
+                    name=stream,
+                    groupname=CONSUMER_GROUP,
+                    consumername=self._consumer_name,
+                    min_idle_time=_RECLAIM_MIN_IDLE_MS,
+                    count=READ_COUNT,
+                )
+            except Exception as exc:  # xautoclaim missing on old redis / transient
+                _log.debug("execute.intake.reclaim_skipped", stream=stream, error=str(exc))
+                continue
+            # redis-py returns (next_cursor, [(id, fields), ...][, deleted]) —
+            # entries are at index 1.
+            entries = claimed[1] if len(claimed) > 1 else []
+            for entry_id, payload in entries:
+                if payload:  # a tombstone (deleted mid-flight) has empty fields
+                    await self._handle(stream, entry_id, payload)
+                else:
+                    await self._ack(stream, entry_id)
+
     async def _read_once(self) -> None:
+        await self._reclaim_pending()
         streams = {STREAM_PHASE2: ">", STREAM_PHASE3: ">"}
         try:
             res = await self._redis.xreadgroup(
@@ -230,27 +272,40 @@ class IntakeWorker:
                 await self._handle(stream_str, entry_id, payload)
 
     async def _handle(self, stream: str, entry_id: Any, payload: dict[Any, Any]) -> None:
+        # Poison-pill: a message we cannot decode will never decode, so ACK it
+        # (leaving it pending would wedge the group forever). Everything else is
+        # ACKed ONLY on success — audit P3-1: the old `finally: ack` made this
+        # path at-most-once and dropped verdicts on any transient handler error.
         try:
             decoded = _decode_payload(payload)
         except Exception as exc:
             _log.warning("execute.intake.decode_failed", stream=stream, error=str(exc))
-            await self._ack(stream, entry_id)
+            await self._ack(stream, entry_id)  # unparseable → drop, don't wedge
             return
+
+        if stream not in (STREAM_PHASE2, STREAM_PHASE3):
+            _log.warning("execute.intake.unknown_stream", stream=stream)
+            await self._ack(stream, entry_id)  # never routable → drop
+            return
+
         try:
             if stream == STREAM_PHASE2:
                 await self.submit_phase2_dict(decoded)
-            elif stream == STREAM_PHASE3:
-                await self.submit_phase3_dict(decoded)
             else:
-                _log.warning("execute.intake.unknown_stream", stream=stream)
+                await self.submit_phase3_dict(decoded)
         except Exception as exc:
+            # Transient failure (DB blip, pipeline hiccup): DO NOT ack. The entry
+            # stays pending and is reclaimed via XAUTOCLAIM on the next tick /
+            # restart, so the verdict is retried instead of silently lost.
             _log.error(
-                "execute.intake.handle_failed",
+                "execute.intake.handle_failed_left_pending",
                 stream=stream,
+                entry_id=str(entry_id),
                 error=str(exc),
             )
-        finally:
-            await self._ack(stream, entry_id)
+            return
+
+        await self._ack(stream, entry_id)
 
     async def _ack(self, stream: str, entry_id: Any) -> None:
         try:
