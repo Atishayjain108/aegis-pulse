@@ -68,3 +68,4 @@ package-lock.json
 
 # Archived dead duplicate phase folders (STRUCT-1; integrated into src/aegis/)
 /archive/
+backup_pre_phaseCD_20260618_0129.dump

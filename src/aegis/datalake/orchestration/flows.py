@@ -267,10 +267,52 @@ async def end_to_end_for_date(
         return out
 
 
+@_prefect_flow(name="daily_lake_refresh")
+async def daily_lake_refresh(*, date_iso: str | None = None) -> dict[str, Any]:
+    """ORPH-4: parameterless daily refresh — schedulable as a Prefect cron.
+
+    Unlike :func:`end_to_end_for_date` (which takes an injected pool), this
+    flow builds its own asyncpg pool from the environment so it can be served
+    as a cron deployment with zero parameters:
+
+        uv run aegis datalake schedule    # serves this flow at 02:00 UTC
+
+    DSN resolution: ``AEGIS_DATALAKE_POSTGRES_DSN`` first, then
+    ``AEGIS_PG_DSN``. With no DSN, Bronze ingest is skipped and only
+    Silver/Gold build — same contract as ``aegis datalake daily`` without
+    ``--dsn``.
+    """
+    import os
+
+    d = _normalise_date(date_iso)
+    dsn = os.environ.get("AEGIS_DATALAKE_POSTGRES_DSN") or os.environ.get("AEGIS_PG_DSN", "")
+    out: dict[str, Any] = {"date": d}
+    with DataLake.session(None) as lake:
+        if dsn:
+            import asyncpg
+
+            pool = await asyncpg.create_pool(dsn, min_size=1, max_size=2)
+            try:
+                out["bronze"] = {
+                    "signals": await _t_ingest_signals(lake, pool, None, None),
+                    "predictions": await _t_ingest_predictions(lake, pool, None, None),
+                    "alerts": await _t_ingest_alerts(lake, pool, None, None),
+                }
+            finally:
+                await pool.close()
+        else:
+            out["bronze"] = {"skipped": True, "reason": "no DSN in environment"}
+        out["silver"] = _t_silver_build(lake, d)
+        out["gold"] = _t_gold_build(lake, d)
+        log.info("flow.daily_lake_refresh.done", date=d)
+    return out
+
+
 __all__ = [
     "PREFECT_AVAILABLE",
     "bronze_ingest_all_postgres",
     "bronze_ingest_postgres_signals",
+    "daily_lake_refresh",
     "end_to_end_for_date",
     "gold_build_for_date",
     "silver_build_for_date",

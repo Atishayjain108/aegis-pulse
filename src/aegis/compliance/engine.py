@@ -199,7 +199,20 @@ class ComplianceEngine:
         # of 1.0 only contributes 0.10 to the composite, not enough to hit 0.50).
         hard_escalate = ftc_risk >= 0.80 and not hard_block
 
-        if hard_block or overall >= self._cfg.block_threshold:
+        # PASS2-2C: outcome-adapted block threshold (falls back to the static
+        # config on any failure). Hard overrides above are unaffected — an
+        # OFAC hit or FDA ban blocks regardless of where the threshold sits.
+        block_threshold = self._cfg.block_threshold
+        try:
+            from aegis.core.dynamic_thresholds import get_thresholds
+
+            block_threshold = await (await get_thresholds()).get_comply_block(
+                fallback=self._cfg.block_threshold
+            )
+        except Exception:
+            block_threshold = self._cfg.block_threshold
+
+        if hard_block or overall >= block_threshold:
             recommendation = Recommendation.BLOCK
         elif hard_escalate or overall >= self._cfg.escalate_threshold:
             recommendation = Recommendation.ESCALATE

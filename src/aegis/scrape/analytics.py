@@ -34,6 +34,23 @@ _log = structlog.get_logger("aegis.scrape.analytics")
 # immediately flagged "High Priority" for the Executive Agent layer.
 HIGH_PRIORITY_SLOPE: float = 2.0
 
+# PASS2-2C: dynamic override pushed by async callers (topic.py / scheduler)
+# from aegis.core.dynamic_thresholds. This module's functions are sync CPU
+# code run via asyncio.to_thread (§12), so the adaptive value is injected
+# rather than awaited here. None → fall back to HIGH_PRIORITY_SLOPE.
+_DYNAMIC_SLOPE: float | None = None
+
+
+def set_high_priority_slope(value: float | None) -> None:
+    """Inject (or clear, with None) the adaptive high-priority slope."""
+    global _DYNAMIC_SLOPE  # noqa: PLW0603 - cross-task injection point
+    _DYNAMIC_SLOPE = value
+
+
+def get_high_priority_slope() -> float:
+    """Effective slope threshold: dynamic override or the static default."""
+    return _DYNAMIC_SLOPE if _DYNAMIC_SLOPE is not None else HIGH_PRIORITY_SLOPE
+
 
 # ---------------------------------------------------------------------------
 # Data structures
@@ -168,7 +185,7 @@ def compute_velocity_slope(
 
     slope, intercept, r_sq = _ols(x, y)
 
-    is_hp = slope > HIGH_PRIORITY_SLOPE and r_sq > 0.3
+    is_hp = slope > get_high_priority_slope() and r_sq > 0.3
 
     if slope > 0.5:
         vel_class = "accelerating"
@@ -309,5 +326,7 @@ __all__ = [
     "HIGH_PRIORITY_SLOPE",
     "VelocityRegression",
     "compute_velocity_slope",
+    "get_high_priority_slope",
     "pca_denoise_vectors",
+    "set_high_priority_slope",
 ]

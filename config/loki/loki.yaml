@@ -53,3 +53,5 @@ compactor:
   working_directory: /loki/compactor
   retention_enabled: true
   retention_delete_delay: 2h
+  # Required when retention is enabled (Loki ≥2.8): where delete-request markers live.
+  delete_request_store: filesystem

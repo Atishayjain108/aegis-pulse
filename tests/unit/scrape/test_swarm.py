@@ -1082,3 +1082,92 @@ async def test_runner_swarm_context_injected_from_redis() -> None:
     # Also verify model_validate_json round-trip
     parsed = SwarmResult.model_validate_json(swarm_json)
     assert parsed.total_signals == swarm.total_signals
+
+
+# ---------------------------------------------------------------------------
+# PASS2-2B: novelty fraction for the quality reward
+# ---------------------------------------------------------------------------
+
+
+class _FakeNoveltyRedis:
+    """Minimal pipeline-capable Redis fake backed by an in-memory set."""
+
+    def __init__(self) -> None:
+        self.store: set[str] = set()
+
+    def pipeline(self):
+        return _FakeNoveltyPipe(self.store)
+
+
+class _FakeNoveltyPipe:
+    def __init__(self, store: set[str]) -> None:
+        self._store = store
+        self._ops: list[tuple] = []
+
+    def sismember(self, key: str, member: str):
+        self._ops.append(("sismember", member))
+        return self
+
+    def sadd(self, key: str, *members: str):
+        self._ops.append(("sadd", members))
+        return self
+
+    def expire(self, key: str, ttl: int):
+        self._ops.append(("expire", ttl))
+        return self
+
+    async def execute(self):
+        out = []
+        for op, arg in self._ops:
+            if op == "sismember":
+                out.append(arg in self._store)
+            elif op == "sadd":
+                self._store.update(arg)
+                out.append(len(arg))
+            else:
+                out.append(True)
+        self._ops.clear()
+        return out
+
+
+@pytest.mark.asyncio
+async def test_novelty_fraction_all_new(mock_settings: MagicMock, governor: ConcurrencyGovernor) -> None:
+    pool = _make_pool(["a1"], _make_adapter_fn(), governor)
+    orch = SwarmOrchestrator(settings=mock_settings, pool=pool)
+    orch._persistence._redis = _FakeNoveltyRedis()
+    sigs = [{"title": f"t{i}", "url": f"u{i}"} for i in range(4)]
+    assert await orch._compute_novelty_fraction(sigs) == 1.0
+
+
+@pytest.mark.asyncio
+async def test_novelty_fraction_repeat_batch_is_zero(mock_settings: MagicMock, governor: ConcurrencyGovernor) -> None:
+    pool = _make_pool(["a1"], _make_adapter_fn(), governor)
+    orch = SwarmOrchestrator(settings=mock_settings, pool=pool)
+    orch._persistence._redis = _FakeNoveltyRedis()
+    sigs = [{"content_hash": f"h{i}"} for i in range(5)]
+    assert await orch._compute_novelty_fraction(sigs) == 1.0
+    # Same hashes again → nothing novel.
+    assert await orch._compute_novelty_fraction(sigs) == 0.0
+
+
+@pytest.mark.asyncio
+async def test_novelty_fraction_no_redis_returns_one(mock_settings: MagicMock, governor: ConcurrencyGovernor) -> None:
+    pool = _make_pool(["a1"], _make_adapter_fn(), governor)
+    orch = SwarmOrchestrator(settings=mock_settings, pool=pool)
+    orch._persistence._redis = None
+    sigs = [{"content_hash": "x"}]
+    assert await orch._compute_novelty_fraction(sigs) == 1.0
+    # Empty batch is also neutral.
+    assert await orch._compute_novelty_fraction([]) == 1.0
+
+
+@pytest.mark.asyncio
+async def test_novelty_fraction_redis_error_graceful(mock_settings: MagicMock, governor: ConcurrencyGovernor) -> None:
+    class _Boom:
+        def pipeline(self):
+            raise RuntimeError("redis down")
+
+    pool = _make_pool(["a1"], _make_adapter_fn(), governor)
+    orch = SwarmOrchestrator(settings=mock_settings, pool=pool)
+    orch._persistence._redis = _Boom()
+    assert await orch._compute_novelty_fraction([{"content_hash": "x"}]) == 1.0

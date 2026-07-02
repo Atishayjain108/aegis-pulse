@@ -282,3 +282,64 @@ def cmd_record(
             sys.exit(1)
 
     asyncio.run(_run())
+
+
+# ---------------------------------------------------------------------------
+# backfill-claims  (PROJECT OMEGA Phase A — reach the first 100 outcomes)
+# ---------------------------------------------------------------------------
+
+@evolve_group.command("backfill-claims")
+@click.option("--horizon-hours", default=72, show_default=True,
+              help="Prediction horizon for each falsifiable claim.")
+@click.option("--max-claims", default=200, show_default=True,
+              help="Maximum claims to reconstruct from history.")
+@click.option("--lookback-days", default=60, show_default=True,
+              help="How far back in signal history to walk.")
+@click.option("--json-out", is_flag=True)
+def cmd_backfill_claims(
+    horizon_hours: int, max_claims: int, lookback_days: int, json_out: bool
+) -> None:
+    """
+    Reconstruct + settle self-supervised signal outcomes from existing signal
+    history — the capital-free path to the first 100 ground-truth outcomes.
+    """
+    import asyncio
+    import os
+
+    from aegis.db.pool import PgConfig, PgPool
+    from aegis.evolve.settlement_loop import SignalOutcomeSettler
+
+    async def _run() -> None:
+        pool = PgPool(PgConfig.from_env(dict(os.environ)))
+        try:
+            await pool.connect()
+        except Exception as exc:
+            click.echo(f"Error: cannot connect to DB: {exc}", err=True)
+            sys.exit(1)
+        try:
+            settler = SignalOutcomeSettler(pool)
+            summary = await settler.backfill_from_history(
+                horizon_hours=horizon_hours,
+                max_claims=max_claims,
+                lookback_days=lookback_days,
+            )
+        finally:
+            await pool.aclose()
+
+        data = {
+            "examined": summary.examined,
+            "settled": summary.settled,
+            "correct": summary.correct,
+            "skipped": summary.skipped,
+            "correct_rate": round(summary.correct_rate, 4),
+        }
+        if json_out:
+            click.echo(json.dumps(data))
+        else:
+            click.echo(
+                f"Backfill: settled {summary.settled} outcomes "
+                f"({summary.correct} correct, {summary.correct_rate:.1%}); "
+                f"examined {summary.examined}, skipped {summary.skipped}"
+            )
+
+    asyncio.run(_run())

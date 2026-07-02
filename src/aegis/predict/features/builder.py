@@ -69,6 +69,124 @@ def _platform_entropy(platforms: Counter[str]) -> float:
     return H / H_max if H_max > 0 else 0.0
 
 
+# ---------------------------------------------------------------------------
+# PASS2-2E feature helpers (schema 3.1.0 — features 20..23)
+# ---------------------------------------------------------------------------
+
+# Coarse platform → region map for geo_spread_entropy when rows carry no
+# explicit region. India-first platforms map to IN; global feeds to GLOBAL.
+_PLATFORM_REGION: dict[str, str] = {
+    "amazon_in": "IN",
+    "flipkart": "IN",
+    "meesho": "IN",
+    "myntra": "IN",
+    "ajio": "IN",
+    "nykaa": "IN",
+    "snapdeal": "IN",
+    "indiamart": "IN",
+    "nse_bse": "IN",
+    "moneycontrol": "IN",
+    "economic_times": "IN",
+    "mint": "IN",
+    "ndtv_profit": "IN",
+    "business_standard": "IN",
+    "google_trends_india": "IN",
+    "amazon": "US",
+    "reddit": "US",
+    "hacker_news": "US",
+    "github_trending": "GLOBAL",
+    "google_news": "GLOBAL",
+    "bing_news": "GLOBAL",
+    "reuters": "GLOBAL",
+    "bbc_news": "GLOBAL",
+}
+
+# Cap on pairwise title comparisons per bucket so a pathological 1000-signal
+# hour cannot turn the builder quadratic.
+_COHERENCE_MAX_PAIRS = 64
+
+
+def _title_tokens(title: str) -> frozenset[str]:
+    return frozenset(t for t in title.lower().split() if len(t) > 1)
+
+
+def _cross_platform_coherence(bucket: list[dict[str, Any]]) -> float:
+    """Mean token-Jaccard between titles on *different* platforms, in [0, 1].
+
+    Near 1.0 when the same story echoes across platforms (a strong organic
+    breakout signal); 0.0 with fewer than two platforms or no usable titles.
+    """
+    by_platform: dict[str, list[frozenset[str]]] = {}
+    for b in bucket:
+        title = str(b.get("title") or "").strip()
+        if not title:
+            continue
+        toks = _title_tokens(title)
+        if toks:
+            by_platform.setdefault(str(b.get("platform", "?")), []).append(toks)
+    platforms = list(by_platform)
+    if len(platforms) < 2:
+        return 0.0
+
+    sims: list[float] = []
+    for i in range(len(platforms)):
+        for j in range(i + 1, len(platforms)):
+            for ta in by_platform[platforms[i]]:
+                for tb in by_platform[platforms[j]]:
+                    union = ta | tb
+                    sims.append(len(ta & tb) / len(union) if union else 0.0)
+                    if len(sims) >= _COHERENCE_MAX_PAIRS:
+                        return sum(sims) / len(sims)
+    return sum(sims) / len(sims) if sims else 0.0
+
+
+def _autocorr_lag1(series: list[float]) -> float:
+    """Lag-1 Pearson autocorrelation of *series*, clamped to [-1, 1].
+
+    0.0 on fewer than 3 points or zero variance (e.g. all-empty buckets) —
+    insufficient data must never poison the feature vector with NaN.
+    """
+    n = len(series)
+    if n < 3:
+        return 0.0
+    mu = sum(series) / n
+    var = sum((x - mu) ** 2 for x in series)
+    if var <= 0.0:
+        return 0.0
+    cov = sum((series[k] - mu) * (series[k + 1] - mu) for k in range(n - 1))
+    return max(-1.0, min(1.0, cov / var))
+
+
+def _author_diversity_ratio(n_signals: int, n_authors: int) -> float:
+    """Distinct-voice ratio in [0, 1]: 0.0 = one author (or no data),
+    1.0 = every signal from a different author."""
+    if n_signals <= 1 or n_authors <= 0:
+        return 0.0
+    return max(0.0, min(1.0, (n_authors - 1) / (n_signals - 1)))
+
+
+def _geo_spread_entropy(bucket: list[dict[str, Any]]) -> float:
+    """Normalized Shannon entropy of the bucket's region distribution.
+
+    Regions come from an explicit ``region``/``geo_region``/``country`` row
+    key, falling back to the coarse platform map. 1.0 = perfectly even
+    spread across 2+ regions; 0.0 = single region or no resolvable data.
+    """
+    regions: Counter[str] = Counter()
+    for b in bucket:
+        region = (
+            b.get("region")
+            or b.get("geo_region")
+            or b.get("country")
+            or _PLATFORM_REGION.get(str(b.get("platform", "")))
+        )
+        if region:
+            regions[str(region).upper()] += 1
+    if len(regions) < 2:
+        return 0.0
+    return _platform_entropy(regions)
+
+
 def _bucket_index(ts: datetime, window_end: datetime, window_size: int) -> int:
     """Return the bucket index in [0, window_size-1] for `ts`.
 
@@ -217,6 +335,17 @@ def build_window_from_rows(
         matrix[offset + _FIDX["day_of_week_sin"]] = math.sin(2 * math.pi * dow / 7)
         matrix[offset + _FIDX["day_of_week_cos"]] = math.cos(2 * math.pi * dow / 7)
 
+        # ---- PASS2-2E features (schema 3.1.0). Each falls back to 0.0 on
+        # insufficient data — never NaN, never raises.
+        matrix[offset + _FIDX["cross_platform_coherence"]] = _cross_platform_coherence(bucket)
+        matrix[offset + _FIDX["temporal_autocorr_lag1"]] = _autocorr_lag1(
+            counts[max(0, i - 23) : i + 1]
+        )
+        matrix[offset + _FIDX["author_diversity_ratio"]] = _author_diversity_ratio(
+            n_signals, n_authors
+        )
+        matrix[offset + _FIDX["geo_spread_entropy"]] = _geo_spread_entropy(bucket)
+
     # Defensive: scrub any NaN/Inf that snuck through (a None field
     # converted to float() can produce NaN if the upstream emitted
     # the string "nan" by mistake).
@@ -312,8 +441,46 @@ def feature_window_hash(window: FeatureWindow) -> str:
     return _hash_window(window.values)
 
 
+def pad_legacy_window(window: FeatureWindow) -> FeatureWindow:
+    """PASS2-2E migration shim: pad a 20-dim (schema 3.0.0) window to 24-dim.
+
+    The first 20 values of every timestep are preserved unchanged; the four
+    new features are zero-filled (their graceful "insufficient data" value).
+    Windows already at the current FEATURE_DIM are returned as-is.
+    """
+    from .. import LEGACY_FEATURE_DIM_V3
+
+    if window.feature_dim == FEATURE_DIM:
+        return window
+    if window.feature_dim != LEGACY_FEATURE_DIM_V3:
+        raise ValueError(
+            f"pad_legacy_window only supports {LEGACY_FEATURE_DIM_V3}-dim "
+            f"legacy windows, got feature_dim={window.feature_dim}"
+        )
+
+    old_dim = window.feature_dim
+    pad = [0.0] * (FEATURE_DIM - old_dim)
+    padded: list[float] = []
+    for t in range(window.window_size):
+        row = window.values[t * old_dim : (t + 1) * old_dim]
+        padded.extend(row)
+        padded.extend(pad)
+
+    return FeatureWindow(
+        trend_id=window.trend_id,
+        correlation_id=window.correlation_id,
+        window_size=window.window_size,
+        feature_dim=FEATURE_DIM,
+        feature_names=FEATURE_NAMES,
+        values=padded,
+        captured_at=window.captured_at,
+        tenant_id=window.tenant_id,
+    )
+
+
 __all__ = [
     "build_feature_window",
     "build_window_from_rows",
     "feature_window_hash",
+    "pad_legacy_window",
 ]

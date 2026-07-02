@@ -41,6 +41,7 @@ from aegis.schemas.signal import (
     compute_content_hash,
 )
 from aegis.scrape.base import AdapterConfig, ScrapeContext, SourceAdapter
+from aegis.scrape.http_client import get_or_create_client
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -107,8 +108,10 @@ class AmazonAdapter(SourceAdapter[dict[str, Any]]):
         return "amazon"
 
     async def setup(self, ctx: ScrapeContext) -> None:
-        self._client = httpx.AsyncClient(
-            timeout=httpx.Timeout(self._amzn_config.timeout_seconds),
+        self._client = await get_or_create_client(
+            f"www.amazon.{self._amzn_config.marketplace}",
+            http2=False,
+            timeout=self._amzn_config.timeout_seconds,
             headers={
                 "User-Agent": (
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -120,13 +123,11 @@ class AmazonAdapter(SourceAdapter[dict[str, Any]]):
                 "Accept-Encoding": "gzip",
             },
             follow_redirects=True,
-            http2=False,
         )
 
     async def teardown(self, ctx: ScrapeContext) -> None:
-        if self._client is not None:
-            await self._client.aclose()
-            self._client = None
+        # Shared pooled client (PASS5-5B) — release the reference, never close.
+        self._client = None
 
     async def fetch_raw(  # type: ignore[override]
         self,

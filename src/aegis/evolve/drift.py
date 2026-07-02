@@ -34,6 +34,7 @@ from aegis.evolve.config import EvolveSettings
 from aegis.evolve.constants import (
     ERR_DRIFT_DETECTED,
     ERR_PERFORMANCE_DROP,
+    ERR_ROLLBACK_TRIGGERED,
     EVOLVE_FEATURE_DIM,
     MIN_VALID_PRECISION,
 )
@@ -57,13 +58,23 @@ class DriftDetector:
         self,
         db_pool: Pool | None = None,
         settings: EvolveSettings | None = None,
+        redis_client: object | None = None,
     ) -> None:
         self._pool = db_pool
         self._cfg = settings or EvolveSettings()
+        # PASS3-3B: optional Redis client used for the evolve event stream and
+        # the Phase 4 killswitch when critical drift forces an execution halt.
+        self._redis = redis_client
 
-        # Baseline statistics — initialised lazily from DB or first batch
+        # Baseline statistics — initialised lazily from the champion model's
+        # stored training distribution (FIX-3, forensic audit).
         self._baseline_mean: np.ndarray | None = None
         self._baseline_std: np.ndarray | None = None
+        # False until a real champion training distribution is loaded. While
+        # False the drift score is still computed (against a neutral prior) but
+        # it is decorative — callers/operators are warned not to trust it for
+        # auto-rollback decisions until the first model is promoted.
+        self._baseline_initialized: bool = False
 
     # ------------------------------------------------------------------
     # Public API
@@ -172,7 +183,7 @@ class DriftDetector:
         data_snap = await self.detect_drift(recent_features)
         perf_snap = await self.detect_performance_drop()
 
-        return DriftSnapshot(
+        merged = DriftSnapshot(
             drift_score=max(data_snap.drift_score, perf_snap.drift_score),
             is_drifted=data_snap.is_drifted or perf_snap.is_drifted,
             feature_stats=data_snap.feature_stats,
@@ -181,6 +192,13 @@ class DriftDetector:
             precision_drop=perf_snap.precision_drop,
             should_rollback=perf_snap.should_rollback,
         )
+
+        # PASS3-3B: close the loop — critical drift triggers champion rollback
+        # (and, at extreme levels, the Phase 4 killswitch). Best-effort.
+        if merged.is_drifted:
+            await self._attempt_auto_rollback(merged)
+
+        return merged
 
     async def persist_snapshot(self, snapshot: DriftSnapshot) -> bool:
         """Write a drift snapshot to the DB.  Returns False on failure."""
@@ -247,16 +265,169 @@ class DriftDetector:
     # Internal helpers
     # ------------------------------------------------------------------
 
+    async def _attempt_auto_rollback(self, snapshot: DriftSnapshot) -> bool:
+        """
+        PASS3-3B: auto-rollback to the previous champion on critical drift.
+
+        Critical means either the performance check explicitly requested a
+        rollback (``should_rollback``) or the merged drift score exceeds
+        2× ``drift_threshold``.  At > 3× the threshold the Phase 4 killswitch
+        is tripped, halting all outbound execution until a human re-arms it.
+
+        Best-effort end to end: a drift check must never raise because the
+        rollback machinery (DB, Redis, Phase 4) is unavailable.
+
+        Returns True when a champion rollback was actually performed.
+        """
+        critical = (
+            snapshot.should_rollback
+            or snapshot.drift_score > 2 * self._cfg.drift_threshold
+        )
+        if not critical:
+            _log.info(
+                "evolve.drift_warning_not_critical",
+                drift_score=round(snapshot.drift_score, 4),
+                critical_threshold=round(2 * self._cfg.drift_threshold, 4),
+            )
+            return False
+
+        _log.warning(
+            "evolve.drift_rollback_triggered",
+            drift_score=round(snapshot.drift_score, 4),
+            threshold=self._cfg.drift_threshold,
+            should_rollback=snapshot.should_rollback,
+            error_code=ERR_ROLLBACK_TRIGGERED,
+        )
+
+        rolled_back = False
+        try:
+            from aegis.evolve.retrain import RetrainingPipeline
+
+            pipeline = RetrainingPipeline(db_pool=self._pool, settings=self._cfg)
+            rolled_back = await pipeline.rollback_champion()
+            if rolled_back:
+                _log.warning("evolve.drift_rollback_complete")
+            else:
+                _log.error("evolve.drift_rollback_no_previous_champion")
+        except Exception as exc:
+            _log.error("evolve.drift_rollback_failed", error=str(exc))
+
+        try:
+            from aegis.core.event_bus import STREAM_EVOLVE, publish_event
+
+            await publish_event(
+                STREAM_EVOLVE,
+                {
+                    "event": "auto_rollback",
+                    "reason": "critical_drift",
+                    "rolled_back": rolled_back,
+                    "drift_score": float(snapshot.drift_score),
+                    "threshold": float(self._cfg.drift_threshold),
+                },
+                redis_client=self._redis,
+            )
+        except Exception as exc:
+            _log.debug("evolve.drift_event_publish_failed", error=str(exc))
+
+        if snapshot.drift_score > 3 * self._cfg.drift_threshold:
+            await self._trip_killswitch(snapshot)
+
+        return rolled_back
+
+    async def _trip_killswitch(self, snapshot: DriftSnapshot) -> None:
+        """Trip the Phase 4 killswitch on extreme drift (> 3× threshold)."""
+        if self._redis is None:
+            _log.warning(
+                "evolve.drift_killswitch_skipped",
+                reason="no_redis_client",
+                drift_score=round(snapshot.drift_score, 4),
+            )
+            return
+        try:
+            from aegis.execute.killswitch.switch import KillSwitch
+
+            ks = KillSwitch(redis_client=self._redis)  # type: ignore[arg-type]
+            await ks.trip(
+                reason=f"Auto: critical model drift score={snapshot.drift_score:.3f}"
+            )
+            _log.warning(
+                "evolve.drift_killswitch_tripped",
+                drift_score=round(snapshot.drift_score, 4),
+            )
+        except Exception as exc:
+            _log.error("evolve.drift_killswitch_failed", error=str(exc))
+
     async def _initialize_baseline(self) -> None:
         """
-        Seed drift baseline from historical outcomes or fixed priors.
+        FIX-3 (forensic audit): load the drift baseline from the champion
+        model's *real* training feature distribution.
 
-        In production this would compute per-feature statistics from
-        the training dataset used for the current champion model.
+        At champion-promotion time ``RetrainingPipeline`` records the per-feature
+        mean and std of the training set into ``model_candidates``
+        (``training_feature_mean`` / ``training_feature_std``, migration
+        ``0013_feature_snapshots.sql``). Drift is measured against THAT
+        distribution — not against an arbitrary ``zeros``/``ones`` origin.
+
+        When no champion exists yet (cold start) or the DB is unavailable, fall
+        back to a neutral prior and set ``_baseline_initialized = False`` so the
+        signal is treated as decorative until the first real promotion.
         """
+        baseline = await self._load_champion_baseline()
+        if baseline is not None:
+            mean, std = baseline
+            if mean.shape == (EVOLVE_FEATURE_DIM,) and std.shape == (EVOLVE_FEATURE_DIM,):
+                self._baseline_mean = mean
+                # Guard against zero-variance features (division by std later).
+                self._baseline_std = np.where(std > 1e-8, std, 1.0)
+                self._baseline_initialized = True
+                _log.info(
+                    "evolve.drift_baseline_loaded",
+                    dim=EVOLVE_FEATURE_DIM,
+                    source="champion_training_stats",
+                )
+                return
+
+        # Cold start — no champion training distribution available yet.
         self._baseline_mean = np.zeros(EVOLVE_FEATURE_DIM)
         self._baseline_std = np.ones(EVOLVE_FEATURE_DIM)
-        _log.debug("evolve.drift_baseline_initialised", dim=EVOLVE_FEATURE_DIM)
+        self._baseline_initialized = False
+        _log.warning(
+            "evolve.drift_baseline_uninitialized",
+            dim=EVOLVE_FEATURE_DIM,
+            message=(
+                "No champion training distribution found. Drift detection is "
+                "decorative until the first model promotion populates "
+                "model_candidates.training_feature_mean/std."
+            ),
+        )
+
+    async def _load_champion_baseline(self) -> tuple[np.ndarray, np.ndarray] | None:
+        """Fetch the champion model's stored training mean/std, or None."""
+        if self._pool is None:
+            return None
+        try:
+            async with self._pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    """
+                    SELECT training_feature_mean, training_feature_std
+                    FROM model_candidates
+                    WHERE is_champion = TRUE
+                      AND training_feature_mean IS NOT NULL
+                      AND training_feature_std IS NOT NULL
+                    ORDER BY promoted_at DESC NULLS LAST
+                    LIMIT 1
+                    """
+                )
+            if not row:
+                return None
+            mean = np.asarray(json.loads(row["training_feature_mean"]), dtype=float)
+            std = np.asarray(json.loads(row["training_feature_std"]), dtype=float)
+            return mean, std
+        except Exception as exc:
+            # Column may not exist yet (pre-migration) or DB unreachable — treat
+            # as cold start rather than raising. Drift checks must never crash.
+            _log.debug("evolve.drift_baseline_load_failed", error=str(exc))
+            return None
 
     def _compute_ks_distance(self, recent_features: np.ndarray) -> float:
         """

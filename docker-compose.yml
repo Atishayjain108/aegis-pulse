@@ -305,6 +305,66 @@ services:
       - aegis
 
   # -----------------------------------------------------------------
+  # AEGIS Autonomous Scheduler (PROJECT OMEGA — runs the live loops)
+  # Fires the 14-job APScheduler loop: scrape → analyze → drift → settle
+  # claims → emit calibrated claims → refit calibration → retrain → health.
+  # Without this service the scheduler is ORPHANED (nothing fires the jobs).
+  #
+  #   docker compose --profile autonomous up -d autonomous
+  #
+  # NOTE: the image must include `apscheduler`; the scheduler exits 1 and logs
+  # an install hint if it is absent.
+  # -----------------------------------------------------------------
+  autonomous:
+    profiles: ["autonomous"]
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.predict
+    image: aegis-predict:latest
+    container_name: aegis-autonomous
+    restart: unless-stopped
+    command: ["uv", "run", "aegis", "autonomous", "run"]
+    # The predict image's HEALTHCHECK probes the :8000 HTTP server, which this
+    # scheduler worker does not run. Override with a liveness check on the
+    # scheduler process instead.
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import glob,sys; sys.exit(0 if any(b'autonomous' in open(p,'rb').read() for p in glob.glob('/proc/[0-9]*/cmdline')) else 1)\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          memory: 256M
+    environment:
+      AEGIS_PG_DSN: postgresql://${POSTGRES_USER:-aegis_app}:${POSTGRES_PASSWORD:-aegis_app_dev_pw}@postgres:5432/${POSTGRES_DB:-aegis}
+      AEGIS_REDIS_URL: redis://redis:6379/0
+      AEGIS_ENV: dev
+      AEGIS_LOG_JSON: "true"
+      # LLM chain enabled: local Ollama first, then Groq cloud fallback. Was
+      # DISABLE_OLLAMA=1 with no cloud key → analysis ran heuristic-only.
+      AEGIS_DISABLE_OLLAMA: "0"
+      AEGIS_OLLAMA_BASE_URL: "http://ollama:11434"
+      AEGIS_GROQ_API_KEY: ${GROQ_API_KEY:-}
+      AEGIS_GROQ_MODEL: ${AEGIS_GROQ_MODEL:-llama-3.3-70b-versatile}
+      AEGIS_GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      AEGIS_OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      AEGIS_FLARESOLVERR_URL: "http://aegis-flaresolverr:8191/v1"
+      # Override default scrape topics (comma-separated) without a rebuild.
+      AEGIS_AUTONOMOUS_TOPICS: "${AEGIS_AUTONOMOUS_TOPICS:-}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - aegis
+
+  # -----------------------------------------------------------------
   # AEGIS Command Center Dashboard (unified web UI on :8300)
   # Reads from Postgres + Redis; proxies Phase 3 :8100 + Phase 4 :8200.
   #
@@ -331,6 +391,13 @@ services:
       AEGIS_FLARESOLVERR_URL: "http://aegis-flaresolverr:8191/v1"
       AEGIS_SCRAPE_FLARESOLVERR_URL: "http://aegis-flaresolverr:8191/v1"
       AEGIS_OLLAMA_BASE_URL: "http://ollama:11434"
+      # LLM provider keys so /api/llm/health reflects groq/gemini/openrouter
+      # (compose auto-substitutes from the project .env). Was missing → only
+      # ollama ever registered, so groq always showed "down" on the dashboard.
+      AEGIS_GROQ_API_KEY: ${GROQ_API_KEY:-}
+      AEGIS_GROQ_MODEL: ${AEGIS_GROQ_MODEL:-llama-3.3-70b-versatile}
+      AEGIS_GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      AEGIS_OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       AEGIS_MINIO_ENDPOINT: "minio:9000"
       AEGIS_DASHBOARD_OPS_TOKEN: ${AEGIS_DASHBOARD_OPS_TOKEN:-}
     # INFRA-2: docker.sock is intentionally NOT mounted. This service runs the

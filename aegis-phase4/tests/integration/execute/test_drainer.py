@@ -16,7 +16,6 @@ from aegis.execute.bridge.types import ComposerInput
 from aegis.execute.killswitch.switch import KillSwitch
 from aegis.execute.outbox.drainer import Drainer
 from aegis.execute.pipeline import Pipeline
-
 from tests.integration.execute.conftest import RecordingNotifier
 
 

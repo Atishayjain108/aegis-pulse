@@ -16,6 +16,7 @@ from datetime import datetime
 from typing import Any
 
 import pytest
+
 from aegis.execute.schemas.alert import (
     Alert,
     AlertOutboxRow,

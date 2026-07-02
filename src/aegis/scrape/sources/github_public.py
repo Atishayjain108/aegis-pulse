@@ -45,6 +45,7 @@ from aegis.schemas.signal import (
     compute_content_hash,
 )
 from aegis.scrape.base import AdapterConfig, ScrapeContext, SourceAdapter
+from aegis.scrape.http_client import get_or_create_client
 from aegis.scrape.schema_guard import validate_batch
 from aegis.scrape.sentiment import score_text
 
@@ -89,17 +90,17 @@ class GitHubPublicAdapter(SourceAdapter[dict[str, Any]]):
         return "github_public"
 
     async def setup(self, ctx: ScrapeContext) -> None:
-        self._client = httpx.AsyncClient(
-            timeout=httpx.Timeout(20.0),
+        self._client = await get_or_create_client(
+            "api.github.com",
+            http2=False,
+            timeout=20.0,
             headers=_HEADERS,
             follow_redirects=True,
-            http2=False,
         )
 
     async def teardown(self, ctx: ScrapeContext) -> None:
-        if self._client is not None:
-            await self._client.aclose()
-            self._client = None
+        # Shared pooled client (PASS5-5B / ADP-7) — release the reference, never close.
+        self._client = None
 
     async def fetch_raw(  # type: ignore[override]
         self,

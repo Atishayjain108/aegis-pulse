@@ -4,7 +4,7 @@ tests/unit/predict/test_heuristic.py — Unit tests for Phase 3 heuristic-first 
 Tests cover:
   - Heuristic model always produces a verdict (never raises, never needs API keys)
   - Neural models can only REDUCE confidence [0.5, 1.0] — never flip verdict
-  - FeatureWindow schema validation (FEATURE_DIM=20 strict)
+  - FeatureWindow schema validation (FEATURE_DIM strict; 24 since schema 3.1.0)
   - InferenceRunner: zero-API-key path produces valid PredictionBundle
   - Resilience: resilient_call timeout + graceful degradation
   - Phase 3 ↔ Phase 2 bridge mapping: p_breakout→SCOUT, p_decline→SENTINEL
@@ -23,7 +23,10 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 import pytest
 
-FEATURE_DIM = 20  # matches aegis.predict.FEATURE_DIM
+try:
+    from aegis.predict import FEATURE_DIM  # type: ignore[import-untyped]
+except ImportError:  # pragma: no cover - predict always installed in CI
+    FEATURE_DIM = 24
 
 
 def _import_predict() -> Any:
@@ -73,9 +76,9 @@ class TestFeatureWindowSchema:
     def test_wrong_feature_dim_rejected(self, feature_window: dict[str, Any]) -> None:
         """values length must equal window_size * feature_dim. Mismatch → ValidationError."""
         schemas = _import_schemas()
-        # Keep feature_dim=FEATURE_DIM but supply one fewer value → 1*20=20 != 19
+        # Keep feature_dim=FEATURE_DIM but supply one fewer value → shape mismatch
         bad = dict(feature_window, values=[0.1] * (FEATURE_DIM - 1))
-        with pytest.raises(Exception):
+        with pytest.raises(Exception):  # noqa: B017
             schemas.FeatureWindow(**bad)
 
     def test_is_frozen(self, feature_window: dict[str, Any]) -> None:

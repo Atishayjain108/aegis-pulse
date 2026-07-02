@@ -114,6 +114,24 @@ class OllamaProvider(BaseProvider):
                 f"Cannot reach Ollama at {self._base_url}: {exc}"
             ) from exc
 
+        # Older Ollama builds (or a misrouted proxy) lack the OpenAI-compat
+        # shim and answer /v1/chat/completions with 404. Fall back to the
+        # native /api/chat endpoint rather than tripping the circuit breaker.
+        if resp.status_code == 404:
+            _log.warning(
+                "ollama.openai_compat_404_fallback_native",
+                base_url=self._base_url,
+                model=effective_model,
+            )
+            return await self._native_chat(
+                messages,
+                model=effective_model,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                options=kwargs.get("options"),
+                t0=t0,
+            )
+
         if resp.status_code == 401:
             raise ProviderAuthError(
                 "Ollama returned 401 — check OLLAMA_ORIGINS config",
@@ -150,6 +168,54 @@ class OllamaProvider(BaseProvider):
             ),
             latency_ms=latency_ms,
             meta={"finish_reason": choice.get("finish_reason", "stop")},
+        )
+
+    async def _native_chat(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        model: str,
+        temperature: float,
+        max_tokens: int,
+        options: dict[str, Any] | None,
+        t0: float,
+    ) -> LLMResponse:
+        """Fallback to Ollama's native ``/api/chat`` endpoint.
+
+        Used when the OpenAI-compat ``/v1/chat/completions`` route returns 404
+        (older Ollama releases). Response shape differs from the OpenAI schema:
+        ``{"message": {"content": ...}, "prompt_eval_count": N, "eval_count": M}``.
+        """
+        opts: dict[str, Any] = {"temperature": temperature, "num_predict": max_tokens}
+        if options:
+            opts.update(options)
+        payload: dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "stream": False,
+            "options": opts,
+        }
+        try:
+            resp = await self._client.post("/api/chat", json=payload)
+        except httpx.ConnectError as exc:
+            raise ConnectionError(
+                f"Cannot reach Ollama at {self._base_url}: {exc}"
+            ) from exc
+        resp.raise_for_status()
+        latency_ms = (time.perf_counter() - t0) * 1000
+
+        data = resp.json()
+        content: str = data.get("message", {}).get("content", "")
+        return LLMResponse(
+            content=content,
+            provider=self.name,
+            model=model,
+            usage=self._make_usage(
+                input_tokens=data.get("prompt_eval_count", 0),
+                output_tokens=data.get("eval_count", 0),
+            ),
+            latency_ms=latency_ms,
+            meta={"finish_reason": data.get("done_reason", "stop"), "native_api": True},
         )
 
     async def health_check(self) -> bool:

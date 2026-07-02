@@ -35,6 +35,26 @@ from aegis.config import settings
 _sse_log = structlog.get_logger("aegis.dashboard.sse")
 
 # ---------------------------------------------------------------------------
+# DASH-4: pool-acquire timeout counter. Uses the collision-safe observability
+# factory (returns a no-op stub when prometheus_client is absent), so this
+# import can never fail or double-register.
+# ---------------------------------------------------------------------------
+try:
+    from aegis.observability.metrics import _counter as _obs_counter
+
+    _pool_acquire_timeout_total = _obs_counter(
+        "aegis_obs_dashboard_pool_acquire_timeout_total",
+        "Dashboard PG pool acquire timeouts",
+    )
+except Exception:  # observability package unavailable — degrade to no-op
+
+    class _NoOpCounter:
+        def inc(self, *_a: Any, **_k: Any) -> None:
+            return None
+
+    _pool_acquire_timeout_total = _NoOpCounter()
+
+# ---------------------------------------------------------------------------
 # Path resolution
 # ---------------------------------------------------------------------------
 _STATIC = Path(__file__).parent / "static"
@@ -120,9 +140,22 @@ async def _acquire_pg(dsn: str, timeout: float = 3.0) -> AsyncIterator[Any]:
     Falls back to asyncpg.connect() during startup or if pool creation failed.
     """
     if _pg_pool is not None:
-        async with _pg_pool.acquire(timeout=timeout) as conn:
-            await _set_tenant(conn)
-            yield conn
+        # DASH-4: a saturated pool must surface as 504 (gateway timeout), not
+        # hang the request or bubble a bare TimeoutError into a 500.
+        try:
+            async with _pg_pool.acquire(timeout=timeout) as conn:
+                await _set_tenant(conn)
+                yield conn
+        except TimeoutError as exc:
+            _pool_acquire_timeout_total.inc()
+            _app_log.warning(
+                "dashboard.pg_pool_acquire_timeout",
+                timeout_s=timeout,
+                pool_max=getattr(_pg_pool, "_maxsize", None),
+            )
+            raise HTTPException(
+                status_code=504, detail="Database connection pool acquire timed out"
+            ) from exc
     else:
         conn = await asyncpg.connect(dsn, timeout=timeout)
         try:
@@ -158,8 +191,18 @@ async def _docker_ps() -> list[dict[str, Any]]:
     that appeared when the error dict was counted as a container entry.
     """
     try:
-        transport = httpx.AsyncHTTPTransport(uds="/var/run/docker.sock")
-        async with httpx.AsyncClient(transport=transport, base_url="http://localhost", timeout=5.0) as client:
+        # INFRA-2: prefer a TCP Docker endpoint when DOCKER_HOST is set —
+        # containers without the socket mount (the hardened default) can
+        # still show status via a remote/proxied Docker API. Fall back to
+        # the local Unix socket (host-mode dashboard), then degrade to [].
+        docker_host = os.environ.get("DOCKER_HOST", "")
+        if docker_host.startswith("tcp://"):
+            transport = httpx.AsyncHTTPTransport()
+            base_url = "http://" + docker_host.removeprefix("tcp://").rstrip("/")
+        else:
+            transport = httpx.AsyncHTTPTransport(uds="/var/run/docker.sock")
+            base_url = "http://localhost"
+        async with httpx.AsyncClient(transport=transport, base_url=base_url, timeout=5.0) as client:
             resp = await client.get("/containers/json", params={"all": "true"})
             resp.raise_for_status()
             raw: list[dict[str, Any]] = resp.json()
@@ -183,10 +226,66 @@ _cfg = settings()
 _app_log = structlog.get_logger("aegis.dashboard.app")
 
 
+def _require_ops_token_in_prod() -> None:
+    """ENV-2: refuse to start when the ops console would be unauthenticated RCE.
+
+    The ops console (POST /api/ops/run) executes shell commands. In prod and
+    staging an empty AEGIS_DASHBOARD_OPS_TOKEN means anyone who can reach
+    :8300 can run commands — so startup hard-fails. Dev/test keep the
+    existing WARNING (host-mode dev workflow stays friction-free) and the
+    request-time 503 in _verify_ops_token remains as defense-in-depth.
+    """
+    if _cfg.env in ("prod", "staging") and not _cfg.dashboard_ops_token:
+        raise RuntimeError(
+            "AEGIS_DASHBOARD_OPS_TOKEN must be set when AEGIS_ENV is prod or "
+            "staging. The ops console executes shell commands — an empty "
+            "token is unauthenticated remote code execution."
+        )
+
+
+_llm_probe_task: asyncio.Task[None] | None = None
+
+
+async def _probe_llm_backends() -> None:
+    """ENV-3: non-blocking startup probe of the LLM fallback chain.
+
+    Warns loudly when every backend is unreachable — the system still works
+    (heuristic-only doctrine) but verdict reasoning will be template text,
+    and the operator should know that *at startup*, not after a day of
+    wondering why reasoning looks canned. Never blocks or fails startup.
+    """
+    try:
+        from aegis.agents.llm import get_gateway
+
+        if get_gateway is None:  # Phase 11 not installed — shim exports None
+            _app_log.warning("startup.llm_probe.no_gateway", heuristic_only_mode=True)
+            return
+        gw = await get_gateway()
+        if gw is None:
+            _app_log.warning("startup.llm_probe.no_gateway", heuristic_only_mode=True)
+            return
+        health = await asyncio.wait_for(gw.health(), timeout=5.0)
+        reachable = [p for p, ok in health.items() if ok]
+        if not reachable:
+            _app_log.warning(
+                "startup.llm_probe.all_unreachable",
+                heuristic_only_mode=True,
+                checked=list(health.keys()),
+                consequence="every agent will use heuristic fallback",
+            )
+        else:
+            _app_log.info("startup.llm_probe.ok", reachable=reachable)
+    except Exception as exc:
+        _app_log.warning(
+            "startup.llm_probe.failed", error=str(exc)[:200], heuristic_only_mode=True
+        )
+
+
 @contextlib.asynccontextmanager
 async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """Create shared connection pools on startup; close them on shutdown."""
-    global _pg_pool, _redis_pool, _research_pool  # noqa: PLW0603
+    global _pg_pool, _redis_pool, _research_pool, _llm_probe_task  # noqa: PLW0603
+    _require_ops_token_in_prod()  # ENV-2: fail fast, before any pool exists
     try:
         # DASH-4: a bigger default ceiling (concurrent tabs + SSE catch-up +
         # /api/stats aggregation + research all share this pool) and a server-side
@@ -205,9 +304,14 @@ async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
         await _research_pool.start()
     except Exception as exc:
         _app_log.warning("dashboard.research_pool_unavailable", error=str(exc))
+    # ENV-3: fire-and-forget LLM reachability probe. Reference kept so the
+    # task isn't garbage-collected mid-flight; cancelled on shutdown.
+    _llm_probe_task = asyncio.create_task(_probe_llm_backends())
     try:
         yield
     finally:
+        if _llm_probe_task is not None and not _llm_probe_task.done():
+            _llm_probe_task.cancel()
         if _pg_pool is not None:
             await _pg_pool.close()
             _pg_pool = None
@@ -274,6 +378,7 @@ async def index() -> HTMLResponse:
 
 
 @app.get("/healthz")
+@app.get("/api/health")
 async def healthz() -> dict[str, str]:
     return {"status": "ok", "service": "aegis-dashboard"}
 
@@ -475,6 +580,65 @@ async def signals_recent(
 
 
 # ---------------------------------------------------------------------------
+# /api/products/recent  — product intelligence cards (image + price + source)
+# Reads image_url/price out of the platform_specific JSONB captured by the
+# e-commerce adapters (flipkart, meesho, nykaa, myntra, amazon_in, snapdeal).
+# ---------------------------------------------------------------------------
+@app.get("/api/products/recent")
+async def products_recent(
+    limit: int = 48,
+    platform: str | None = None,
+) -> list[dict[str, Any]]:
+    cfg = settings()
+    try:
+        async with _acquire_pg(cfg.pg_dsn_str) as conn:
+            where = "WHERE platform_specific->>'image_url' IS NOT NULL"
+            params: list[Any] = []
+            if platform and platform != "all":
+                params.append(platform)
+                where += f" AND platform = ${len(params)}"
+            params.append(limit)
+            rows = await conn.fetch(
+                f"""
+                SELECT signal_id, platform, title, url, scraped_at, price_amount,
+                       platform_specific
+                FROM signals
+                {where}
+                ORDER BY scraped_at DESC
+                LIMIT ${len(params)}
+                """,  # noqa: S608 - identifiers are static, values parameterised
+                *params,
+            )
+        out: list[dict[str, Any]] = []
+        for r in rows:
+            ps = r["platform_specific"] or {}
+            if isinstance(ps, str):
+                try:
+                    ps = json.loads(ps)
+                except Exception:
+                    ps = {}
+            price = r["price_amount"]
+            if price is None:
+                price = ps.get("disc_price") or ps.get("price_inr")
+            out.append({
+                "signal_id": str(r["signal_id"]),
+                "platform": r["platform"],
+                "title": (r["title"] or "")[:140],
+                "url": str(r["url"]) if r["url"] else None,
+                "image_url": ps.get("image_url"),
+                "price": float(price) if price is not None else None,
+                "currency": ps.get("currency", "INR"),
+                "discount_pct": ps.get("discount_pct"),
+                "rating": ps.get("rating"),
+                "review_count": ps.get("review_count"),
+                "scraped_at": r["scraped_at"].isoformat() if r["scraped_at"] else None,
+            })
+        return out
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+# ---------------------------------------------------------------------------
 # /api/agents/recent  — reads the phase2 graph_results Redis stream
 # ---------------------------------------------------------------------------
 @app.get("/api/agents/recent")
@@ -566,6 +730,182 @@ async def evolve_recent(limit: int = 15) -> list[dict[str, Any]]:
     return await _read_phase_stream("aegis:phase9:evolve_events", limit)
 
 
+@app.get("/api/swarm/recent")
+async def swarm_recent(limit: int = 10) -> list[dict[str, Any]]:
+    """DASH-2: recent swarm runs straight from the Redis results stream."""
+    return await _read_phase_stream("aegis:swarm:results", limit)
+
+
+@app.get("/api/sentinel/recent")
+async def sentinel_recent(limit: int = 15) -> list[dict[str, Any]]:
+    """Autonomous Market Sentinel discoveries (self-launched market reports)."""
+    return await _read_phase_stream("aegis:sentinel:reports", limit)
+
+
+@app.post("/api/sentinel/scan")
+async def sentinel_scan() -> dict[str, Any]:
+    """Trigger a Sentinel scan on demand (sweep radar → breakouts → reports).
+
+    Runs the same loop the 45-min scheduler job runs, so the user can force a
+    fresh autonomous discovery cycle from the dashboard.
+    """
+    try:
+        import asyncpg
+
+        from aegis.config import settings as _settings
+        from aegis.scheduler.sentinel import MarketSentinel
+
+        cfg = _settings()
+        pool = await asyncpg.create_pool(cfg.pg_dsn_str, min_size=1, max_size=2)
+        try:
+            scan = await MarketSentinel(pool=pool, redis=_get_redis()).scan()
+            return {"ok": True, **scan.to_dict()}
+        finally:
+            await pool.close()
+    except Exception as exc:
+        _sse_log.warning("sentinel.scan.error", exc=str(exc))
+        return {"ok": False, "error": str(exc)[:200]}
+
+
+@app.get("/api/anomalies/recent")
+async def anomalies_recent(limit: int = 20) -> list[dict[str, Any]]:
+    """DASH-2: recent scrape anomalies.
+
+    The ``aegis:scrape:anomalies`` stream is populated by the online anomaly
+    scorer (Pass 9 wiring); until a publisher runs, this returns [] and the
+    panel shows its empty state.
+    """
+    return await _read_phase_stream("aegis:scrape:anomalies", limit)
+
+
+@app.get("/api/search/semantic")
+async def semantic_search(q: str, top_k: int = 10) -> dict[str, Any]:
+    """Pass 9B: semantic signal search backed by the FAISS index.
+
+    Returns ``{"available": bool, "query": str, "results": [...]}``. When
+    faiss-cpu / an embedding gateway are absent, the index returns no results
+    and ``available`` is False — the panel shows its empty state.
+    """
+    if not q or not q.strip():
+        return {"available": False, "query": q, "results": []}
+    try:
+        from aegis.scrape.semantic_index import get_signal_index
+
+        results = await get_signal_index().search(q.strip(), top_k=max(1, min(top_k, 50)))
+        return {
+            "available": bool(results),
+            "query": q,
+            "results": [
+                {"signal_id": r.signal_id, "similarity": r.similarity, "metadata": r.metadata}
+                for r in results
+            ],
+        }
+    except Exception:
+        return {"available": False, "query": q, "results": []}
+
+
+@app.get("/api/capital/recent")
+async def capital_recent(limit: int = 20) -> dict[str, Any]:
+    """DASH-2: recent Phase 6 execution plans (advisory/staging/live)."""
+    cfg = settings()
+    try:
+        async with _acquire_pg(cfg.pg_dsn_str) as conn:
+            rows = await conn.fetch("""
+                SELECT plan_id, trend_id, execution_mode, quantity,
+                       fulfillment_method, total_capital_usd,
+                       estimated_profit_usd, kelly_fraction_used,
+                       risk_score, requires_approval, status, created_at
+                FROM execution_plans
+                ORDER BY created_at DESC
+                LIMIT $1
+            """, min(limit, 100))
+        return {
+            "status": "ok",
+            "plans": [
+                {
+                    "plan_id": str(r["plan_id"]),
+                    "trend_id": r["trend_id"],
+                    "execution_mode": r["execution_mode"],
+                    "quantity": r["quantity"],
+                    "fulfillment_method": r["fulfillment_method"],
+                    "total_capital_usd": float(r["total_capital_usd"] or 0),
+                    "estimated_profit_usd": float(r["estimated_profit_usd"] or 0),
+                    "kelly_fraction_used": float(r["kelly_fraction_used"] or 0),
+                    "risk_score": float(r["risk_score"] or 0),
+                    "requires_approval": r["requires_approval"],
+                    "plan_status": r["status"],
+                    "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+                }
+                for r in rows
+            ],
+        }
+    except Exception as exc:
+        # Table absent (migration 0007 not applied) or DB down — degrade, never 500.
+        return {"status": "error", "error": str(exc)[:300], "plans": []}
+
+
+@app.get("/api/dr/status")
+async def dr_status() -> dict[str, Any]:
+    """DASH-2: Phase 15 DR SLA snapshot — graceful when the module is absent.
+
+    ``aegis-phase15`` is a standalone module with its own venv; in the main
+    process it is usually not importable, so "unavailable" is the expected
+    dev-mode answer, not an error.
+    """
+    try:
+        from aegis.dr.health import DrHealthChecker  # type: ignore[import-not-found]
+    except Exception:
+        return {
+            "status": "unavailable",
+            "message": "aegis-phase15 DR module not installed in this process",
+        }
+    try:
+        snapshot = await DrHealthChecker().check()
+        data = snapshot.model_dump(mode="json") if hasattr(snapshot, "model_dump") else dict(snapshot)
+        return {"status": "ok", "snapshot": data}
+    except Exception as exc:
+        return {"status": "error", "error": str(exc)[:300]}
+
+
+# Canonical event-bus streams surfaced by /api/health/streams. Keep in sync
+# with aegis.core.event_bus and the Phase 0/2 publishers.
+_CANONICAL_STREAMS = (
+    "aegis:phase0:raw_signals",
+    "aegis:phase2:graph_results",
+    "aegis:phase7:geo_opportunities",
+    "aegis:phase8:compliance_assessments",
+    "aegis:phase9:evolve_events",
+    "aegis:scrape:anomalies",
+    "aegis:swarm:results",
+)
+
+
+@app.get("/api/health/streams")
+async def stream_health() -> dict[str, Any]:
+    """DASH-2: traffic-light health for every canonical AEGIS Redis stream."""
+    result: dict[str, Any] = {}
+    now_ms = datetime.now(UTC).timestamp() * 1000
+    for stream in _CANONICAL_STREAMS:
+        try:
+            info = await _get_redis().xinfo_stream(stream)
+            last_id = str(info.get("last-generated-id", "0-0"))
+            last_ms = int(last_id.split("-")[0]) if last_id != "0-0" else 0
+            age_s = (now_ms - last_ms) / 1000 if last_ms else None
+            result[stream] = {
+                "length": info.get("length", 0),
+                "last_entry_age_seconds": round(age_s, 1) if age_s is not None else None,
+                "status": "healthy" if age_s is not None and age_s < 3600 else "stale",
+            }
+        except Exception as exc:
+            # Missing stream → "no key" error; show as empty, not broken.
+            msg = str(exc)
+            if "no such key" in msg.lower():
+                result[stream] = {"length": 0, "last_entry_age_seconds": None, "status": "empty"}
+            else:
+                result[stream] = {"status": "error", "error": msg[:200]}
+    return result
+
+
 # ---------------------------------------------------------------------------
 # /api/swarm/latest  — latest SwarmResult from Redis
 # ---------------------------------------------------------------------------
@@ -639,72 +979,11 @@ async def swarm_agents() -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# /api/platforms/stats  — signal counts by platform (last 24h)
+# DASH-3: DELETED /api/platforms/stats — superseded by /api/signals/platforms
+# (wired in the SPA) which carries the same per-platform counts/confidence.
+# DASH-3: DELETED /api/platforms/trends — superseded by /api/signals/velocity
+# (wired) for time-series; 7-day hourly rollups were unused. [2026-06-11]
 # ---------------------------------------------------------------------------
-@app.get("/api/platforms/stats")
-async def platform_stats() -> dict[str, Any]:
-    cfg = settings()
-    try:
-        now = datetime.now(UTC)
-        async with _acquire_pg(cfg.pg_dsn_str) as conn:
-            rows = await conn.fetch("""
-                SELECT platform,
-                       COUNT(*) AS total,
-                       COUNT(*) FILTER (WHERE scraped_at >= $2) AS last_24h,
-                       AVG(source_confidence) AS avg_sentiment,
-                       AVG(CASE WHEN price_amount IS NOT NULL THEN 0.9::real
-                                WHEN intent = 'purchase' THEN 0.8::real
-                                WHEN intent = 'save' THEN 0.6::real
-                                ELSE 0.1::real
-                           END) AS avg_commercial_intent
-                FROM signals
-                WHERE scraped_at >= $1
-                GROUP BY platform
-                ORDER BY last_24h DESC
-            """, now - timedelta(hours=24), now - timedelta(hours=24))
-        return {
-            "status": "ok",
-            "platforms": {
-                r["platform"]: {
-                    "total": r["total"],
-                    "last_24h": r["last_24h"],
-                    "avg_sentiment": round(float(r["avg_sentiment"] or 0), 3),
-                    "avg_commercial_intent": round(float(r["avg_commercial_intent"] or 0), 3),
-                }
-                for r in rows
-            },
-        }
-    except Exception as exc:
-        return {"status": "error", "error": str(exc)[:300], "platforms": {}}
-
-
-# ---------------------------------------------------------------------------
-# /api/platforms/trends  — hourly signal velocity per platform, last 7 days
-# ---------------------------------------------------------------------------
-@app.get("/api/platforms/trends")
-async def platform_trends() -> dict[str, Any]:
-    cfg = settings()
-    try:
-        now = datetime.now(UTC)
-        async with _acquire_pg(cfg.pg_dsn_str) as conn:
-            rows = await conn.fetch("""
-                SELECT platform,
-                       DATE_TRUNC('hour', scraped_at) AS hr,
-                       COUNT(*) AS n
-                FROM signals
-                WHERE scraped_at >= $1
-                GROUP BY platform, hr
-                ORDER BY hr ASC
-            """, now - timedelta(days=7))
-        trends: dict[str, list[dict[str, Any]]] = {}
-        for r in rows:
-            p = r["platform"]
-            if p not in trends:
-                trends[p] = []
-            trends[p].append({"hour": r["hr"].isoformat(), "count": r["n"]})
-        return {"status": "ok", "trends": trends}
-    except Exception as exc:
-        return {"status": "error", "error": str(exc)[:300], "trends": {}}
 
 
 # ---------------------------------------------------------------------------
@@ -790,6 +1069,58 @@ async def run_op(
             yield f"\n[Error launching process: {exc}]\n".encode()
 
     return StreamingResponse(_stream(), media_type="text/plain")
+
+
+# ---------------------------------------------------------------------------
+# /api/swarm/run  — fire a full swarm harvest (all working adapters) in the
+# background. Returns immediately; progress is observable via the SSE
+# `swarm_complete` event and /api/swarm/latest. Guarded by the same ops token.
+# ---------------------------------------------------------------------------
+# Mutable holder (dict avoids `global` statements + keeps a task ref alive).
+_swarm_state: dict[str, Any] = {"proc": None, "task": None}
+
+
+@app.post("/api/swarm/run")
+async def run_swarm(
+    x_ops_token: str | None = Header(default=None),
+) -> dict[str, Any]:
+    _verify_ops_token(x_ops_token)
+    proc = _swarm_state["proc"]
+    if proc is not None and proc.returncode is None:
+        return {"status": "already_running", "message": "A swarm run is already in progress."}
+
+    cmd = [sys.executable, "-m", "aegis.cli.main", "swarm", "run"]
+
+    async def _launch() -> None:
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+                cwd=str(_REPO_ROOT),
+            )
+            _swarm_state["proc"] = proc
+            await proc.wait()
+            _ops_log.info("swarm.run.complete", returncode=proc.returncode)
+        except Exception as exc:
+            _ops_log.error("swarm.run.error", exc=str(exc))
+
+    _swarm_state["task"] = asyncio.create_task(_launch())
+    return {
+        "status": "started",
+        "message": "Swarm harvest launched. Watch the live feed for a swarm_complete event.",
+    }
+
+
+@app.get("/api/swarm/run/status")
+async def swarm_run_status() -> dict[str, Any]:
+    """Whether a dashboard-triggered swarm run is currently in flight."""
+    proc = _swarm_state["proc"]
+    task = _swarm_state["task"]
+    running = (proc is not None and proc.returncode is None) or (
+        proc is None and task is not None and not task.done()
+    )
+    return {"running": running}
 
 
 # ---------------------------------------------------------------------------
@@ -1101,48 +1432,9 @@ async def killswitch_arm(
 
 
 # ---------------------------------------------------------------------------
-# /api/execute/alerts  — Phase 4 recent alerts from DB
+# DASH-3: DELETED /api/execute/alerts — duplicate of /api/alerts/recent (the
+# wired, dashboard-shaped variant of the same alerts-table query). [2026-06-11]
 # ---------------------------------------------------------------------------
-@app.get("/api/execute/alerts")
-async def execute_alerts_list(limit: int = 30) -> list[dict[str, Any]]:
-    cfg = settings()
-    tenant = cfg.default_tenant_id or "00000000-0000-0000-0000-000000000001"
-    try:
-        async with _acquire_pg(cfg.pg_dsn_str) as conn:
-            await conn.execute(
-                "SELECT set_config('app.current_tenant', $1, TRUE)", tenant
-            )
-            rows = await conn.fetch("""
-                SELECT alert_id, trend_id, verdict, priority, score, confidence,
-                       source, title, halt_reason, blocked_by, created_at,
-                       p_breakout_24h, p_decline_6h, expected_margin_usd,
-                       advised_capital_usd, summary_text
-                FROM alerts
-                ORDER BY created_at DESC
-                LIMIT $1
-            """, min(limit, 100))
-        return [
-            {
-                "alert_id": r["alert_id"],
-                "trend_id": r["trend_id"],
-                "verdict": r["verdict"],
-                "priority": r["priority"],
-                "score": round(float(r["score"] or 0), 3),
-                "confidence": round(float(r["confidence"] or 0), 3),
-                "source": r["source"],
-                "title": (r["title"] or "")[:200],
-                "halt_reason": r["halt_reason"],
-                "blocked_by": list(r["blocked_by"] or []),
-                "created_at": r["created_at"].isoformat() if r["created_at"] else None,
-                "p_breakout_24h": round(float(r["p_breakout_24h"]), 3) if r["p_breakout_24h"] is not None else None,
-                "p_decline_6h": round(float(r["p_decline_6h"]), 3) if r["p_decline_6h"] is not None else None,
-                "expected_margin_usd": round(float(r["expected_margin_usd"]), 2) if r["expected_margin_usd"] is not None else None,
-                "explanation": (r["summary_text"] or "")[:500],
-            }
-            for r in rows
-        ]
-    except Exception:
-        return []
 
 
 # ---------------------------------------------------------------------------
@@ -1646,6 +1938,137 @@ async def _run_research_job_guarded(
             reason = "timed out" if isinstance(exc, TimeoutError) else "cancelled"
             job["events"].append({"type": "error", "detail": f"research job {reason}"})
             job["status"] = "error"
+
+
+# ---------------------------------------------------------------------------
+# PASS6-6B: /api/research/deep — multi-pass ResearchEngine report job
+# ---------------------------------------------------------------------------
+
+
+class _MarketRequest(BaseModel):
+    query: str
+    depth: str = "surface"  # "surface" | "standard" | "deep"
+    max_products: int = 160
+    use_llm: bool = True
+    gate: bool = True
+
+
+@app.post("/api/market/analyze")
+async def market_analyze(body: _MarketRequest) -> dict[str, Any]:
+    """Run the Product Intelligence Engine on a query and return a market report.
+
+    Harvests live marketplace listings (dry-run, no DB write) and synthesizes a
+    competitive view: price bands, competitors, top products, value picks and
+    cross-platform arbitrage gaps. No default query — one is required.
+    """
+    query = body.query.strip()
+    if not query:
+        raise HTTPException(status_code=400, detail="query is required — no default topic")
+    depth = body.depth if body.depth in ("surface", "standard", "deep") else "surface"
+    max_products = max(40, min(body.max_products, 400))
+
+    from aegis.intelligence.product_intel import ProductIntelligenceEngine
+
+    redis = None
+    try:
+        redis = await _get_redis()
+    except Exception:
+        redis = None
+    engine = ProductIntelligenceEngine(pool=None, redis=redis)
+    try:
+        report = await asyncio.wait_for(
+            engine.analyze(
+                query,
+                depth=depth,
+                max_products=max_products,
+                use_llm=body.use_llm,
+                gate=body.gate,
+            ),
+            timeout=240,
+        )
+    except TimeoutError as exc:
+        raise HTTPException(
+            status_code=504,
+            detail="market analysis timed out — try a narrower query or surface depth",
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return report.to_dict()
+
+
+class _DeepResearchRequest(BaseModel):
+    topic: str
+    depth: str = "standard"  # "surface" | "standard" | "deep"
+    max_signals: int = 200
+
+
+async def _run_deep_research_job(
+    job_id: str, topic: str, depth: str, max_signals: int
+) -> None:
+    """Background coroutine: run the 5-pass ResearchEngine and emit the report."""
+    job = _research_jobs[job_id]
+    try:
+        from aegis.intelligence.research_engine import ResearchEngine
+
+        job["events"].append({
+            "type": "progress", "step": "research",
+            "msg": f'Running {depth} multi-pass research on "{topic}"…',
+        })
+        engine = ResearchEngine(pool=_research_pool, redis=_get_redis())
+        report = await engine.research(topic, depth=depth, max_signals=max_signals)
+        result = report.to_dict()
+        job["result"] = result
+        job["events"].append({"type": "result", "data": result})
+        job["status"] = "done"
+    except Exception as exc:
+        _app_log.warning("research.deep_job_failed", job_id=job_id, error=str(exc))
+        job["events"].append({"type": "error", "detail": str(exc)[:500]})
+        job["status"] = "error"
+
+
+async def _run_deep_research_job_guarded(
+    job_id: str, topic: str, depth: str, max_signals: int
+) -> None:
+    """Deep-research variant of the guarded research runner (same eviction rules)."""
+    try:
+        await asyncio.wait_for(
+            _run_deep_research_job(job_id, topic, depth, max_signals),
+            timeout=RESEARCH_JOB_TIMEOUT_S,
+        )
+    except (TimeoutError, asyncio.CancelledError) as exc:
+        job = _research_jobs.get(job_id)
+        if job is not None and job.get("status") == "running":
+            reason = "timed out" if isinstance(exc, TimeoutError) else "cancelled"
+            job["events"].append({"type": "error", "detail": f"research job {reason}"})
+            job["status"] = "error"
+
+
+@app.post("/api/research/deep")
+async def deep_research_start(body: _DeepResearchRequest) -> dict[str, Any]:
+    """Start a multi-pass ResearchEngine job; stream via the research SSE endpoint.
+
+    Returns a *job_id*; the caller opens ``GET /api/topic/research/{job_id}/stream``
+    (shared with topic research) to receive progress and the final report.
+    """
+    topic = body.topic.strip()
+    if not topic:
+        raise HTTPException(status_code=400, detail="topic is required")
+    depth = body.depth if body.depth in ("surface", "standard", "deep") else "standard"
+    max_signals = max(10, min(body.max_signals, 500))
+    now = datetime.now(UTC)
+    job_id = _uuid_mod.uuid4().hex[:12]
+    _research_jobs[job_id] = {
+        "status": "running",
+        "events": [],
+        "_started_dt": now,
+        "started_at": now.isoformat(),
+    }
+    _cleanup_research_jobs()
+    task = asyncio.create_task(
+        _run_deep_research_job_guarded(job_id, topic, depth, max_signals)
+    )
+    _research_jobs[job_id]["_task"] = task  # keep a ref so GC doesn't collect the task
+    return {"job_id": job_id}
 
 
 @app.get("/api/topic/research/{job_id}/stream")

@@ -153,6 +153,7 @@ async def engine_status(
 
 @router.post("/plan", response_model=ExecutionPlan, status_code=status.HTTP_201_CREATED)
 async def create_plan(
+    request: Request,
     body: CreatePlanRequest,
     engine: ExecutionEngine = Depends(_get_engine),
     store: dict[str, ExecutionPlan] = Depends(_plan_store),
@@ -176,7 +177,71 @@ async def create_plan(
     )
     plan = await engine.create_plan(intent)
     store[plan.plan_id] = plan
+    # Phase D (Rules 2 + 8): record the plan + a stored failure forecast at
+    # recommendation time so the forecast can later be scored against the
+    # settled outcome. Best-effort — never breaks plan creation.
+    await _record_execution_intel(request, plan, intent, tenant=_tenant)
     return plan
+
+
+async def _record_execution_intel(
+    request: Request,
+    plan: ExecutionPlan,
+    intent: Any,
+    *,
+    tenant: str,
+) -> None:
+    """Best-effort Phase D recording: ExecutionRecord + stored FailureForecast."""
+    pool = getattr(request.app.state, "audit_pool", None)
+    if pool is None:
+        return
+    try:
+        from aegis.execution_intel.forecast import FailureForecaster
+        from aegis.execution_intel.memory import ExecutionMemory
+        from aegis.execution_intel.schemas import ExecutionAssumption, ExecutionRecord
+        from aegis.execution_intel.taxonomy import AssumptionKind, AssumptionStatus
+
+        unit_price = plan.unit_price_usd or 0.0
+        margin_pct = (
+            (unit_price - plan.unit_cost_usd) / unit_price if unit_price > 0 else None
+        )
+        mem = ExecutionMemory(pool, tenant_id=tenant)
+        await mem.record_plan(
+            ExecutionRecord(
+                plan_id=plan.plan_id,
+                trend_id=plan.trend_id,
+                supplier_name=plan.supplier_name,
+                planned_units=plan.quantity,
+                planned_unit_cost_usd=plan.unit_cost_usd,
+                planned_margin_pct=margin_pct,
+            )
+        )
+        # Honest supplier assumption: VERIFIED only when a real supplier priced it.
+        supplier_verified = plan.supplier_name is not None
+        await mem.log_assumption(
+            ExecutionAssumption(
+                plan_id=plan.plan_id,
+                kind=AssumptionKind.SUPPLIER_EXISTS,
+                claim=f"supplier '{plan.supplier_name}' can fulfil this plan",
+                status=(
+                    AssumptionStatus.VERIFIED
+                    if supplier_verified
+                    else AssumptionStatus.UNVERIFIED
+                ),
+                verified_via="supplier_api" if supplier_verified else None,
+            )
+        )
+        forecaster = FailureForecaster(pool, tenant_id=tenant)
+        fc = await forecaster.forecast(
+            plan.plan_id,
+            supplier_name=plan.supplier_name,
+            category=getattr(intent, "category", "") or "general",
+        )
+        await forecaster.record_forecast(fc)
+    except Exception as exc:  # INTENTIONAL: recording must never break the route.
+        _log.debug(
+            "capital.execution_intel_skipped", plan_id=plan.plan_id, reason=str(exc)
+        )
 
 
 @router.get("/plan/{plan_id}", response_model=ExecutionPlan)

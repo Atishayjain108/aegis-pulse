@@ -35,6 +35,7 @@ SELECT create_hypertable(
 
 -- RLS
 ALTER TABLE prediction_outcomes ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS prediction_outcomes_tenant ON prediction_outcomes;
 CREATE POLICY prediction_outcomes_tenant ON prediction_outcomes
     USING (tenant_id = current_setting('app.current_tenant', TRUE)::UUID);
 

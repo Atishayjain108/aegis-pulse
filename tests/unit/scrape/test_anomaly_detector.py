@@ -2,10 +2,17 @@
 from __future__ import annotations
 
 import builtins
+import importlib.util
 
 import pytest
 
 from aegis.scrape.anomaly_detector import AnomalyResult, detect_anomalies_in_batch
+
+# pyod is an optional extra — the outlier-detection test needs it installed.
+# When absent, detect_anomalies_in_batch degrades to a pass-through
+# (reason="pyod_not_installed"), which test_pyod_missing_degrades_gracefully
+# already covers, so we skip the detection assertion rather than fail.
+_HAS_PYOD = importlib.util.find_spec("pyod") is not None
 
 
 def _normal_signal(i: int) -> dict:
@@ -40,6 +47,7 @@ def test_pyod_missing_degrades_gracefully(monkeypatch):
     assert all(r.reason == "pyod_not_installed" for r in results)
 
 
+@pytest.mark.skipif(not _HAS_PYOD, reason="pyod optional extra not installed")
 def test_detects_injected_outliers():
     signals = [_normal_signal(i) for i in range(20)]
     # Inject clear outliers: viral views + very low confidence.

@@ -76,7 +76,7 @@ ignore = [
   # `TC*` (typing-only-import) rules push runtime imports into TYPE_CHECKING
   # blocks. The Pydantic schemas and CLI helpers are runtime-needed even
   # when only used in annotations; these rules generate false positives.
-  "TC001", "TC002", "TC003",
+  "TCH001", "TCH002", "TCH003",
   "SIM108",  # collapse-to-ternary often hurts readability
 ]
 

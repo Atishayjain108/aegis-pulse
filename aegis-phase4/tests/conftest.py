@@ -21,6 +21,7 @@ os.environ.setdefault("AEGIS_EXECUTE_MODE", "advisory")
 os.environ.setdefault("AEGIS_EXECUTE_HMAC_KEY", "test-key-not-prod")
 
 import pytest  # noqa: E402
+
 from aegis.execute.config import reset_execute_settings  # noqa: E402
 from aegis.execute.utils.time import reset_clock  # noqa: E402
 

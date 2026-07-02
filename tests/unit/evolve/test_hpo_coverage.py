@@ -26,23 +26,30 @@ class TestProxyAUC:
         auc = _proxy_auc(X_tr, y_tr, X_vl, y_vl, {})
         assert 0.0 <= auc <= 1.0
 
-    def test_sklearn_absent_fallback(self) -> None:
+    def test_sklearn_absent_raises_not_fabricates(self) -> None:
+        # OMEGA reality-first (FIX-5): when the proxy cannot compute a real AUC
+        # it must raise, never invent a score. Optuna then marks the trial failed
+        # and HPO degrades to documented defaults instead of noise.
         import sys
+
+        from aegis.evolve.errors import HPOFailedError
+
         with pytest.MonkeyPatch().context() as mp:
             mp.setitem(sys.modules, "sklearn", None)
             mp.setitem(sys.modules, "sklearn.linear_model", None)
             mp.setitem(sys.modules, "sklearn.metrics", None)
             mp.setitem(sys.modules, "sklearn.preprocessing", None)
             X_tr, y_tr, X_vl, y_vl = _xy()
-            auc = _proxy_auc(X_tr, y_tr, X_vl, y_vl, {})
-        assert 0.4 <= auc <= 0.7
+            with pytest.raises(HPOFailedError):
+                _proxy_auc(X_tr, y_tr, X_vl, y_vl, {})
 
-    def test_single_class_labels_falls_back_gracefully(self) -> None:
+    def test_single_class_labels_raise(self) -> None:
+        from aegis.evolve.errors import HPOFailedError
+
         X_tr, y_tr, X_vl, _ = _xy()
         y_vl_single = np.zeros(60, dtype=int)  # all same class → roc_auc raises
-        auc = _proxy_auc(X_tr, y_tr, X_vl, y_vl_single, {})
-        # Either sklearn raises (fallback to [0.45,0.65]) or succeeds — result must be in [0,1]
-        assert 0.0 <= auc <= 1.0
+        with pytest.raises(HPOFailedError):
+            _proxy_auc(X_tr, y_tr, X_vl, y_vl_single, {})
 
 
 class TestBuildObjective:

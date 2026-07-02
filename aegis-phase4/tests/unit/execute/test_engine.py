@@ -30,6 +30,13 @@ def _settings(**overrides) -> ExecuteSettings:
         "capital_kelly_fraction": 0.25,
         "approval_timeout_s": 5,
         "auto_execute_p0": False,
+        # REALITY-FIRST: non-advisory modes now require a complete recipient.
+        "fulfillment_recipient_name": "Test Operator",
+        "fulfillment_recipient_address1": "1 Test St",
+        "fulfillment_recipient_city": "Testville",
+        "fulfillment_recipient_zip": "00001",
+        "fulfillment_recipient_country": "US",
+        "fulfillment_recipient_phone": "15555550100",
     }
     defaults.update(overrides)
     return ExecuteSettings(**defaults)
@@ -105,6 +112,29 @@ async def test_create_plan_risk_score_in_bounds():
     for lp in (0.0, 0.1, 0.5, 0.9, 1.0):
         plan = await engine.create_plan(_intent(loss_probability=lp))
         assert 0.0 <= plan.risk_score <= 1.0, f"risk_score out of bounds for lp={lp}"
+
+
+@pytest.mark.asyncio
+async def test_create_plan_advisory_has_no_supplier_name():
+    # Reality First: advisory mode verifies no supplier, so supplier_name is None.
+    engine = ExecutionEngine(_settings(mode=MODE_ADVISORY))
+    plan = await engine.create_plan(_intent())
+    assert plan.supplier_name is None
+
+
+@pytest.mark.asyncio
+async def test_create_plan_records_verified_supplier_name(monkeypatch):
+    # Phase D: a verified supplier name is propagated onto the plan in live mode.
+    engine = ExecutionEngine(_settings(mode=MODE_LIVE))
+
+    async def _fake_verify(_self, _intent):
+        return 4.25, "printful"
+
+    # ExecutionEngine uses __slots__; patch the class, not the instance.
+    monkeypatch.setattr(ExecutionEngine, "_get_verified_unit_cost", _fake_verify)
+    plan = await engine.create_plan(_intent())
+    assert plan.supplier_name == "printful"
+    assert plan.unit_cost_usd == 4.25
 
 
 # ---------------------------------------------------------------------------

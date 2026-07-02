@@ -4,104 +4,142 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>AEGIS Pulse — Intelligence Command Center</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet"/>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <style>
 :root{
-  --bg:#040b18;--bg2:#07111f;--bg3:#0d1a2e;--bg4:#132238;
-  --border:#1a2f4a;--border2:#234063;
-  --text:#e2f0ff;--muted:#5a7a99;--dim:#2a4060;
-  --cyan:#00d4ff;--cyan2:#0099cc;
-  --green:#00e676;--green2:#00b85a;
-  --amber:#ffb300;--amber2:#e09000;
-  --red:#ff3d55;--red2:#cc1a30;
-  --purple:#9c6eff;
-  --enter:#00e676;--hold:#ffb300;--block:#ff3d55;
-  --font:'SF Mono','Fira Code','Cascadia Code',monospace;
+  /* obsidian-violet base */
+  --bg:#080313;--bg2:#100823;--bg3:#180c33;--bg4:#22134a;
+  --border:#2a1c4d;--border2:#3d2a6e;
+  --text:#ece8ff;--muted:#8b7fb0;--dim:#4a3d6b;
+  /* aurora accents (names kept for inline-style JS compatibility) */
+  --cyan:#4dd6ff;--cyan2:#2aa8e6;
+  --green:#3df5b4;--green2:#1fc98e;
+  --amber:#ffc14d;--amber2:#e09a1f;
+  --red:#ff5a7a;--red2:#e0314f;
+  --purple:#b387ff;
+  --enter:#3df5b4;--hold:#ffc14d;--block:#ff5a7a;
+  /* signature plasma gradient */
+  --plasma:linear-gradient(120deg,#4dd6ff 0%,#b387ff 48%,#ff5fc8 100%);
+  --glow-cyan:0 0 24px rgba(77,214,255,.35);
+  --font:'JetBrains Mono','SF Mono','Fira Code',monospace;
+  --font-display:'Space Grotesk','Inter',sans-serif;
+  --font-body:'Inter',system-ui,sans-serif;
 }
 *{margin:0;padding:0;box-sizing:border-box}
-html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--font);font-size:12px;overflow:hidden}
+html,body{height:100%;background:var(--bg);color:var(--text);
+  font-family:var(--font-body);font-size:12px;overflow:hidden;
+  -webkit-font-smoothing:antialiased}
+/* ambient aurora wash behind everything */
+body::before{
+  content:'';position:fixed;inset:0;z-index:-1;pointer-events:none;
+  background:
+    radial-gradient(60vw 50vh at 12% -8%,rgba(77,214,255,.10),transparent 60%),
+    radial-gradient(55vw 55vh at 92% 8%,rgba(179,135,255,.12),transparent 60%),
+    radial-gradient(70vw 60vh at 70% 110%,rgba(255,95,200,.08),transparent 60%);
+  animation:auroraDrift 24s ease-in-out infinite alternate;
+}
+@keyframes auroraDrift{0%{transform:translate3d(0,0,0) scale(1)}100%{transform:translate3d(-2%,1.5%,0) scale(1.08)}}
+@media(prefers-reduced-motion:reduce){
+  *,body::before{animation:none!important;transition:none!important}
+}
 
 /* ── TOPBAR ── */
 .topbar{
-  height:48px;display:flex;align-items:center;justify-content:space-between;
-  padding:0 20px;background:var(--bg2);
+  height:54px;display:flex;align-items:center;justify-content:space-between;
+  padding:0 20px;background:linear-gradient(180deg,rgba(24,12,51,.92),rgba(16,8,35,.92));
   border-bottom:1px solid var(--border);position:relative;z-index:100;
+  backdrop-filter:blur(8px);
 }
-.topbar-brand{display:flex;align-items:center;gap:12px}
-.brand-logo{font-size:16px;font-weight:700;letter-spacing:3px;color:var(--cyan);
-  text-shadow:0 0 20px rgba(0,212,255,.4)}
-.brand-ver{color:var(--muted);font-size:10px;border:1px solid var(--dim);
-  padding:1px 6px;border-radius:3px}
-.topbar-center{display:flex;gap:16px;align-items:center}
-.sys-pill{display:flex;align-items:center;gap:5px;padding:3px 10px;
-  border:1px solid var(--border2);border-radius:12px;font-size:10px;color:var(--muted)}
-.sys-pill .dot{width:6px;height:6px;border-radius:50%}
-.dot-ok{background:var(--green);box-shadow:0 0 6px var(--green)}
-.dot-warn{background:var(--amber);box-shadow:0 0 6px var(--amber)}
-.dot-err{background:var(--red)}
+.topbar::after{content:'';position:absolute;left:0;right:0;bottom:-1px;height:1px;
+  background:var(--plasma);opacity:.55}
+.topbar-brand{display:flex;align-items:center;gap:14px}
+.brand-logo{font-family:var(--font-display);font-size:18px;font-weight:700;letter-spacing:4px;
+  background:var(--plasma);-webkit-background-clip:text;background-clip:text;
+  -webkit-text-fill-color:transparent;background-size:200% auto;animation:plasmaShift 6s linear infinite}
+@keyframes plasmaShift{to{background-position:200% center}}
+.brand-ver{font-family:var(--font);color:var(--muted);font-size:10px;border:1px solid var(--border2);
+  padding:1px 7px;border-radius:20px}
+.topbar-center{display:flex;gap:10px;align-items:center}
+.sys-pill{display:flex;align-items:center;gap:6px;padding:4px 12px;
+  border:1px solid var(--border);border-radius:20px;font-size:10px;color:var(--muted);
+  background:rgba(255,255,255,.02)}
+.sys-pill .dot{width:7px;height:7px;border-radius:50%}
+.dot-ok{background:var(--green);box-shadow:0 0 8px var(--green)}
+.dot-warn{background:var(--amber);box-shadow:0 0 8px var(--amber)}
+.dot-err{background:var(--red);box-shadow:0 0 8px var(--red)}
 .dot-pulse{animation:pulse 2s infinite}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
-.topbar-right{display:flex;align-items:center;gap:10px}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+.topbar-right{display:flex;align-items:center;gap:12px}
 .ks-btn{
-  padding:4px 14px;border-radius:4px;cursor:pointer;font-family:var(--font);
+  padding:5px 16px;border-radius:20px;cursor:pointer;font-family:var(--font);
   font-size:10px;font-weight:700;letter-spacing:1px;transition:all .2s;border:1px solid;
 }
-.ks-armed{border-color:var(--green);color:var(--green);background:rgba(0,230,118,.05)}
-.ks-armed:hover{background:rgba(0,230,118,.15)}
-.ks-tripped{border-color:var(--red);color:var(--red);background:rgba(255,61,85,.1);animation:blink 1s infinite}
-@keyframes blink{0%,100%{opacity:1}50%{opacity:.6}}
-.time-display{color:var(--muted);font-size:10px;min-width:80px;text-align:right}
+.ks-armed{border-color:var(--green);color:var(--green);background:rgba(61,245,180,.06)}
+.ks-armed:hover{background:rgba(61,245,180,.16);box-shadow:0 0 16px rgba(61,245,180,.25)}
+.ks-tripped{border-color:var(--red);color:var(--red);background:rgba(255,90,122,.12);animation:blink 1s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.55}}
+.time-display{font-family:var(--font);color:var(--muted);font-size:11px;min-width:84px;text-align:right;
+  font-variant-numeric:tabular-nums}
 
 /* ── LAYOUT ── */
-.layout{display:flex;height:calc(100vh - 48px);overflow:hidden}
+.layout{display:flex;height:calc(100vh - 54px);overflow:hidden}
 
 /* ── SIDEBAR ── */
 .sidebar{
-  width:192px;background:var(--bg2);border-right:1px solid var(--border);
-  display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto;padding:8px 0;
+  width:204px;background:linear-gradient(180deg,rgba(16,8,35,.6),rgba(8,3,19,.6));
+  border-right:1px solid var(--border);
+  display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto;padding:10px 0;
 }
 .nav-sect{
-  color:var(--dim);font-size:9px;letter-spacing:2px;text-transform:uppercase;
-  padding:10px 14px 4px;
+  color:var(--dim);font-size:9px;letter-spacing:2.5px;text-transform:uppercase;
+  padding:14px 16px 5px;font-weight:600;
 }
 .nav-item{
-  display:flex;align-items:center;gap:9px;padding:8px 14px;cursor:pointer;
-  color:var(--muted);transition:all .15s;border-left:2px solid transparent;font-size:11px;
+  position:relative;display:flex;align-items:center;gap:10px;padding:9px 16px;cursor:pointer;
+  color:var(--muted);transition:all .18s;font-size:12px;font-weight:500;
 }
-.nav-item:hover{color:var(--text);background:var(--bg3)}
-.nav-item.active{color:var(--cyan);border-left-color:var(--cyan);background:var(--bg3)}
-.nav-icon{font-size:14px;width:18px;text-align:center;flex-shrink:0}
+.nav-item::before{content:'';position:absolute;left:0;top:50%;transform:translateY(-50%);
+  height:0;width:3px;border-radius:0 3px 3px 0;background:var(--plasma);transition:height .2s}
+.nav-item:hover{color:var(--text);background:rgba(179,135,255,.06)}
+.nav-item.active{color:#fff;background:rgba(179,135,255,.10)}
+.nav-item.active::before{height:60%}
+.nav-icon{font-size:15px;width:20px;text-align:center;flex-shrink:0}
 .nav-badge{
-  margin-left:auto;background:var(--cyan);color:var(--bg);
-  border-radius:10px;padding:1px 6px;font-size:9px;font-weight:700;min-width:20px;text-align:center;
-}
-.nav-badge.red{background:var(--red)}
-.nav-badge.amber{background:var(--amber);color:#000}
-.nav-badge.green{background:var(--green);color:#000}
+  margin-left:auto;background:rgba(77,214,255,.16);color:var(--cyan);
+  border:1px solid rgba(77,214,255,.3);
+  border-radius:20px;padding:1px 7px;font-size:9px;font-weight:700;min-width:22px;text-align:center;
+  font-family:var(--font)}
+.nav-badge.red{background:rgba(255,90,122,.16);color:var(--red);border-color:rgba(255,90,122,.3)}
+.nav-badge.amber{background:rgba(255,193,77,.16);color:var(--amber);border-color:rgba(255,193,77,.3)}
+.nav-badge.green{background:rgba(61,245,180,.16);color:var(--green);border-color:rgba(61,245,180,.3)}
 
 /* ── MAIN ── */
-.main{flex:1;overflow-y:auto;padding:16px;background:var(--bg)}
-.page{display:none}
+.main{flex:1;overflow-y:auto;padding:18px;background:transparent}
+.page{display:none;animation:pageIn .35s ease}
 .page.active{display:block}
+@keyframes pageIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 
 /* ── SECTION HEADING ── */
-.section-head{
-  display:flex;align-items:center;justify-content:space-between;
-  margin-bottom:12px;
-}
-.section-title{font-size:11px;letter-spacing:2px;color:var(--cyan);text-transform:uppercase}
+.section-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.section-title{font-family:var(--font-display);font-size:13px;letter-spacing:1px;color:var(--text);font-weight:600}
 .section-meta{font-size:10px;color:var(--muted)}
 
 /* ── STAT CARDS ── */
-.stat-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-bottom:14px}
+.stat-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:12px;margin-bottom:16px}
 .stat-card{
-  background:var(--bg2);border:1px solid var(--border);border-radius:6px;
-  padding:14px 16px;transition:border-color .2s;
+  position:relative;background:linear-gradient(160deg,rgba(34,19,74,.5),rgba(16,8,35,.6));
+  border:1px solid var(--border);border-radius:12px;
+  padding:15px 17px;transition:transform .2s,border-color .2s,box-shadow .2s;overflow:hidden;
 }
-.stat-card:hover{border-color:var(--border2)}
-.sc-label{color:var(--muted);font-size:9px;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:6px}
-.sc-val{font-size:26px;font-weight:700;line-height:1;color:var(--text)}
-.sc-sub{color:var(--muted);font-size:9px;margin-top:5px}
+.stat-card::after{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--plasma);opacity:.45}
+.stat-card:hover{transform:translateY(-3px);border-color:var(--border2);box-shadow:0 12px 30px rgba(0,0,0,.45)}
+.sc-label{color:var(--muted);font-size:9px;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px}
+.sc-val{font-family:var(--font-display);font-size:30px;font-weight:700;line-height:1;color:var(--text);
+  font-variant-numeric:tabular-nums}
+.sc-sub{color:var(--muted);font-size:9px;margin-top:6px}
 .sc-cyan .sc-val{color:var(--cyan)}
 .sc-green .sc-val{color:var(--green)}
 .sc-amber .sc-val{color:var(--amber)}
@@ -109,14 +147,42 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
 .sc-purple .sc-val{color:var(--purple)}
 
 /* ── PANELS ── */
-.panel{background:var(--bg2);border:1px solid var(--border);border-radius:6px;overflow:hidden;margin-bottom:12px}
+.panel{background:linear-gradient(160deg,rgba(24,12,51,.42),rgba(12,6,28,.5));
+  border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:14px}
 .panel-head{
   display:flex;align-items:center;justify-content:space-between;
-  padding:10px 14px;background:var(--bg3);border-bottom:1px solid var(--border);
+  padding:11px 16px;background:rgba(255,255,255,.02);border-bottom:1px solid var(--border);
 }
-.ph-title{font-size:10px;letter-spacing:1.5px;color:var(--cyan);text-transform:uppercase}
-.ph-meta{font-size:9px;color:var(--muted)}
-.panel-body{padding:14px}
+.ph-title{font-family:var(--font-display);font-size:11px;letter-spacing:.6px;color:var(--text);
+  text-transform:uppercase;font-weight:600}
+.ph-meta{font-size:9px;color:var(--muted);font-family:var(--font)}
+.panel-body{padding:15px}
+
+/* ── PULSE SIGNATURE ── */
+.pulse-hero{
+  position:relative;border:1px solid var(--border);border-radius:14px;overflow:hidden;
+  margin-bottom:16px;background:linear-gradient(135deg,rgba(34,19,74,.55),rgba(12,6,28,.6));
+}
+.pulse-hero canvas{display:block;width:100%;height:120px}
+.pulse-overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;
+  padding:0 24px;pointer-events:none}
+.pulse-label{font-family:var(--font-display);font-weight:600}
+.pulse-label b{display:block;font-size:15px;letter-spacing:2px;
+  background:var(--plasma);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.pulse-label span{font-size:10px;color:var(--muted);letter-spacing:1px}
+.pulse-bpm{text-align:right;font-family:var(--font-display)}
+.pulse-bpm b{font-size:34px;color:var(--green);font-variant-numeric:tabular-nums}
+.pulse-bpm span{display:block;font-size:9px;color:var(--muted);letter-spacing:1.5px;text-transform:uppercase}
+
+/* ── CAPABILITY GRID ── */
+.cap-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.cap-card{border:1px solid var(--border);border-radius:12px;padding:15px 16px;
+  background:linear-gradient(160deg,rgba(34,19,74,.4),rgba(12,6,28,.5));transition:transform .2s,border-color .2s}
+.cap-card:hover{transform:translateY(-3px);border-color:var(--border2)}
+.cap-icon{font-size:20px;margin-bottom:8px}
+.cap-name{font-family:var(--font-display);font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px}
+.cap-phase{font-family:var(--font);font-size:8px;color:var(--cyan);letter-spacing:1px;text-transform:uppercase;margin-bottom:8px}
+.cap-desc{font-size:11px;line-height:1.6;color:var(--muted)}
 
 /* ── GRID ── */
 .g2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
@@ -137,16 +203,18 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
   border:1px solid var(--border);border-radius:4px;
 }
 .tick{
-  display:flex;align-items:center;gap:8px;padding:7px 10px;
-  border-bottom:1px solid var(--border);font-size:10px;
-  animation:fadein .3s ease;
+  display:flex;align-items:center;gap:9px;padding:8px 12px;
+  border-bottom:1px solid rgba(42,28,77,.5);font-size:10px;font-family:var(--font);
+  animation:fadein .35s ease;transition:background .12s;
 }
+.tick:hover{background:rgba(179,135,255,.06)}
 .tick:last-child{border-bottom:none}
-@keyframes fadein{from{opacity:0;transform:translateY(-3px)}to{opacity:1}}
-.tick-ts{color:var(--muted);min-width:48px;flex-shrink:0}
-.tick-plat{color:var(--cyan);min-width:90px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.tick-title{color:var(--text);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.tick-conf{color:var(--muted);min-width:36px;text-align:right;flex-shrink:0}
+@keyframes fadein{from{opacity:0;transform:translateX(-6px)}to{opacity:1;transform:none}}
+.tick-ts{color:var(--dim);min-width:50px;flex-shrink:0}
+.tick-plat{color:var(--cyan);min-width:92px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  text-transform:uppercase;font-size:9px;letter-spacing:.5px}
+.tick-title{color:var(--text);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:var(--font-body)}
+.tick-conf{color:var(--green);min-width:38px;text-align:right;flex-shrink:0}
 
 /* ── ALERT FEED ── */
 .alert-feed{max-height:440px;overflow-y:auto}
@@ -181,12 +249,13 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
 .heatmap-row{display:flex;align-items:center;gap:6px;margin-bottom:5px}
 .hm-label{width:130px;color:var(--muted);font-size:9px;text-align:right;flex-shrink:0}
 .hm-cells{display:flex;gap:2px;align-items:center}
-.hm-cell{width:16px;height:16px;border-radius:2px;background:var(--bg4);flex-shrink:0}
-.hm-l1{background:rgba(0,212,255,.12)}
-.hm-l2{background:rgba(0,212,255,.3)}
-.hm-l3{background:rgba(0,212,255,.55)}
-.hm-l4{background:rgba(0,212,255,.8)}
-.hm-count{color:var(--muted);font-size:9px;margin-left:6px}
+.hm-cell{width:16px;height:16px;border-radius:3px;background:rgba(42,28,77,.5);flex-shrink:0;transition:transform .1s}
+.hm-cell:hover{transform:scale(1.25)}
+.hm-l1{background:rgba(77,214,255,.22)}
+.hm-l2{background:rgba(120,170,255,.45)}
+.hm-l3{background:rgba(179,135,255,.7);box-shadow:0 0 6px rgba(179,135,255,.4)}
+.hm-l4{background:rgba(255,95,200,.85);box-shadow:0 0 8px rgba(255,95,200,.5)}
+.hm-count{color:var(--muted);font-size:9px;margin-left:6px;font-family:var(--font)}
 
 /* ── PIPELINE FLOW ── */
 .pipe-flow{
@@ -209,6 +278,31 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
   display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));
   gap:7px;max-height:450px;overflow-y:auto;
 }
+.prod-grid{
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));
+  gap:12px;margin-top:12px;
+}
+.prod-card{
+  background:var(--bg3);border:1px solid var(--border);border-radius:10px;
+  overflow:hidden;display:flex;flex-direction:column;
+  transition:border-color .15s,transform .15s,box-shadow .15s;
+}
+.prod-card:hover{border-color:var(--border2);transform:translateY(-3px);
+  box-shadow:0 8px 24px rgba(0,0,0,.45)}
+.prod-img{width:100%;aspect-ratio:1/1;object-fit:cover;background:var(--bg4);display:block}
+.prod-noimg{width:100%;aspect-ratio:1/1;background:var(--bg4);display:flex;
+  align-items:center;justify-content:center;color:var(--dim);font-size:28px}
+.prod-body{padding:9px 11px;display:flex;flex-direction:column;gap:5px;flex:1}
+.prod-title{font-size:11px;line-height:1.35;color:var(--text);
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.prod-meta{display:flex;justify-content:space-between;align-items:center;margin-top:auto}
+.prod-price{font-size:14px;font-weight:700;color:#5eead4}
+.prod-disc{font-size:9px;color:#fb7185;background:rgba(251,113,133,.12);
+  padding:1px 5px;border-radius:4px}
+.prod-foot{display:flex;justify-content:space-between;align-items:center;font-size:9px;color:var(--muted)}
+.prod-plat{text-transform:uppercase;letter-spacing:.4px}
+.prod-rating{color:#fbbf24}
+.prod-card a{color:inherit;text-decoration:none}
 .adap-card{
   background:var(--bg3);border:1px solid var(--border);border-radius:5px;
   padding:9px 11px;transition:border-color .15s;
@@ -230,16 +324,18 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
 .cbar-fill{height:100%;border-radius:3px;transition:width .5s ease}
 
 /* ── TABLE ── */
-.data-table{width:100%;border-collapse:collapse;font-size:10px}
+.data-table{width:100%;border-collapse:collapse;font-size:10.5px}
 .data-table th{
-  color:var(--muted);text-align:left;padding:6px 8px;font-size:9px;
+  color:var(--muted);text-align:left;padding:7px 9px;font-size:9px;
   letter-spacing:1px;text-transform:uppercase;border-bottom:1px solid var(--border);
+  position:sticky;top:0;background:var(--bg2);z-index:1;
 }
-.data-table td{padding:8px 8px;border-bottom:1px solid var(--border);vertical-align:middle}
+.data-table td{padding:9px;border-bottom:1px solid rgba(42,28,77,.6);vertical-align:middle}
 .data-table tr:last-child td{border-bottom:none}
-.data-table tr:hover td{background:var(--bg3)}
-td.num{text-align:right;color:var(--cyan)}
-td.muted{color:var(--muted)}
+.data-table tbody tr{transition:background .12s}
+.data-table tr:hover td{background:rgba(179,135,255,.07)}
+td.num{text-align:right;color:var(--cyan);font-family:var(--font);font-variant-numeric:tabular-nums}
+td.muted{color:var(--muted);font-family:var(--font);font-size:9.5px}
 
 /* ── STATUS ROWS ── */
 .stat-kv{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-size:10px}
@@ -292,16 +388,24 @@ td.muted{color:var(--muted)}
 .errm{color:var(--red);font-size:10px;padding:8px}
 
 /* ── SCROLLBAR ── */
-::-webkit-scrollbar{width:3px;height:3px}
-::-webkit-scrollbar-track{background:var(--bg)}
-::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+::-webkit-scrollbar{width:7px;height:7px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:20px;border:2px solid transparent;background-clip:padding-box}
+::-webkit-scrollbar-thumb:hover{background:var(--purple);background-clip:padding-box}
+
+/* ── CONSOLE / INPUT FONTS ── */
+.console-out,.con-inp,.cl{font-family:var(--font)}
+.con-btn,.qa-btn,.ks-btn{font-family:var(--font)}
 
 /* ── RESPONSIVE ── */
 @media(max-width:900px){
   .g2,.g3,.g21,.g12{grid-template-columns:1fr}
-  .sidebar{width:44px}
+  .sidebar{width:50px}
   .nav-item>span:not(.nav-icon){display:none}
   .nav-badge{display:none}
+  .topbar-center{display:none}
+  .pulse-overlay{padding:0 12px}
+  .pulse-bpm b{font-size:24px}
 }
 </style>
 </head>
@@ -343,6 +447,10 @@ td.muted{color:var(--muted)}
       <span class="nav-icon">🔔</span><span>Alerts</span>
       <span class="nav-badge red" id="badge-alerts">0</span>
     </div>
+    <div class="nav-sect">Operator</div>
+    <div class="nav-item" onclick="showPage('market')">
+      <span class="nav-icon">◆</span><span>Market Analyst</span>
+    </div>
     <div class="nav-sect">System</div>
     <div class="nav-item" onclick="showPage('pipeline')">
       <span class="nav-icon">⟳</span><span>Pipeline</span>
@@ -357,6 +465,15 @@ td.muted{color:var(--muted)}
     <div class="nav-item" onclick="showPage('markets')">
       <span class="nav-icon">⊕</span><span>Markets</span>
     </div>
+    <div class="nav-item" onclick="showPage('swarm')">
+      <span class="nav-icon">🐝</span><span>Swarm</span>
+    </div>
+    <div class="nav-item" onclick="showPage('sentinel')">
+      <span class="nav-icon">🛰️</span><span>Sentinel</span>
+    </div>
+    <div class="nav-item" onclick="showPage('products')">
+      <span class="nav-icon">🛍️</span><span>Products</span>
+    </div>
     <div class="nav-item" onclick="showPage('containers')">
       <span class="nav-icon">⬡</span><span>Containers</span>
     </div>
@@ -367,6 +484,9 @@ td.muted{color:var(--muted)}
     <div class="nav-item" onclick="showPage('research')">
       <span class="nav-icon">🔍</span><span>Research</span>
     </div>
+    <div class="nav-item" onclick="showPage('capabilities')">
+      <span class="nav-icon">✦</span><span>Capabilities</span>
+    </div>
   </div>
 
   <!-- MAIN -->
@@ -374,6 +494,20 @@ td.muted{color:var(--muted)}
 
     <!-- ── OVERVIEW ── -->
     <div class="page active" id="page-overview">
+      <!-- ── PULSE SIGNATURE ── -->
+      <div class="pulse-hero">
+        <canvas id="pulse-canvas"></canvas>
+        <div class="pulse-overlay">
+          <div class="pulse-label">
+            <b>SYSTEM PULSE</b>
+            <span id="pulse-status">reading live signal flow…</span>
+          </div>
+          <div class="pulse-bpm">
+            <b id="pulse-rate">—</b>
+            <span>signals / hr</span>
+          </div>
+        </div>
+      </div>
       <div class="stat-row" id="stat-row">
         <div class="stat-card sc-cyan">
           <div class="sc-label">Total Signals</div>
@@ -483,6 +617,12 @@ td.muted{color:var(--muted)}
           <span class="ph-title">Recent Signals</span>
           <span class="ph-meta" id="recent-sig-meta">loading...</span>
         </div>
+        <!-- DASH-3: signal search (/api/search) -->
+        <div style="display:flex;gap:8px;padding:8px 10px 0">
+          <input class="con-inp" id="sig-search" placeholder="Search signals… (empty = recent)" style="flex:1"
+            onkeydown="if(event.key==='Enter')loadSignals()"/>
+          <button class="con-btn" onclick="loadSignals()">🔍</button>
+        </div>
         <div style="overflow:auto;max-height:380px" id="recent-sig-table">
           <div class="loading">loading...</div>
         </div>
@@ -539,6 +679,23 @@ td.muted{color:var(--muted)}
         <div class="panel">
           <div class="panel-head"><span class="ph-title">Service Health</span></div>
           <div class="panel-body" id="svc-health"><div class="loading">loading...</div></div>
+        </div>
+      </div>
+      <!-- DASH-2: stream health traffic lights + DR / Data Lake status -->
+      <div class="g2" style="margin-top:12px">
+        <div class="panel">
+          <div class="panel-head">
+            <span class="ph-title">📡 Stream Health</span>
+            <span class="ph-meta">canonical event-bus streams</span>
+          </div>
+          <div class="panel-body" id="stream-health"><div class="loading">loading...</div></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head">
+            <span class="ph-title">🩺 DR &amp; Data Lake</span>
+            <span class="ph-meta">phase 15 / phase 10</span>
+          </div>
+          <div class="panel-body" id="dr-lake"><div class="loading">loading...</div></div>
         </div>
       </div>
     </div>
@@ -606,6 +763,125 @@ td.muted{color:var(--muted)}
           <div class="loading">loading...</div>
         </div>
       </div>
+      <!-- DASH-2: Capital + Anomalies panels -->
+      <div class="g2" style="margin-top:12px">
+        <div class="panel">
+          <div class="panel-head">
+            <span class="ph-title">💰 Capital Plans</span>
+            <span class="ph-meta" id="capital-meta">phase 6</span>
+          </div>
+          <div style="overflow:auto;max-height:300px" id="capital-feed">
+            <div class="loading">loading...</div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head">
+            <span class="ph-title">🔥 Anomalies</span>
+            <span class="ph-meta" id="anomaly-meta">scrape stream</span>
+          </div>
+          <div style="overflow:auto;max-height:300px" id="anomaly-feed">
+            <div class="loading">loading...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── SWARM (DASH-2/3) ── -->
+    <div class="page" id="page-swarm">
+      <div class="panel">
+        <div class="panel-head">
+          <span class="ph-title">🚀 Harvest Control</span>
+          <span class="ph-meta" id="swarm-run-meta">fires all working adapters</span>
+        </div>
+        <div class="panel-body" style="display:flex;align-items:center;gap:12px">
+          <button class="con-btn" id="swarm-run-btn" onclick="runSwarmNow()">▶ Run Swarm Now</button>
+          <span style="font-size:11px;color:var(--muted)">Launches a full multi-source harvest in the background. Watch the live feed for the result.</span>
+        </div>
+      </div>
+      <div class="g2">
+        <div class="panel">
+          <div class="panel-head">
+            <span class="ph-title">🐝 Swarm Runs (stream)</span>
+            <span class="ph-meta" id="swarm-runs-meta">live</span>
+          </div>
+          <div style="overflow:auto;max-height:300px" id="swarm-runs">
+            <div class="loading">loading...</div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head">
+            <span class="ph-title">Run History (24h)</span>
+            <span class="ph-meta">from DB</span>
+          </div>
+          <div style="overflow:auto;max-height:300px" id="swarm-history">
+            <div class="loading">loading...</div>
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head">
+          <span class="ph-title">Agent Health Grid</span>
+          <span class="ph-meta" id="swarm-agents-meta">loading...</span>
+        </div>
+        <div class="panel-body">
+          <div class="adap-grid" id="swarm-agents-grid">
+            <div class="loading">loading...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── SENTINEL (autonomous market discovery) ── -->
+    <div class="page" id="page-sentinel">
+      <div class="panel">
+        <div class="panel-head">
+          <span class="ph-title">🛰️ Autonomous Market Sentinel</span>
+          <span class="ph-meta" id="sentinel-meta">scans every 45 min</span>
+        </div>
+        <div class="panel-body" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <button class="con-btn" id="sentinel-scan-btn" onclick="runSentinelScan()">▶ Scan Now</button>
+          <span style="font-size:11px;color:var(--muted)">
+            Sweeps the global radar (GDELT world news, Wikipedia demand, multi-region Google Trends),
+            detects velocity breakouts, and auto-runs a full market report on each — no query needed.
+          </span>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head">
+          <span class="ph-title">🔭 Self-Discovered Opportunities</span>
+          <span class="ph-meta" id="sentinel-list-meta">live</span>
+        </div>
+        <div style="overflow:auto;max-height:560px" id="sentinel-list">
+          <div class="loading">loading...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── PRODUCTS (product intelligence cards w/ images) ── -->
+    <div class="page" id="page-products">
+      <div class="panel">
+        <div class="panel-head">
+          <span class="ph-title">🛍️ Product Intelligence</span>
+          <span class="ph-meta" id="products-meta">loading...</span>
+        </div>
+        <div class="panel-body" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <select id="products-platform" onchange="loadProducts()"
+            style="background:var(--bg2,#111);color:inherit;border:1px solid var(--border,#333);border-radius:6px;padding:5px 8px;font-size:12px">
+            <option value="all">All platforms</option>
+            <option value="flipkart">Flipkart</option>
+            <option value="meesho">Meesho</option>
+            <option value="nykaa">Nykaa</option>
+            <option value="myntra">Myntra</option>
+            <option value="amazon_in">Amazon IN</option>
+            <option value="snapdeal">Snapdeal</option>
+          </select>
+          <button class="con-btn" onclick="loadProducts()">⟳ Refresh</button>
+          <span style="font-size:11px;color:var(--muted)">Live products with images captured from e-commerce adapters.</span>
+        </div>
+      </div>
+      <div class="prod-grid" id="products-grid">
+        <div class="loading">loading...</div>
+      </div>
     </div>
 
     <!-- ── INTELLIGENCE ── -->
@@ -632,6 +908,27 @@ td.muted{color:var(--muted)}
         <div class="panel">
           <div class="panel-head"><span class="ph-title">Swarm Status</span></div>
           <div class="panel-body" id="swarm-status"><div class="loading">loading...</div></div>
+        </div>
+      </div>
+      <!-- DASH-3: prediction feed (/api/predictions/recent) + per-agent decisions (/api/agents/recent) -->
+      <div class="g2" style="margin-top:12px">
+        <div class="panel">
+          <div class="panel-head">
+            <span class="ph-title">🔮 Recent Predictions</span>
+            <span class="ph-meta">phase 3</span>
+          </div>
+          <div style="overflow:auto;max-height:300px" id="pred-feed">
+            <div class="loading">loading...</div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head">
+            <span class="ph-title">Agent Decisions (latest run)</span>
+            <span class="ph-meta">per-node breakdown</span>
+          </div>
+          <div style="overflow:auto;max-height:300px" id="agent-decisions">
+            <div class="loading">loading...</div>
+          </div>
         </div>
       </div>
     </div>
@@ -665,7 +962,7 @@ td.muted{color:var(--muted)}
               <button class="qa-btn" onclick="runQuick('aegis evolve drift')">📊 Drift</button>
               <button class="qa-btn" onclick="runQuick('aegis signals tail --limit 10')">📡 Tail Signals</button>
               <button class="qa-btn" onclick="runQuick('aegis doctor')">🩺 Doctor</button>
-              <button class="qa-btn" onclick="runQuick('aegis topic \"AI chips\" --no-llm')">🧠 Topic: AI</button>
+              <button class="qa-btn" onclick="topicPrompt()">🧠 Run Topic…</button>
             </div>
           </div>
         </div>
@@ -709,7 +1006,15 @@ td.muted{color:var(--muted)}
         </div>
         <div class="panel">
           <div class="panel-head"><span class="ph-title">Watchlist</span></div>
-          <div class="panel-body" id="watchlist-panel"><div class="loading">loading...</div></div>
+          <div class="panel-body">
+            <!-- DASH-3: watchlist add/remove (/api/watchlist/add, /api/watchlist/remove) -->
+            <div style="display:flex;gap:8px;margin-bottom:8px">
+              <input class="con-inp" id="watch-inp" placeholder="Add topic to watchlist" style="flex:1"
+                onkeydown="if(event.key==='Enter')addWatch()"/>
+              <button class="con-btn" onclick="addWatch()">＋</button>
+            </div>
+            <div id="watchlist-panel"><div class="loading">loading...</div></div>
+          </div>
         </div>
       </div>
       <div class="panel">
@@ -728,6 +1033,52 @@ td.muted{color:var(--muted)}
       </div>
     </div>
 
+    <!-- ── MARKET ANALYST ── -->
+    <div class="page" id="page-market">
+      <div class="panel">
+        <div class="panel-head">
+          <span class="ph-title">◆ Market Analyst</span>
+          <span class="ph-meta">type any product — AEGIS finds it, compares it, ranks it</span>
+        </div>
+        <div class="panel-body">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <input class="con-inp" id="market-inp" style="flex:1;min-width:240px"
+              placeholder="e.g. men's trimmer · wireless earbuds · air fryer"
+              onkeydown="if(event.key==='Enter')runMarket()"/>
+            <select id="market-depth" class="con-inp" style="flex:0 0 130px">
+              <option value="surface">Surface · fast</option>
+              <option value="standard">Standard</option>
+              <option value="deep">Deep · wide</option>
+            </select>
+            <button class="con-btn" id="market-btn" onclick="runMarket()">◆ Analyze Market</button>
+          </div>
+          <div style="font-size:10px;color:var(--muted);margin-top:8px">
+            Live harvest across marketplaces — analysis runs in real time and may take 30–90s.
+            No default query; type what you want.
+          </div>
+        </div>
+      </div>
+      <div id="market-result"></div>
+    </div>
+
+    <!-- ── CAPABILITIES ── -->
+    <div class="page" id="page-capabilities">
+      <div class="panel">
+        <div class="panel-head">
+          <span class="ph-title">✦ What AEGIS Pulse Does</span>
+          <span class="ph-meta">autonomous market arbitrage intelligence engine</span>
+        </div>
+        <div class="panel-body" style="font-size:12px;line-height:1.7;color:var(--muted)">
+          AEGIS scrapes signals from 30+ free sources, scores them through a 10-agent
+          reasoning pipeline, predicts breakouts with a heuristic-first ML core, and gates
+          every opportunity through compliance, geo-arbitrage, and capital-execution layers —
+          continuously retraining itself from settled outcomes. Each card below maps to a live
+          system you can open from the sidebar.
+        </div>
+      </div>
+      <div class="cap-grid" id="cap-grid"></div>
+    </div>
+
   </div><!-- /main -->
 </div><!-- /layout -->
 
@@ -738,6 +1089,20 @@ td.muted{color:var(--muted)}
 // Globals
 // ─────────────────────────────────────────────
 const CHARTS = {};
+// Global Chart.js theme — aurora palette + display/mono fonts
+if (window.Chart) {
+  Chart.defaults.color = '#8b7fb0';
+  Chart.defaults.font.family = "'JetBrains Mono','SF Mono',monospace";
+  Chart.defaults.font.size = 9;
+  Chart.defaults.borderColor = 'rgba(42,28,77,.7)';
+}
+// Build a vertical gradient fill for charts
+function _grad(ctx, h, rgb) {
+  const g = ctx.createLinearGradient(0, 0, 0, h);
+  g.addColorStop(0, `rgba(${rgb},.55)`);
+  g.addColorStop(1, `rgba(${rgb},.02)`);
+  return g;
+}
 let _ksArmed = true;
 let _activePage = 'overview';
 let _pollTimer = null;
@@ -767,8 +1132,8 @@ function relTime(iso) {
   if (s < 86400) return `${Math.floor(s/3600)}h ago`;
   return `${Math.floor(s/86400)}d ago`;
 }
-async function api(path) {
-  const r = await fetch(path);
+async function api(path, opts) {
+  const r = await fetch(path, opts);
   if (!r.ok) throw new Error(`HTTP ${r.status} ${path}`);
   return r.json();
 }
@@ -789,7 +1154,8 @@ function showPage(name) {
   const loaders = {
     signals: loadSignals, alerts: loadAlerts, pipeline: loadPipeline,
     adapters: loadAdapters, intelligence: loadIntelligence, markets: loadMarkets,
-    containers: loadContainers, console: loadSysMetrics, research: loadResearch,
+    swarm: loadSwarm, sentinel: loadSentinel, containers: loadContainers, console: loadSysMetrics,
+    research: loadResearch, products: loadProducts, capabilities: loadCapabilities,
   };
   if (loaders[name]) loaders[name]();
 }
@@ -799,14 +1165,24 @@ function showPage(name) {
 // ─────────────────────────────────────────────
 async function loadOverview() {
   try {
-    const [stats, vel, alerts] = await Promise.all([
+    const [stats, vel, alerts, sigStats] = await Promise.all([
       api('/api/stats'),
       api('/api/signals/velocity'),
       api('/api/alerts/recent?limit=3'),
+      api('/api/signals/stats'),
     ]);
     // stat cards
     $('s-total').textContent = fmt(stats.total_signals);
     $('s-24h').textContent = `+${fmt(stats.signals_24h)} last 24h`;
+    // DASH-3: /api/signals/stats — velocity/hr + top platform in the stats bar
+    if (sigStats && sigStats.last_1h != null)
+      $('s-24h').textContent += ` · ${fmt(sigStats.last_1h)}/hr`;
+    const byPlat = (sigStats && sigStats.by_platform) || {};
+    const topPlat = Object.entries(byPlat).sort((a,b)=>b[1]-a[1])[0];
+    if (topPlat) {
+      const adapSub = $('s-adap')?.parentElement?.querySelector('.sc-sub');
+      if (adapSub) adapSub.textContent = `top: ${topPlat[0].replace(/_/g,' ')}`;
+    }
     $('s-alerts').textContent = fmt(stats.total_alerts);
     $('s-alerts-24h').textContent = `+${fmt(stats.alerts_24h)} last 24h`;
     $('s-conf').textContent = fmtF(stats.avg_signal_confidence, 3);
@@ -823,6 +1199,10 @@ async function loadOverview() {
     $('badge-alerts').textContent = fmt(stats.alerts_24h) || '0';
     // killswitch
     _ksArmed = stats.verdict_distribution ? true : true;
+    // pulse signature — prefer measured last-hour rate, else 24h average
+    setPulse(sigStats && sigStats.last_1h != null
+      ? sigStats.last_1h
+      : (stats.signals_24h || 0) / 24);
     // verdict donut
     buildDonut(stats.verdict_distribution || {});
     // velocity chart — flatten all platforms into hourly buckets
@@ -879,15 +1259,15 @@ function buildDonut(vd) {
       labels:['ENTER','HOLD','BLOCK'],
       datasets:[{
         data:[enter,hold,block],
-        backgroundColor:['rgba(0,230,118,.75)','rgba(255,179,0,.75)','rgba(255,61,85,.75)'],
-        borderColor:['#00e676','#ffb300','#ff3d55'],
-        borderWidth:1,
+        backgroundColor:['rgba(61,245,180,.8)','rgba(255,193,77,.8)','rgba(255,90,122,.8)'],
+        borderColor:'#0c061c',
+        borderWidth:3,hoverOffset:6,
       }]
     },
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},cutout:'62%'}
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},cutout:'68%'}
   });
   $('donut-leg').innerHTML = [
-    ['ENTER',enter,'#00e676'],['HOLD',hold,'#ffb300'],['BLOCK',block,'#ff3d55']
+    ['ENTER',enter,'#3df5b4'],['HOLD',hold,'#ffc14d'],['BLOCK',block,'#ff5a7a']
   ].map(([lbl,cnt,col])=>`
     <div class="leg-row">
       <div class="leg-dot" style="background:${col}"></div>
@@ -909,23 +1289,28 @@ function buildVelocity(vel) {
   const labels = sorted.map(([h])=>{ const d=new Date(h); return `${d.getHours()}:00`; });
   const counts = sorted.map(([,c])=>c);
   if (CHARTS.vel) CHARTS.vel.destroy();
-  const ctx = $('vel-chart').getContext('2d');
+  const cv = $('vel-chart');
+  const ctx = cv.getContext('2d');
   CHARTS.vel = new Chart(ctx, {
-    type:'bar',
+    type:'line',
     data:{
       labels,
       datasets:[{
         label:'Signals',data:counts,
-        backgroundColor:'rgba(0,212,255,.25)',
-        borderColor:'#00d4ff',borderWidth:1,borderRadius:2,
+        backgroundColor:_grad(ctx, cv.height||200, '77,214,255'),
+        borderColor:'#4dd6ff',borderWidth:2,
+        fill:true,tension:.4,pointRadius:0,pointHoverRadius:4,
+        pointHoverBackgroundColor:'#b387ff',
       }]
     },
     options:{
       responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{display:false}},
+      plugins:{legend:{display:false},tooltip:{
+        backgroundColor:'#180c33',borderColor:'#3d2a6e',borderWidth:1,
+        titleColor:'#ece8ff',bodyColor:'#4dd6ff'}},
       scales:{
-        x:{grid:{color:'#1a2f4a'},ticks:{color:'#5a7a99',font:{size:8}}},
-        y:{grid:{color:'#1a2f4a'},ticks:{color:'#5a7a99',font:{size:8}}},
+        x:{grid:{display:false},ticks:{color:'#8b7fb0',font:{size:8},maxRotation:0}},
+        y:{grid:{color:'rgba(42,28,77,.5)'},ticks:{color:'#8b7fb0',font:{size:8}},beginAtZero:true},
       }
     }
   });
@@ -951,6 +1336,74 @@ function buildLatestAlert(a) {
         <div style="color:var(--muted);font-size:10px">${relTime(a.created_at)}</div></div>
     </div>
     ${a.explanation ? `<div class="expl-box">${a.explanation.substring(0,300)}</div>` : ''}`;
+}
+
+// ─────────────────────────────────────────────
+// Pulse signature — live EKG waveform driven by signal rate
+// ─────────────────────────────────────────────
+let _pulseRate = 0;     // signals/hr → drives beat frequency + amplitude
+let _pulsePhase = 0;
+let _pulseStarted = false;
+function setPulse(ratePerHr) {
+  _pulseRate = Math.max(0, ratePerHr || 0);
+  const r = $('pulse-rate'); if (r) r.textContent = Math.round(_pulseRate);
+  const st = $('pulse-status');
+  if (st) st.textContent = _pulseRate > 0 ? 'live signal flow — system nominal' : 'idle — awaiting next harvest';
+}
+function _pulseLoop() {
+  const cv = $('pulse-canvas');
+  if (!cv) { requestAnimationFrame(_pulseLoop); return; }
+  const ctx = cv.getContext('2d');
+  const W = cv.width = cv.clientWidth, H = cv.height = cv.clientHeight || 120;
+  ctx.clearRect(0, 0, W, H);
+  // beat density scales with rate (clamped to a pleasant range)
+  const beats = 1 + Math.min(_pulseRate / 40, 6);
+  const amp = (H * 0.30) * (0.45 + Math.min(_pulseRate / 120, 1) * 0.55);
+  const mid = H / 2;
+  const grad = ctx.createLinearGradient(0, 0, W, 0);
+  grad.addColorStop(0, '#4dd6ff'); grad.addColorStop(0.5, '#b387ff'); grad.addColorStop(1, '#ff5fc8');
+  ctx.lineWidth = 2; ctx.strokeStyle = grad; ctx.shadowColor = 'rgba(179,135,255,.6)'; ctx.shadowBlur = 12;
+  ctx.beginPath();
+  for (let x = 0; x <= W; x++) {
+    const t = (x / W) * Math.PI * 2 * beats + _pulsePhase;
+    // EKG-ish: gentle sine + sharp spike near each beat crest
+    const base = Math.sin(t) * amp * 0.35;
+    const spike = Math.exp(-Math.pow(((t % (Math.PI * 2)) - Math.PI) * 2.4, 2)) * amp;
+    const y = mid - base - spike + Math.sin(t * 7) * 1.5;
+    x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+  _pulsePhase += 0.03 + Math.min(_pulseRate / 600, 0.05);
+  requestAnimationFrame(_pulseLoop);
+}
+function startPulse() { if (!_pulseStarted) { _pulseStarted = true; _pulseLoop(); } }
+
+// ─────────────────────────────────────────────
+// Capabilities — live map of AEGIS subsystems
+// ─────────────────────────────────────────────
+const _CAPS = [
+  ['🌐','Multi-Source Harvest','Phase 0 · 5','30+ free adapters across news, social & e-commerce, run in 4 parallel waves with bot-hardening.','swarm'],
+  ['〜','Signal Intelligence','Phase 1','TimescaleDB-backed signals with semantic dedup, velocity tracking & confidence scoring.','signals'],
+  ['🤖','10-Agent Reasoning','Phase 2','LangGraph DAG — scout, sentinel, historian, compliance & more — produces an auditable verdict.','intelligence'],
+  ['🧠','Predictive Apex','Phase 3','Heuristic-first ML core predicts breakout/decline probabilities with fractional-Kelly sizing.','intelligence'],
+  ['🔔','Execution & Alerts','Phase 4','Alert pipeline, killswitch & SSE streaming with transactional outbox delivery.','alerts'],
+  ['💰','Capital Execution','Phase 6','Three-tier advisory/staging/live model, Kelly sizing & supplier-verified fulfillment.','markets'],
+  ['⊕','Geo Arbitrage','Phase 7','Cross-market opportunities ranked on real WTO tariffs, ECB FX & EMS shipping.','markets'],
+  ['🛡️','Compliance Engine','Phase 8','7-dimension risk matrix — trademark, FDA, sanctions, FTC, privacy — gates every plan.','markets'],
+  ['♻️','Self-Evolution','Phase 9','Weekly retraining, Optuna HPO, drift detection & online RL pricing from settled outcomes.','markets'],
+  ['🗄️','Data Lake','Phase 10','Bronze/Silver/Gold medallion over Parquet with a DuckDB query engine.','pipeline'],
+  ['✨','LLM Orchestration','Phase 11','Gateway with circuit breaker & fallback chain: Ollama → Groq → OpenRouter → Gemini.','intelligence'],
+  ['🩺','DR & Continuity','Phase 15','pgBackRest + restic backups, RPO 15m / RTO 60m with automated restore drills.','pipeline'],
+];
+function loadCapabilities() {
+  const g = $('cap-grid'); if (!g) return;
+  g.innerHTML = _CAPS.map(([icon,name,phase,desc,page])=>`
+    <div class="cap-card" onclick="showPage('${page}')" style="cursor:pointer">
+      <div class="cap-icon">${icon}</div>
+      <div class="cap-phase">${phase}</div>
+      <div class="cap-name">${name}</div>
+      <div class="cap-desc">${desc}</div>
+    </div>`).join('');
 }
 
 // ─────────────────────────────────────────────
@@ -985,9 +1438,12 @@ async function toggleKillswitch() {
 // ─────────────────────────────────────────────
 async function loadSignals() {
   try {
+    // DASH-3: when the search box has a query, use /api/search instead of recent
+    const q = ($('sig-search') ? $('sig-search').value : '').trim();
+    const recentPath = q ? `/api/search?q=${encodeURIComponent(q)}&limit=40` : '/api/signals/recent?limit=40';
     const [plats, recent] = await Promise.all([
       api('/api/signals/platforms'),
-      api('/api/signals/recent?limit=40'),
+      api(recentPath),
     ]);
     // Platform table
     $('plat-table').innerHTML = `
@@ -1031,7 +1487,7 @@ async function loadSignals() {
           <tr>
             <td style="max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.title||'—'}</td>
             <td class="muted">${(s.platform||'').replace(/_/g,' ')}</td>
-            <td class="num">${fmtF(s.source_confidence,3)}</td>
+            <td class="num">${fmtF(s.source_confidence ?? s.sentiment,3)}</td>
             <td class="muted">${relTime(s.scraped_at)}</td>
           </tr>`).join('')}</tbody>
       </table>`;
@@ -1115,7 +1571,45 @@ async function loadPipeline() {
       ['Redis :6380', svc.redis],
     ].map(([s,up])=>`<div class="stat-kv"><span class="key">${s}</span>
       <span class="val ${up?'val-green':'val-red'}">${up?'● UP':'✕ DOWN'}</span></div>`).join('');
+    // DASH-2: stream health traffic lights + DR / Data Lake status
+    loadStreamHealth();
   } catch(e) { $('pipe-flow').innerHTML=`<div class="errm">${e.message}</div>`; }
+}
+
+async function loadStreamHealth() {
+  try {
+    const [streams, dr, lake] = await Promise.all([
+      api('/api/health/streams'),
+      api('/api/dr/status'),
+      api('/api/datalake/status'),
+    ]);
+    $('stream-health').innerHTML = Object.entries(streams).map(([name, s]) => {
+      const short = name.replace('aegis:','');
+      const light = s.status==='healthy'?['●','var(--green)']:
+                    s.status==='empty'?['○','var(--muted)']:
+                    s.status==='stale'?['●','var(--amber)']:['✕','var(--red)'];
+      const age = s.last_entry_age_seconds!=null ? relTime(new Date(Date.now()-s.last_entry_age_seconds*1000).toISOString()) : '—';
+      return `<div class="stat-kv">
+        <span class="key" style="font-size:9px">${short}</span>
+        <span class="val" style="font-size:9px">
+          <span style="color:${light[1]}">${light[0]} ${s.status.toUpperCase()}</span>
+          · ${fmt(s.length)} · ${age}
+        </span></div>`;
+    }).join('');
+    const drRows = [];
+    if (dr.status === 'ok' && dr.snapshot) {
+      const sn = dr.snapshot;
+      drRows.push(['DR status', sn.status || 'ok', 'val-green']);
+      if (sn.rpo_age_s != null) drRows.push(['RPO age', `${Math.round(sn.rpo_age_s/60)}m`, sn.rpo_age_s<=900?'val-green':'val-red']);
+      if (sn.last_drill_at) drRows.push(['Last drill', relTime(sn.last_drill_at), '']);
+    } else {
+      drRows.push(['DR module', dr.status || 'unavailable', 'val-amber']);
+    }
+    drRows.push(['Data lake', lake.status || 'unknown', lake.status==='ok'?'val-green':'val-amber']);
+    if (lake.tables != null) drRows.push(['Lake tables', fmt(lake.tables.length ?? lake.tables), '']);
+    $('dr-lake').innerHTML = drRows.map(([k,v,c])=>
+      `<div class="stat-kv"><span class="key">${k}</span><span class="val ${c}">${v}</span></div>`).join('');
+  } catch(e) { $('stream-health').innerHTML=`<div class="errm">${e.message}</div>`; }
 }
 
 // ─────────────────────────────────────────────
@@ -1194,7 +1688,356 @@ async function loadIntelligence() {
       <span class="key">Status</span><span class="val">${swarm.status||'—'}</span></div>
       <div class="stat-kv"><span class="key">Message</span>
       <span class="val val-muted" style="font-size:9px;color:var(--muted)">${(swarm.message||'').substring(0,60)}</span></div>`;
+    // DASH-3: prediction feed + per-agent decisions
+    loadPredFeed();
   } catch(e) { $('agent-hist').innerHTML=`<div class="errm">${e.message}</div>`; }
+}
+
+async function loadPredFeed() {
+  try {
+    const [preds, agents] = await Promise.all([
+      api('/api/predictions/recent?limit=20'),
+      api('/api/agents/recent?limit=1'),
+    ]);
+    $('pred-feed').innerHTML = (preds||[]).length ? `
+      <table class="data-table">
+        <thead><tr><th>Trend</th><th style="text-align:right">Horizon</th>
+          <th style="text-align:right">p↑</th><th style="text-align:right">p↓</th>
+          <th style="text-align:right">Kelly</th><th style="text-align:right">Conf</th><th>When</th></tr></thead>
+        <tbody>${preds.map(p=>`<tr>
+          <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.trend_id||'—'}</td>
+          <td class="num">${p.horizon_h||'—'}h</td>
+          <td class="num" style="color:${(p.p_breakout||0)>=0.55?'var(--green)':'inherit'}">${fmtF(p.p_breakout,3)}</td>
+          <td class="num" style="color:${(p.p_decline||0)>=0.55?'var(--red)':'inherit'}">${fmtF(p.p_decline,3)}</td>
+          <td class="num">${fmtF(p.kelly_fraction,3)}</td>
+          <td class="num">${fmtF(p.confidence,3)}</td>
+          <td class="muted">${relTime(p.finished_at)}</td>
+        </tr>`).join('')}</tbody>
+      </table>` : `<div class="loading">no predictions yet — run <code>aegis analyze</code></div>`;
+    const latest = (agents||[])[0];
+    const decs = latest ? (latest.decisions||[]) : [];
+    $('agent-decisions').innerHTML = decs.length ? `
+      <div style="padding:6px 10px;font-size:9px;color:var(--muted)">trend: ${latest.trend_id||'—'} · ${(latest.final_verdict||'').toUpperCase()}</div>
+      <table class="data-table">
+        <thead><tr><th>Agent</th><th>Verdict</th><th style="text-align:right">Conf</th><th style="text-align:right">ms</th></tr></thead>
+        <tbody>${decs.map(d=>{
+          const v=(d.verdict||'').toUpperCase();
+          const vc=v==='PROCEED'||v==='ADVANCE'?'var(--green)':v==='HOLD'?'var(--amber)':'var(--red)';
+          return `<tr>
+            <td>${d.agent||d.agent_name||'—'}</td>
+            <td><span style="color:${vc};font-weight:700;font-size:9px">${v||'?'}</span></td>
+            <td class="num">${fmtF(d.confidence,3)}</td>
+            <td class="num">${d.duration_ms?Math.round(d.duration_ms):'—'}</td>
+          </tr>`;}).join('')}</tbody>
+      </table>` : `<div class="loading">no agent runs yet — run <code>aegis analyze</code></div>`;
+  } catch(e) { $('pred-feed').innerHTML=`<div class="errm">${e.message}</div>`; }
+}
+
+// ─────────────────────────────────────────────
+// Products page (product intelligence cards w/ images)
+// ─────────────────────────────────────────────
+function _escHtml(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>(
+  {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+async function loadProducts() {
+  const grid = $('products-grid');
+  const meta = $('products-meta');
+  try {
+    const plat = ($('products-platform')||{}).value || 'all';
+    const items = await api(`/api/products/recent?limit=48&platform=${encodeURIComponent(plat)}`);
+    meta.textContent = `${items.length} products`;
+    if (!items.length) {
+      grid.innerHTML = `<div class="loading">no products with images yet — run <code>aegis swarm run</code> to harvest e-commerce sources</div>`;
+      return;
+    }
+    grid.innerHTML = items.map(p => {
+      const img = p.image_url
+        ? `<img class="prod-img" loading="lazy" src="${_escHtml(p.image_url)}" alt=""
+             onerror="this.outerHTML='<div class=\\'prod-noimg\\'>🛍️</div>'">`
+        : `<div class="prod-noimg">🛍️</div>`;
+      const price = (p.price != null)
+        ? `<span class="prod-price">${p.currency==='INR'?'₹':''}${Number(p.price).toLocaleString()}</span>` : '<span class="prod-price" style="color:var(--muted)">—</span>';
+      const disc = (p.discount_pct && p.discount_pct > 0)
+        ? `<span class="prod-disc">-${Math.round(p.discount_pct)}%</span>` : '';
+      const rating = (p.rating != null)
+        ? `<span class="prod-rating">★ ${p.rating}${p.review_count?` (${p.review_count})`:''}</span>` : '<span></span>';
+      const inner = `${img}
+        <div class="prod-body">
+          <div class="prod-title">${_escHtml(p.title)}</div>
+          <div class="prod-meta">${price}${disc}</div>
+          <div class="prod-foot"><span class="prod-plat">${_escHtml(p.platform)}</span>${rating}</div>
+        </div>`;
+      return `<div class="prod-card">${p.url?`<a href="${_escHtml(p.url)}" target="_blank" rel="noopener">${inner}</a>`:inner}</div>`;
+    }).join('');
+  } catch(e) {
+    grid.innerHTML = `<div class="errm">${e.message}</div>`;
+    meta.textContent = 'error';
+  }
+}
+
+// ─────────────────────────────────────────────
+// Market Analyst — on-demand product-market intelligence
+// ─────────────────────────────────────────────
+async function runMarket() {
+  const q = $('market-inp').value.trim();
+  const res = $('market-result');
+  if (!q) { res.innerHTML = '<div class="errm">Type a product query first — there is no default.</div>'; return; }
+  const btn = $('market-btn');
+  btn.disabled = true; btn.textContent = '⏳ Analyzing…';
+  res.innerHTML = `<div class="panel"><div class="panel-body"><div class="loading">
+    Harvesting live marketplaces for “${_escHtml(q)}” — comparing prices, brands & ratings…</div></div></div>`;
+  try {
+    const r = await fetch('/api/market/analyze', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({query:q, depth:$('market-depth').value, max_products:200}),
+    });
+    const d = await r.json();
+    if (!r.ok) { res.innerHTML = `<div class="errm">${d.detail||('HTTP '+r.status)}</div>`; return; }
+    renderMarket(d);
+  } catch(e) { res.innerHTML = `<div class="errm">${e.message}</div>`; }
+  finally { btn.disabled = false; btn.textContent = '◆ Analyze Market'; }
+}
+
+function _prodCard(p) {
+  if (!p) return '';
+  const img = p.image_url
+    ? `<img class="prod-img" loading="lazy" src="${_escHtml(p.image_url)}" alt="" onerror="this.outerHTML='<div class=\\'prod-noimg\\'>📦</div>'">`
+    : `<div class="prod-noimg">📦</div>`;
+  const price = p.price!=null ? `<span class="prod-price">${p.currency==='INR'?'₹':''}${Number(p.price).toLocaleString()}</span>` : '<span class="prod-price" style="color:var(--muted)">—</span>';
+  const rating = p.rating!=null ? `<span class="prod-rating">★ ${p.rating}${p.review_count?` (${fmt(p.review_count)})`:''}</span>` : '<span></span>';
+  const inner = `${img}<div class="prod-body">
+      <div class="prod-title">${_escHtml(p.title)}</div>
+      <div class="prod-meta">${price}${p.discount_pct?`<span class="prod-disc">-${Math.round(p.discount_pct)}%</span>`:''}</div>
+      <div class="prod-foot"><span class="prod-plat">${_escHtml(p.platform)}</span>${rating}</div>
+    </div>`;
+  return `<div class="prod-card">${p.url?`<a href="${_escHtml(p.url)}" target="_blank" rel="noopener">${inner}</a>`:inner}</div>`;
+}
+
+function renderMarket(d) {
+  const res = $('market-result');
+  if (!d.product_count) {
+    res.innerHTML = `<div class="panel"><div class="panel-body">
+      <div style="font-size:12px;color:var(--text);margin-bottom:6px">${_escHtml(d.executive_summary||'No products found.')}</div>
+      <div class="loading">No structured listings captured. Marketplaces may be rate-limited — retry or broaden the query.</div>
+    </div></div>`;
+    return;
+  }
+  const ps = d.price_summary||{}, mo = d.momentum||{}, bands = d.price_bands||{};
+  const mc = mo.label==='hot'?'sc-green':mo.label==='warming'?'sc-amber':'sc-cyan';
+  const cur = (d.best_value[0]||d.most_popular[0]||{}).currency==='INR'?'₹':'';
+  // stat cards
+  let html = `<div class="stat-row">
+    <div class="stat-card sc-cyan"><div class="sc-label">Products Found</div><div class="sc-val">${fmt(d.product_count)}</div><div class="sc-sub">${d.platforms.length} marketplaces</div></div>
+    <div class="stat-card sc-purple"><div class="sc-label">Median Price</div><div class="sc-val">${ps.available?cur+fmt(ps.median):'—'}</div><div class="sc-sub">${ps.available?`${cur}${fmt(ps.min)} – ${cur}${fmt(ps.max)}`:'no price data'}</div></div>
+    <div class="stat-card ${mc}"><div class="sc-label">Momentum</div><div class="sc-val">${(mo.label||'—').toUpperCase()}</div><div class="sc-sub">${fmt(mo.total_reviews)} reviews · ★${mo.avg_rating??'—'}</div></div>
+    <div class="stat-card sc-amber"><div class="sc-label">Competitors</div><div class="sc-val">${d.competitors.length}</div><div class="sc-sub">${d.arbitrage.length} arbitrage gaps</div></div>
+  </div>`;
+  // summary + actions
+  html += `<div class="panel"><div class="panel-head"><span class="ph-title">Executive Summary</span>
+      <span class="ph-meta">data quality ${fmtF(d.data_quality,2)}</span></div>
+    <div class="panel-body"><div style="font-size:12px;line-height:1.7;color:var(--text)">${_escHtml(d.executive_summary)}</div>
+    ${(d.recommended_actions||[]).length?`<div style="margin-top:10px">${d.recommended_actions.map(a=>`<div class="expl-box" style="border-left-color:var(--green);max-height:none">→ ${_escHtml(a)}</div>`).join('')}</div>`:''}
+    </div></div>`;
+  // Evidence — each fact backed by counts + sources + examples
+  if ((d.evidence||[]).length) {
+    html += `<div class="panel"><div class="panel-head"><span class="ph-title">🔎 Evidence</span>
+        <span class="ph-meta">facts backed by sources — ${(d.sources_consulted||d.platforms||[]).join(', ')}</span></div>
+      <div class="panel-body">${d.evidence.map(e=>`
+        <div style="border-left:2px solid var(--cyan);padding:6px 0 6px 12px;margin-bottom:10px">
+          <div style="font-size:12px;color:var(--text);font-weight:500">${_escHtml(e.claim)}</div>
+          <div style="font-size:9px;color:var(--cyan);margin:3px 0">BASIS: ${_escHtml(e.basis||'')}</div>
+          ${(e.examples||[]).map(x=>`<div style="font-size:10px;color:var(--muted)">· ${_escHtml(x)}</div>`).join('')}
+        </div>`).join('')}</div></div>`;
+  }
+  // LLM operator verdict (heuristic numbers above stay authoritative)
+  if (d.llm_narrative) {
+    html += `<div class="panel" style="border-color:var(--border2)">
+      <div class="panel-head"><span class="ph-title">✨ AEGIS Operator Verdict</span>
+        <span class="ph-meta">LLM + heuristic · numbers are deterministic</span></div>
+      <div class="panel-body"><div style="font-size:12.5px;line-height:1.75;color:var(--text);white-space:pre-wrap">${_escHtml(d.llm_narrative)}</div></div></div>`;
+  }
+  // gated pick — compliance + geo + capital advisory
+  const gp = d.gated_pick||{};
+  if (gp.product) {
+    const c = gp.compliance||{}, geo = gp.geo||{}, cap = gp.capital||{};
+    const cc = c.recommendation==='PROCEED'?'var(--green)':c.recommendation==='ESCALATE'?'var(--amber)':c.recommendation==='BLOCK'?'var(--red)':'var(--muted)';
+    html += `<div class="panel"><div class="panel-head"><span class="ph-title">🛡️ Gated Best Pick</span>
+        <span class="ph-meta">compliance → geo → capital</span></div>
+      <div class="panel-body">
+        <div style="font-size:12px;color:var(--text);margin-bottom:10px">${_escHtml(gp.product)} <span class="prod-plat" style="color:var(--muted)">[${_escHtml(gp.platform||'?')}]</span></div>
+        <div class="g3">
+          <div><div class="sc-label">Compliance</div><div style="font-size:18px;font-weight:700;color:${cc}">${c.recommendation||'—'}</div><div class="sc-sub">risk ${c.risk_score??'—'}</div></div>
+          <div><div class="sc-label">Geo Arbitrage</div><div style="font-size:18px;font-weight:700;color:var(--cyan)">${geo.gross_margin_pct!=null?geo.gross_margin_pct+'%':'—'}</div><div class="sc-sub">${geo.route||'no route'}</div></div>
+          <div><div class="sc-label">Capital (${cap.mode||'advisory'})</div><div style="font-size:18px;font-weight:700;color:var(--green)">kelly ${cap.kelly_fraction??'—'}</div><div class="sc-sub">${_escHtml((cap.rationale||'').substring(0,60))}</div></div>
+        </div>
+      </div></div>`;
+  }
+  // picks
+  const pk = d.picks||{};
+  if (pk.budget||pk.best_value||pk.premium) {
+    html += `<div class="g3">
+      ${_pickPanel('💸 Budget pick', pk.budget)}
+      ${_pickPanel('◆ Best value', pk.best_value)}
+      ${_pickPanel('👑 Premium pick', pk.premium)}
+    </div>`;
+  }
+  // competitor table
+  html += `<div class="panel"><div class="panel-head"><span class="ph-title">Competitor Landscape</span>
+      <span class="ph-meta">by listing volume</span></div>
+    <div style="overflow:auto;max-height:320px"><table class="data-table">
+      <thead><tr><th>Brand</th><th style="text-align:right">Listings</th><th style="text-align:right">Share</th>
+        <th style="text-align:right">Avg Price</th><th style="text-align:right">Avg ★</th><th style="text-align:right">Reviews</th><th>Platforms</th></tr></thead>
+      <tbody>${d.competitors.map(c=>`<tr>
+        <td style="font-weight:600">${_escHtml(c.brand)}</td>
+        <td class="num">${fmt(c.listings)}</td>
+        <td class="num">${fmtF(c.share_pct,1)}%</td>
+        <td class="num">${c.avg_price!=null?cur+fmt(c.avg_price):'—'}</td>
+        <td class="num">${c.avg_rating??'—'}</td>
+        <td class="num">${fmt(c.total_reviews)}</td>
+        <td class="muted">${(c.platforms||[]).join(', ')}</td>
+      </tr>`).join('')}</tbody></table></div></div>`;
+  // best value grid
+  if ((d.best_value||[]).length) {
+    html += `<div class="panel"><div class="panel-head"><span class="ph-title">◆ Best Value Products</span>
+        <span class="ph-meta">rating × popularity ÷ price</span></div>
+      <div class="panel-body"><div class="prod-grid">${d.best_value.map(_prodCard).join('')}</div></div></div>`;
+  }
+  // arbitrage
+  if ((d.arbitrage||[]).length) {
+    html += `<div class="panel"><div class="panel-head"><span class="ph-title">↔ Cross-Platform Arbitrage</span>
+        <span class="ph-meta">same product, different price</span></div>
+      <div style="overflow:auto"><table class="data-table">
+        <thead><tr><th>Product</th><th>Buy on</th><th style="text-align:right">Low</th><th>Sells on</th><th style="text-align:right">High</th><th style="text-align:right">Gap</th></tr></thead>
+        <tbody>${d.arbitrage.map(a=>`<tr>
+          <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_escHtml(a.product)}</td>
+          <td><span class="prod-plat" style="color:var(--green)">${_escHtml(a.cheapest.platform)}</span></td>
+          <td class="num">${cur}${fmt(a.cheapest.price)}</td>
+          <td><span class="prod-plat">${_escHtml(a.dearest.platform)}</span></td>
+          <td class="num">${cur}${fmt(a.dearest.price)}</td>
+          <td class="num" style="color:var(--green);font-weight:700">+${fmtF(a.gap_pct,1)}%</td>
+        </tr>`).join('')}</tbody></table></div></div>`;
+  }
+  res.innerHTML = html;
+}
+
+function _pickPanel(label, p) {
+  if (!p) return `<div class="panel"><div class="panel-head"><span class="ph-title">${label}</span></div>
+    <div class="panel-body"><div class="loading">no priced match</div></div></div>`;
+  return `<div class="panel"><div class="panel-head"><span class="ph-title">${label}</span></div>
+    <div class="panel-body"><div class="prod-grid" style="grid-template-columns:1fr;margin-top:0">${_prodCard(p)}</div></div></div>`;
+}
+
+// ─────────────────────────────────────────────
+// Swarm page (DASH-2/3 — runs stream + history + agent health)
+// ─────────────────────────────────────────────
+async function loadSwarm() {
+  try {
+    const [runs, hist, agents] = await Promise.all([
+      api('/api/swarm/recent?limit=10'),
+      api('/api/swarm/history?limit=10'),
+      api('/api/swarm/agents'),
+    ]);
+    $('swarm-runs-meta').textContent = `${(runs||[]).length} runs`;
+    $('swarm-runs').innerHTML = (runs||[]).length ? `
+      <table class="data-table">
+        <thead><tr><th>Run</th><th style="text-align:right">Signals</th>
+          <th style="text-align:right">Waves</th><th style="text-align:right">ms</th><th>When</th></tr></thead>
+        <tbody>${runs.map(r=>`<tr>
+          <td style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${(r.run_id||r.stream_id||'—').toString().substring(0,12)}</td>
+          <td class="num">${fmt(r.total_signals ?? r.unique_signals)}</td>
+          <td class="num">${fmt(r.wave_count ?? (r.wave_stats||[]).length)}</td>
+          <td class="num">${r.duration_ms?Math.round(r.duration_ms):'—'}</td>
+          <td class="muted">${relTime(r.finished_at||r.started_at)}</td>
+        </tr>`).join('')}</tbody>
+      </table>` : `<div class="loading">no swarm runs in stream — run <code>aegis swarm run</code></div>`;
+    const hrows = hist.runs || [];
+    $('swarm-history').innerHTML = hrows.length ? `
+      <table class="data-table">
+        <thead><tr><th>Started</th><th style="text-align:right">Total</th>
+          <th style="text-align:right">Unique</th><th style="text-align:right">Conf</th><th>Pulse</th></tr></thead>
+        <tbody>${hrows.map(r=>`<tr>
+          <td class="muted">${relTime(r.started_at)}</td>
+          <td class="num">${fmt(r.total_signals)}</td>
+          <td class="num">${fmt(r.unique_signals)}</td>
+          <td class="num">${fmtF(r.batch_confidence,2)}</td>
+          <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:9px">${r.market_pulse||'—'}</td>
+        </tr>`).join('')}</tbody>
+      </table>` : `<div class="loading">no swarm runs in DB (24h)</div>`;
+    const ag = agents.agents || {};
+    const names = Object.keys(ag).sort();
+    $('swarm-agents-meta').textContent = `${names.length} agents`;
+    $('swarm-agents-grid').innerHTML = names.length ? names.map(n=>{
+      const a = ag[n] || {};
+      const st = (a.status||a.state||'unknown').toString().toLowerCase();
+      const c = st==='healthy'||st==='up'||st==='ok'?'var(--green)':
+                st==='empty'||st==='cooldown'?'var(--amber)':
+                st==='down'||st==='quarantined'?'var(--red)':'var(--muted)';
+      return `<div class="adap-card" style="border-left:2px solid ${c}">
+        <div style="font-size:10px;font-weight:600">${n.replace(/_/g,' ')}</div>
+        <div style="font-size:9px;color:${c}">${st.toUpperCase()}</div>
+        <div style="font-size:8px;color:var(--muted)">${a.consecutive_failures!=null?`fails: ${a.consecutive_failures}`:''}</div>
+      </div>`;
+    }).join('') : `<div class="loading">no agent health recorded — run <code>aegis swarm run</code></div>`;
+  } catch(e) { $('swarm-runs').innerHTML=`<div class="errm">${e.message}</div>`; }
+}
+
+// ─────────────────────────────────────────────
+// Sentinel page (autonomous market discovery)
+// ─────────────────────────────────────────────
+function _sentinelCard(r) {
+  const t = r.trigger || {};
+  const pick = r.gated_pick || {};
+  const prods = r.product_count ?? (r.products ? r.products.length : 0);
+  const plats = (r.platforms || []).length;
+  const ptype = (t.pattern_type || '').toString().toUpperCase();
+  const ptypeC = ptype==='ACCELERATING'?'var(--green)':ptype==='PEAKING'?'var(--amber)':'var(--muted)';
+  const narrative = (r.llm_narrative || '').toString().substring(0, 280);
+  return `<div class="adap-card" style="border-left:2px solid ${ptypeC};margin-bottom:10px;padding:12px">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
+      <div style="font-size:13px;font-weight:700">${(r.query||t.label||'—').toString()}</div>
+      <span style="font-size:9px;color:${ptypeC}">${ptype||'—'}</span>
+    </div>
+    <div style="font-size:9px;color:var(--muted);margin:4px 0">
+      ⚡ slope ${fmtF(t.velocity_slope,2)} · accel ${fmtF(t.acceleration,2)} · conf ${fmtF(t.confidence,2)}
+      · 🛰️ ${(t.platforms||[]).join(', ')||'radar'}
+    </div>
+    <div style="font-size:10px;display:flex;gap:14px;margin:6px 0">
+      <span>🛍️ <b>${fmt(prods)}</b> products</span>
+      <span>🌐 <b>${fmt(plats)}</b> platforms</span>
+      ${pick.recommendation?`<span>🛡️ ${pick.recommendation}</span>`:''}
+    </div>
+    ${narrative?`<div style="font-size:10px;color:var(--text);line-height:1.5;margin-top:6px;border-top:1px solid var(--border);padding-top:6px">${narrative}${r.llm_narrative&&r.llm_narrative.length>280?'…':''}</div>`:''}
+    <div style="font-size:8px;color:var(--muted);margin-top:6px">${relTime(r.started_at||r.generated_at)}</div>
+  </div>`;
+}
+
+async function loadSentinel() {
+  try {
+    const reports = await api('/api/sentinel/recent?limit=15');
+    $('sentinel-list-meta').textContent = `${(reports||[]).length} discoveries`;
+    $('sentinel-list').innerHTML = (reports||[]).length
+      ? reports.map(_sentinelCard).join('')
+      : `<div class="loading">no discoveries yet — the Sentinel runs every 45 min, or hit <b>Scan Now</b>. Needs the autonomous scheduler running.</div>`;
+  } catch(e) { $('sentinel-list').innerHTML=`<div class="errm">${e.message}</div>`; }
+}
+
+async function runSentinelScan() {
+  const btn = $('sentinel-scan-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Scanning radar…'; }
+  $('sentinel-meta').textContent = 'sweeping global radar + detecting breakouts…';
+  try {
+    const res = await api('/api/sentinel/scan', { method: 'POST' });
+    if (res.ok) {
+      $('sentinel-meta').textContent =
+        `${fmt(res.radar_signals)} radar signals · ${fmt(res.breakouts)} breakouts · ${fmt(res.report_count)} reports`;
+    } else {
+      $('sentinel-meta').textContent = `scan failed: ${(res.error||'error').substring(0,80)}`;
+    }
+    await loadSentinel();
+  } catch(e) {
+    $('sentinel-meta').textContent = `scan failed: ${e.message}`;
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '▶ Scan Now'; }
+  }
 }
 
 // ─────────────────────────────────────────────
@@ -1202,11 +2045,43 @@ async function loadIntelligence() {
 // ─────────────────────────────────────────────
 async function loadMarkets() {
   try {
-    const [geo, comply, evolve] = await Promise.all([
+    const [geo, comply, evolve, capital, anomalies] = await Promise.all([
       api('/api/geo/recent?limit=15'),
       api('/api/compliance/recent?limit=15'),
       api('/api/evolve/recent?limit=15'),
+      api('/api/capital/recent?limit=20'),
+      api('/api/anomalies/recent?limit=20'),
     ]);
+    // DASH-2: capital plans (phase 6)
+    const plans = capital.plans || [];
+    $('capital-meta').textContent = capital.status === 'ok' ? `${plans.length} plans` : capital.status;
+    $('capital-feed').innerHTML = plans.length ? `
+      <table class="data-table">
+        <thead><tr><th>Trend</th><th>Mode</th><th style="text-align:right">Capital$</th>
+          <th style="text-align:right">Est.Profit$</th><th>Status</th><th>When</th></tr></thead>
+        <tbody>${plans.map(p=>{
+          const sc=p.plan_status==='fulfilled'||p.plan_status==='executed'?'var(--green)':
+                   p.plan_status==='failed'||p.plan_status==='rejected'?'var(--red)':'var(--amber)';
+          return `<tr>
+            <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.trend_id||'—'}</td>
+            <td><span style="font-size:9px">${p.execution_mode}</span></td>
+            <td class="num">${fmtF(p.total_capital_usd,2)}</td>
+            <td class="num">${fmtF(p.estimated_profit_usd,2)}</td>
+            <td><span style="color:${sc};font-weight:700;font-size:9px">${(p.plan_status||'?').toUpperCase()}</span></td>
+            <td class="muted">${relTime(p.created_at)}</td>
+          </tr>`;}).join('')}</tbody>
+      </table>` : `<div class="loading">no execution plans yet — phase 6 advisory mode</div>`;
+    // DASH-2: anomalies
+    $('anomaly-feed').innerHTML = (anomalies||[]).length ? `
+      <table class="data-table">
+        <thead><tr><th>Source</th><th>Type</th><th style="text-align:right">Severity</th><th>When</th></tr></thead>
+        <tbody>${anomalies.map(a=>`<tr>
+          <td>${a.source||a.platform||'—'}</td>
+          <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${a.signal_type||a.reason||a.event||'anomaly'}</td>
+          <td class="num" style="color:${(a.severity||a.anomaly_score||0)>=0.7?'var(--red)':'var(--amber)'}">${fmtF(a.severity ?? a.anomaly_score,2)}</td>
+          <td class="muted">${relTime(a.detected_at||a.timestamp||a.created_at)}</td>
+        </tr>`).join('')}</tbody>
+      </table>` : `<div class="loading">no anomalies recorded — stream is quiet (good)</div>`;
     // Geo arbitrage — flatten each report's top opportunities.
     const grows = [];
     (geo||[]).forEach(rep => {
@@ -1284,9 +2159,13 @@ async function loadContainers() {
 // ─────────────────────────────────────────────
 async function loadSysMetrics() {
   try {
-    const [stats, pipe] = await Promise.all([api('/api/stats'), api('/api/pipeline/live')]);
+    // DASH-3: /api/system wired here for env + version + DB reachability
+    const [stats, pipe, sys] = await Promise.all([
+      api('/api/stats'), api('/api/pipeline/live'), api('/api/system'),
+    ]);
     const uptime = Math.floor((Date.now()-_startedAt)/1000);
     $('sys-metrics').innerHTML = [
+      ['Env / version', `${sys.env||'?'} · v${sys.version||'?'}`, 'val-cyan'],
       ['Total signals', fmt(stats.total_signals), 'val-cyan'],
       ['Signals/24h', fmt(stats.signals_24h), ''],
       ['Total alerts', fmt(stats.total_alerts), 'val-cyan'],
@@ -1313,6 +2192,50 @@ function runQuick(cmd) {
   showPage('console');
   $('con-inp').value = cmd;
   setTimeout(runConsole, 100);
+}
+// No default topic: stage the exact command for review; the operator runs it.
+function topicPrompt() {
+  const t = (prompt('Topic to research (no default — type a keyword):') || '').trim();
+  showPage('console');
+  if (!t) { conLog('Topic run cancelled — a topic is required.', 'warn'); return; }
+  $('con-inp').value = `aegis topic "${t.replace(/"/g,'')}" --no-llm`;
+  // Stage only; operator presses RUN. Avoids silent scraping on a default.
+  $('con-inp').focus();
+}
+async function runSwarmNow() {
+  const btn = $('swarm-run-btn');
+  const meta = $('swarm-run-meta');
+  btn.disabled = true;
+  btn.textContent = '… launching';
+  try {
+    const _hdrs = {'Content-Type':'application/json'};
+    if (window.AEGIS_OPS_TOKEN) _hdrs['X-Ops-Token'] = window.AEGIS_OPS_TOKEN;
+    const r = await fetch('/api/swarm/run', {method:'POST', headers:_hdrs});
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      meta.textContent = `error: HTTP ${r.status}${j.detail?' — '+j.detail:''}`;
+      btn.textContent = '▶ Run Swarm Now'; btn.disabled = false;
+      return;
+    }
+    meta.textContent = j.status === 'already_running'
+      ? 'already running…' : 'running — results will appear below';
+    btn.textContent = '⏳ Running…';
+    // Poll status until the background run finishes, then refresh the page.
+    const poll = setInterval(async () => {
+      try {
+        const s = await api('/api/swarm/run/status');
+        if (!s.running) {
+          clearInterval(poll);
+          btn.textContent = '▶ Run Swarm Now'; btn.disabled = false;
+          meta.textContent = 'done — refreshed';
+          loadSwarm();
+        }
+      } catch(_) {}
+    }, 4000);
+  } catch(e) {
+    meta.textContent = `error: ${e.message}`;
+    btn.textContent = '▶ Run Swarm Now'; btn.disabled = false;
+  }
 }
 async function runConsole() {
   const cmd = $('con-inp').value.trim();
@@ -1364,20 +2287,51 @@ async function loadResearch() {
         <span class="val" style="font-size:9px">
           ${t.last_verdict?`<span style="color:${t.last_verdict==='ENTER'?'var(--green)':t.last_verdict==='HOLD'?'var(--amber)':'var(--red)'}">${t.last_verdict}</span>`:'—'}
           · ${relTime(t.last_run_at)}
+          <button title="remove from watchlist" onclick="removeWatch('${t.topic.replace(/'/g,"\\'")}')"
+            style="background:none;border:none;color:var(--red);cursor:pointer;font-size:10px">✕</button>
         </span>
       </div>`).join('') : '<div class="loading">No topics in watchlist</div>';
     const history = (hist.history||[]);
     $('research-hist').innerHTML = history.length ? `
       <table class="data-table">
-        <thead><tr><th>Topic</th><th>Status</th><th>When</th></tr></thead>
+        <thead><tr><th>Topic</th><th>Verdict</th><th>Status</th><th>When</th><th></th></tr></thead>
         <tbody>${history.map(h=>`<tr>
           <td>${h.topic||'—'}</td>
+          <td><span style="font-size:9px;color:${h.verdict==='ENTER'?'var(--green)':h.verdict==='HOLD'?'var(--amber)':'var(--muted)'}">${h.verdict||'—'}</span></td>
           <td><span style="color:${h.status==='done'?'var(--green)':'var(--red)'}">
             ${h.status}</span></td>
           <td class="muted">${relTime(h.started_at)}</td>
+          <td>${h.status==='done'?`<button title="push to Phase 4 alert stream" onclick="pushAlert('${h.job_id}')"
+            style="background:none;border:1px solid var(--cyan);color:var(--cyan);cursor:pointer;font-size:8px;border-radius:3px;padding:1px 5px">📤 PUSH</button>`:''}</td>
         </tr>`).join('')}</tbody>
       </table>` : '<div class="loading">No research history</div>';
   } catch(e) {}
+}
+
+// DASH-3: watchlist add/remove + research push-alert wiring
+async function addWatch() {
+  const topic = $('watch-inp').value.trim();
+  if (!topic) return;
+  try {
+    await fetch('/api/watchlist/add', {method:'POST',
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify({topic})});
+    $('watch-inp').value = '';
+    loadResearch();
+  } catch(e) { console.error('watchlist add', e); }
+}
+async function removeWatch(topic) {
+  try {
+    await fetch('/api/watchlist/remove', {method:'POST',
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify({topic})});
+    loadResearch();
+  } catch(e) { console.error('watchlist remove', e); }
+}
+async function pushAlert(jobId) {
+  try {
+    const r = await fetch(`/api/topic/research/${jobId}/push-alert`, {method:'POST'});
+    const d = await r.json();
+    alert(r.ok ? `Pushed to alert stream as ${d.p4_verdict||'OK'} (${d.trend_id||''})` : `Push failed: ${d.detail||r.status}`);
+  } catch(e) { alert(`Push failed: ${e.message}`); }
 }
 async function startResearch() {
   const topic = $('research-inp').value.trim();
@@ -1454,7 +2408,8 @@ async function poll() {
   const refreshers = {
     signals: loadSignals, alerts: loadAlerts, pipeline: loadPipeline,
     adapters: loadAdapters, intelligence: loadIntelligence, markets: loadMarkets,
-    containers: loadContainers, console: loadSysMetrics,
+    swarm: loadSwarm, sentinel: loadSentinel, containers: loadContainers, console: loadSysMetrics,
+    research: loadResearch, products: loadProducts, capabilities: loadCapabilities,
   };
   if (refreshers[_activePage]) await refreshers[_activePage]();
 }
@@ -1463,6 +2418,7 @@ async function poll() {
 // Boot
 // ─────────────────────────────────────────────
 async function boot() {
+  startPulse();
   await Promise.all([loadOverview(), loadKillswitch(), loadLiveFeed(), loadHeatmap()]);
   startSSE();
   setInterval(poll, 30000);

@@ -33,7 +33,8 @@ from aegis.schemas.signal import (
     compute_content_hash,
 )
 from aegis.scrape.base import AdapterConfig, ScrapeContext, SourceAdapter
-from aegis.scrape.ecommerce_utils import random_ua
+from aegis.scrape.ecommerce_utils import join_brand_title
+from aegis.scrape.http_client import get_or_create_client
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -77,7 +78,7 @@ def _extract_ajio_products(data: Any) -> list[dict[str, Any]]:
 
             brand = str(p.get("brandname") or p.get("brand") or "").strip()
             name = str(p.get("name") or p.get("productName") or "").strip()
-            title = f"{brand} {name}".strip() if brand else name
+            title = join_brand_title(brand, name)
             if not title:
                 continue
 
@@ -142,17 +143,18 @@ class AjioAdapter(SourceAdapter[dict[str, Any]]):
         return "ajio"
 
     async def setup(self, ctx: ScrapeContext) -> None:
-        self._client = httpx.AsyncClient(
-            timeout=httpx.Timeout(self._cfg.timeout_seconds),
-            headers={**_HEADERS, "User-Agent": random_ua()},
-            follow_redirects=True,
+        # Shared client: per-host throttle + header/UA rotation + optional
+        # proxy via http_client event hooks (see http_client.py).
+        self._client = await get_or_create_client(
+            "www.ajio.com",
+            timeout=self._cfg.timeout_seconds,
+            headers=dict(_HEADERS),
             http2=False,
+            follow_redirects=True,
         )
 
     async def teardown(self, ctx: ScrapeContext) -> None:
-        if self._client is not None:
-            await self._client.aclose()
-            self._client = None
+        self._client = None  # shared client — release reference, never close
 
     async def fetch_raw(  # type: ignore[override]
         self,

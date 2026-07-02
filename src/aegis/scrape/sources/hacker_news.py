@@ -34,6 +34,7 @@ from aegis.schemas.signal import (
     compute_content_hash,
 )
 from aegis.scrape.base import AdapterConfig, ScrapeContext, SourceAdapter
+from aegis.scrape.http_client import get_or_create_client
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -80,18 +81,20 @@ class HackerNewsAdapter(SourceAdapter[dict[str, Any]]):
         return "hacker-news"
 
     async def setup(self, ctx: ScrapeContext) -> None:
-        self._client = httpx.AsyncClient(
-            timeout=httpx.Timeout(self._hn_config.timeout_seconds),
+        self._client = await get_or_create_client(
+            "hn.algolia.com",
+            http2=False,
+            timeout=self._hn_config.timeout_seconds,
             headers={
                 "User-Agent": "aegis-pulse/0.1.0 (market intelligence; not a scraper)",
                 "Accept": "application/json",
             },
+            follow_redirects=False,
         )
 
     async def teardown(self, ctx: ScrapeContext) -> None:
-        if self._client is not None:
-            await self._client.aclose()
-            self._client = None
+        # Shared pooled client (PASS5-5B) — release the reference, never close.
+        self._client = None
 
     async def fetch_raw(  # type: ignore[override]
         self,

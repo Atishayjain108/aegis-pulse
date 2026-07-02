@@ -40,16 +40,20 @@ _log = structlog.get_logger("aegis.scrape.swarm")
 
 WAVE_1_SOCIAL: list[str] = [
     "reddit_finance", "reddit_ecommerce", "devto", "producthunt",
-    "google_trends_india", "youtube_rss", "medium",
+    "google_trends_india", "youtube_rss", "medium", "wikimedia",
+    "google_trends_global",
 ]
 WAVE_2_NEWS: list[str] = [
     "techcrunch", "wired", "bbc_news", "reuters", "ndtv_profit",
     "mint", "business_standard", "economic_times", "moneycontrol",
-    "yahoo_finance", "investing_com",
+    "yahoo_finance", "investing_com", "gdelt",
 ]
+# Dead four removed 2026-06-24: nykaa/ajio/meesho/indiamart are WAF-gated
+# (Akamai/DataDome) with no free side door — they only generated 403s, CAPTCHAs
+# and indiamart's 20s hangs. Do not re-add without a real free API path.
 WAVE_3_ECOMMERCE: list[str] = [
-    "flipkart", "meesho", "myntra", "indiamart", "ajio",
-    "nykaa", "snapdeal", "amazon_in", "amazon",
+    "ebay", "bestbuy", "etsy",  # free real APIs (key-gated, fail-open)
+    "flipkart", "myntra", "snapdeal", "amazon_in", "amazon",
     "nse_bse", "screener_in",
 ]
 WAVE_4_TECH: list[str] = [
@@ -86,16 +90,21 @@ _REGISTRY: dict[str, tuple[str, str, str | None, str, str]] = {
     "moneycontrol":        ("aegis.scrape.sources.moneycontrol",          "MoneycontrolAdapter",         "MoneycontrolConfig",         "T3_search",   "medium"),
     "yahoo_finance":       ("aegis.scrape.sources.yahoo_finance_rss",     "YahooFinanceRSSAdapter",      None,                         "T3_search",   "low"),
     "investing_com":       ("aegis.scrape.sources.investing_com_rss",     "InvestingComRSSAdapter",      None,                         "T3_search",   "low"),
+    "gdelt":               ("aegis.scrape.sources.gdelt",                 "GdeltAdapter",                "GdeltConfig",                "T4_cultural", "low"),
+    "wikimedia":           ("aegis.scrape.sources.wikimedia",             "WikimediaAdapter",            "WikimediaConfig",            "T3_search",   "low"),
+    "google_trends_global":("aegis.scrape.sources.google_trends_global",  "GoogleTrendsGlobalAdapter",   "GoogleTrendsGlobalConfig",   "T3_search",   "medium"),
     # Wave 3 — E-commerce
     "flipkart":            ("aegis.scrape.sources.flipkart",              "FlipkartAdapter",             "FlipkartConfig",             "T2_commerce", "high"),
-    "meesho":              ("aegis.scrape.sources.meesho",                "MeeshoAdapter",               "MeeshoConfig",               "T2_commerce", "medium"),
     "myntra":              ("aegis.scrape.sources.myntra",                "MyntraAdapter",               "MyntraConfig",               "T2_commerce", "high"),
-    "indiamart":           ("aegis.scrape.sources.indiamart",             "IndiaMartAdapter",            "IndiaMartConfig",            "T2_commerce", "medium"),
-    "ajio":                ("aegis.scrape.sources.ajio",                  "AjioAdapter",                 "AjioConfig",                 "T2_commerce", "medium"),
-    "nykaa":               ("aegis.scrape.sources.nykaa",                 "NykaaAdapter",                "NykaaConfig",                "T2_commerce", "medium"),
+    # nykaa/ajio/meesho/indiamart intentionally NOT registered (WAF-gated, no free path).
     "snapdeal":            ("aegis.scrape.sources.snapdeal",              "SnapdealAdapter",             "SnapdealConfig",             "T2_commerce", "medium"),
     "amazon_in":           ("aegis.scrape.sources.amazon_in",             "AmazonINAdapter",             "AmazonINConfig",             "T2_commerce", "high"),
     "amazon":              ("aegis.scrape.sources.amazon",                "AmazonAdapter",               "AmazonConfig",               "T3_search",   "medium"),
+    # Real free-API commerce adapters (key-gated, fail-open without a key).
+    "ebay":                ("aegis.scrape.sources.ebay_browse",           "EbayBrowseAdapter",           "EbayBrowseConfig",           "T2_commerce", "low"),
+    "bestbuy":             ("aegis.scrape.sources.bestbuy",               "BestBuyAdapter",              "BestBuyConfig",              "T2_commerce", "low"),
+    "etsy":                ("aegis.scrape.sources.etsy",                  "EtsyAdapter",                 "EtsyConfig",                 "T2_commerce", "low"),
+    # Dead four (nykaa/ajio/meesho/indiamart) removed 2026-06-24 — WAF-gated, no free path.
     "nse_bse":             ("aegis.scrape.sources.nse_bse",               "NSEBSEAdapter",               "NSEBSEConfig",               "T3_search",   "low"),
     "screener_in":         ("aegis.scrape.sources.screener_in",           "ScreenerInAdapter",           "ScreenerInConfig",           "T3_search",   "medium"),
     # Wave 4 — Tech
@@ -113,7 +122,9 @@ _REGISTRY: dict[str, tuple[str, str, str | None, str, str]] = {
 # When called from the swarm without a topic, we pass a sensible default so
 # these adapters contribute signals instead of returning nothing.
 # ---------------------------------------------------------------------------
-_QUERY_ADAPTERS: frozenset[str] = frozenset({"google-news", "bing-news"})
+_QUERY_ADAPTERS: frozenset[str] = frozenset(
+    {"google-news", "bing-news", "ebay", "bestbuy", "etsy"}
+)
 _DEFAULT_SWARM_QUERY = "trending technology market business ecommerce india"
 
 
@@ -377,6 +388,9 @@ class _SwarmSynthesizer:
             f"{n_ecommerce} e-commerce + {n_finance} finance + {n_news} news signals processed."
         )
 
+        # Pass 9D: creator influence graph — coordinated-behaviour detection.
+        cg_metrics = self._creator_graph_metrics(signals)
+
         total = len(signals)
         return SwarmResult(
             started_at=started_at,
@@ -391,7 +405,32 @@ class _SwarmSynthesizer:
             hot_categories=hot,
             market_pulse=pulse,
             conclusion=conclusion,
+            creator_graph_metrics=cg_metrics,
         )
+
+    @staticmethod
+    def _creator_graph_metrics(signals: list[dict[str, Any]]) -> dict | None:
+        """Build the creator influence graph and return its metrics (best-effort)."""
+        try:
+            from aegis.scrape.creator_graph import CreatorGraph
+
+            graph = CreatorGraph()
+            if not graph.build_from_signals(signals):
+                return None
+            metrics = graph.compute_metrics()
+            if metrics is None:
+                return None
+            return {
+                "node_count": metrics.node_count,
+                "edge_count": metrics.edge_count,
+                "top_creators": metrics.top_creators_by_pagerank[:5],
+                "avg_clustering": metrics.avg_clustering,
+                "coordination_score": metrics.coordination_score,
+                "organic_score": metrics.organic_score,
+                "bridge_creators": metrics.bridge_creators,
+            }
+        except Exception:  # creator graph is advisory enrichment
+            return None
 
 
 # ---------------------------------------------------------------------------
@@ -443,6 +482,47 @@ class SwarmOrchestrator:
             for name, entry in _REGISTRY.items()
         }
 
+    async def _compute_novelty_fraction(self, signals: list[dict[str, Any]]) -> float:
+        """PASS2-2B: fraction of *signals* not seen in the last ~24 hours.
+
+        Checks each signal's content hash against the Redis set
+        ``aegis:swarm:seen_hashes:{date}`` (TTL 25 h), then adds all hashes
+        via a pipeline. Returns 1.0 (fully novel — neutral, never penalises)
+        when Redis is unavailable or the batch is empty.
+        """
+        if not signals:
+            return 1.0
+        redis = getattr(self._persistence, "_redis", None)
+        if redis is None:
+            return 1.0
+
+        import hashlib
+
+        hashes: list[str] = []
+        for s in signals:
+            h = s.get("content_hash")
+            if not h:
+                basis = f"{s.get('title', '')}|{s.get('url', '')}"
+                h = hashlib.sha256(basis.encode()).hexdigest()
+            hashes.append(str(h))
+
+        key = f"aegis:swarm:seen_hashes:{datetime.now(UTC).date().isoformat()}"
+        try:
+            pipe = redis.pipeline()
+            for h in hashes:
+                pipe.sismember(key, h)
+            seen_flags = await pipe.execute()
+            novel = sum(1 for flag in seen_flags if not flag)
+
+            add_pipe = redis.pipeline()
+            add_pipe.sadd(key, *hashes)
+            add_pipe.expire(key, 25 * 3600)
+            await add_pipe.execute()
+            return novel / len(hashes)
+        except Exception as exc:
+            _log.debug("swarm.novelty_check_failed", error=str(exc))
+            return 1.0
+
     async def run_all_waves(
         self,
         limit: int = 50,
@@ -472,10 +552,30 @@ class SwarmOrchestrator:
             except Exception as exc:
                 _log.error("swarm.wave_error", wave=wave_num, error=str(exc))
 
-            # Feed realised yields back into the bandit for the next run.
+            # PASS2-2B: feed a composite quality reward (yield rate, novelty,
+            # confidence) back into the bandit — not just the raw signal count.
             if self._adaptive_budget:
                 for r in runs:
-                    self._allocator.record(r.agent_name, len(r.signals))
+                    if not r.signals:
+                        # Empty/failed run earns zero reward — the neutral
+                        # novelty=1.0 fallback must not give it a 0.3 floor.
+                        self._allocator.record(r.agent_name, 0)
+                        continue
+                    novelty = await self._compute_novelty_fraction(r.signals)
+                    avg_conf = (
+                        sum(
+                            float(s.get("confidence") or s.get("source_confidence") or 0.5)
+                            for s in r.signals
+                        )
+                        / max(len(r.signals), 1)
+                    )
+                    self._allocator.record_with_quality(
+                        source=r.agent_name,
+                        yield_count=len(r.signals),
+                        elapsed_s=max(r.latency_ms, 1.0) / 1000.0,
+                        novelty_fraction=novelty,
+                        avg_confidence=avg_conf,
+                    )
 
             new_signals: list[dict[str, Any]] = []
             failures = sum(1 for r in runs if not r.success)

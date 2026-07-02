@@ -20,7 +20,7 @@ Usage in test file:
 
 from __future__ import annotations
 
-from collections.abc import Generator
+from collections.abc import Generator  # noqa: TCH003
 import os
 from typing import Any
 

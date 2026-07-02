@@ -3,8 +3,10 @@ AEGIS Pulse data flow validation.
 Run: uv run python scripts/validate_data_flow.py
 All 7 checks must pass before moving to Prompt 3.
 """
-import asyncio, sys, time
-from datetime import datetime, timezone
+import asyncio
+import sys
+import time
+from datetime import UTC, datetime
 
 CHECKS = []
 RESULTS = []
@@ -48,9 +50,12 @@ async def check_scraper():
 
 @check("4. Agent pipeline runs with sentinel+compliance")
 async def check_agents():
+    import logging
+
+    import structlog
+
     from aegis.agents.runner import run_trend
     from aegis.agents.schemas import TrendCandidate
-    import structlog, logging
     structlog.reset_defaults()
     logging.disable(logging.WARNING)
     tc = TrendCandidate(
@@ -75,8 +80,10 @@ async def check_agents():
 
 @check("5. Phase 3 prediction runs under 500ms")
 async def check_predict():
+    from datetime import datetime
+
     import numpy as np
-    from datetime import datetime, timezone
+
     from aegis.predict.inference import InferenceRunner
     from aegis.predict.schemas import FeatureWindow
     runner = InferenceRunner()
@@ -85,7 +92,7 @@ async def check_predict():
         values=list(np.random.rand(20).tolist()),
         window_size=1, feature_dim=20,
         correlation_id="validation-predict-001",
-        captured_at=datetime.now(timezone.utc),
+        captured_at=datetime.now(UTC),
     )
     t0 = time.perf_counter()
     result = await runner.run(
@@ -123,12 +130,12 @@ async def check_dashboard():
         r = await client.get("http://localhost:8300/healthz")
         if r.status_code != 200:
             return False, f"HTTP {r.status_code}"
-        return True, f"HTTP 200"
+        return True, "HTTP 200"
 
 async def main():
     print("\n" + "="*60)
     print("  AEGIS PULSE — DATA FLOW VALIDATION")
-    print(f"  {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}")
+    print(f"  {datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S UTC')}")
     print("="*60)
     passed = failed = 0
     for name, fn in CHECKS:
@@ -137,8 +144,10 @@ async def main():
             icon = "✅" if ok else "❌"
             print(f"\n{icon} {name}")
             print(f"   {detail}")
-            if ok: passed += 1
-            else: failed += 1
+            if ok:
+                passed += 1
+            else:
+                failed += 1
         except Exception as e:
             print(f"\n❌ {name}")
             print(f"   EXCEPTION: {str(e)[:150]}")

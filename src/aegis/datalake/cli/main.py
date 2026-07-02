@@ -617,4 +617,34 @@ def daily(
     _emit(payload, json_out=json_out)
 
 
+@cli.command(
+    help="ORPH-4: serve the Prefect deployment 'aegis-daily-lake-refresh' "
+    "(cron 02:00 UTC). Blocks until interrupted."
+)
+def schedule() -> None:
+    """Register + serve the daily lake refresh as a Prefect cron deployment.
+
+    Requires the ``datalake-orchestration`` extra and a reachable Prefect
+    server. Without Prefect, the autonomous scheduler
+    (``aegis.scheduler.autonomous``) runs the same refresh daily at
+    02:00 UTC as a direct fallback.
+    """
+    from ..orchestration.flows import PREFECT_AVAILABLE, daily_lake_refresh
+
+    if not PREFECT_AVAILABLE:
+        raise click.ClickException(
+            "prefect is not installed — run `uv sync --extra datalake-orchestration`. "
+            "Fallback: the autonomous scheduler runs the daily refresh at 02:00 UTC."
+        )
+    click.echo(
+        "Serving Prefect deployment 'aegis-daily-lake-refresh' (cron: 0 2 * * * UTC). "
+        "Press Ctrl-C to stop."
+    )
+    daily_lake_refresh.serve(  # blocks — this is a long-running worker process
+        name="aegis-daily-lake-refresh",
+        cron="0 2 * * *",
+        tags=["aegis", "datalake"],
+    )
+
+
 __all__ = ["cli"]

@@ -66,19 +66,23 @@ class TestTrainAndEvaluateFallback:
         )
         assert isinstance(metrics["test_auc"], float)
 
-    def test_sklearn_absent_fallback(self) -> None:
+    def test_sklearn_absent_raises_not_fabricates(self) -> None:
+        # OMEGA reality-first (FIX-5): a training failure must raise so the
+        # candidate is dropped, never promoted on fabricated metrics.
         import sys
+
+        from aegis.evolve.errors import TrainingFailedError
+
         X_tr, y_tr, X_ts, y_ts = self._arrays()
         with pytest.MonkeyPatch().context() as mp:
             mp.setitem(sys.modules, "sklearn", None)
             mp.setitem(sys.modules, "sklearn.linear_model", None)
             mp.setitem(sys.modules, "sklearn.metrics", None)
             mp.setitem(sys.modules, "sklearn.preprocessing", None)
-            metrics = RetrainingPipeline._train_and_evaluate(
-                "patchts", X_tr, y_tr, X_tr, y_tr, X_ts, y_ts, {}
-            )
-        for key in ("train_auc", "val_auc", "test_auc"):
-            assert 0.4 <= metrics[key] <= 0.7
+            with pytest.raises(TrainingFailedError):
+                RetrainingPipeline._train_and_evaluate(
+                    "patchts", X_tr, y_tr, X_tr, y_tr, X_ts, y_ts, {}
+                )
 
 
 class TestSaveModelArtifact:
@@ -253,7 +257,11 @@ class TestUpsertRetrainAudit:
 class TestRetrainWithPromotion:
     @pytest.mark.asyncio
     async def test_promotion_fires_when_auc_beats_threshold(self) -> None:
-        """Champion AUC=0.5, candidate AUC=0.55 → +10% → should promote."""
+        """Champion AUC=0.5, candidate AUC=0.55 → +10% → shadow-deploys.
+
+        PASS3-3C: an improved candidate no longer promotes instantly — it is
+        registered as a shadow (status "shadow_deployed") unless fast_promote.
+        """
         from unittest.mock import patch
         outcomes = [_make_outcome(f"p{i}") for i in range(50)]
         cfg = EvolveSettings(min_outcomes_for_retrain=10, hpo_n_trials=2, auc_improvement_threshold=0.02)
@@ -262,9 +270,13 @@ class TestRetrainWithPromotion:
         conn.fetchrow = AsyncMock(return_value=None)
         pipeline = RetrainingPipeline(db_pool=pool, settings=cfg)
 
-        with patch("aegis.evolve.retrain.OutcomeRecorder.fetch_recent_outcomes", new_callable=AsyncMock, return_value=outcomes):
+        with (
+            patch("aegis.evolve.retrain.OutcomeRecorder.fetch_recent_outcomes", new_callable=AsyncMock, return_value=outcomes),
+            patch("aegis.core.event_bus.publish_event", new_callable=AsyncMock),
+        ):
             run = await pipeline.run_weekly_retrain(triggered_by="test")
 
-        # With 50 outcomes and default LR proxy, we either complete or no_improvement
-        assert run.status in ("completed", "no_improvement", "failed")
+        # With 50 outcomes and default LR proxy, an improved candidate now
+        # shadow-deploys; otherwise no_improvement (or failed on proxy error).
+        assert run.status in ("shadow_deployed", "no_improvement", "failed")
         assert run.outcomes_count == 50

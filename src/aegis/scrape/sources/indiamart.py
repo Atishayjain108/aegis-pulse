@@ -43,7 +43,7 @@ from aegis.schemas.signal import (
     compute_content_hash,
 )
 from aegis.scrape.base import AdapterConfig, ScrapeContext, SourceAdapter
-from aegis.scrape.ecommerce_utils import random_ua
+from aegis.scrape.http_client import get_or_create_client
 from aegis.scrape.playwright_fetcher import fetch_page_html as _playwright_fetch
 
 if TYPE_CHECKING:
@@ -209,17 +209,18 @@ class IndiaMartAdapter(SourceAdapter[dict[str, Any]]):
         return "indiamart"
 
     async def setup(self, ctx: ScrapeContext) -> None:
-        self._client = httpx.AsyncClient(
-            timeout=httpx.Timeout(self._cfg.timeout_seconds),
-            headers={**_HEADERS, "User-Agent": random_ua()},
-            follow_redirects=True,
+        # Shared client: per-host throttle + header/UA rotation + optional
+        # proxy via http_client event hooks (see http_client.py).
+        self._client = await get_or_create_client(
+            "www.indiamart.com",
+            timeout=self._cfg.timeout_seconds,
+            headers=dict(_HEADERS),
             http2=False,
+            follow_redirects=True,
         )
 
     async def teardown(self, ctx: ScrapeContext) -> None:
-        if self._client is not None:
-            await self._client.aclose()
-            self._client = None
+        self._client = None  # shared client — release reference, never close
 
     async def _fetch_categories(self) -> list[str]:
         """Fetch trending B2B categories via httpx → Playwright → hardcoded fallback."""
@@ -260,7 +261,7 @@ class IndiaMartAdapter(SourceAdapter[dict[str, Any]]):
             resp = await self._client.get(
                 _SEARCH_URL,
                 params={"ss": category},
-                headers={**_JSON_HEADERS, "User-Agent": random_ua()},
+                headers=dict(_JSON_HEADERS),
             )
             resp.raise_for_status()
             return _extract_search_results(resp.json(), category)

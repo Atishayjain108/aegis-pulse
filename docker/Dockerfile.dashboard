@@ -23,11 +23,16 @@ RUN pip install uv
 
 WORKDIR /build
 
-# Copy workspace members needed by the dashboard
-COPY pyproject.toml uv.lock ./
+# Copy workspace members needed by the dashboard.
+# README.md is required by the hatchling build backend (pyproject readme field);
+# all four workspace members must be present or `uv sync --all-packages` fails to
+# resolve them. Previously only phase4 + harden were copied → build broke.
+COPY pyproject.toml uv.lock README.md ./
 COPY src/ ./src/
 COPY aegis-phase4/ ./aegis-phase4/
 COPY aegis-harden/ ./aegis-harden/
+COPY aegis-phase12/ ./aegis-phase12/
+COPY aegis-phase13/ ./aegis-phase13/
 
 # Install all packages (dashboard needs agents, predict, execute, etc.)
 RUN uv sync --all-packages --all-extras --no-dev
@@ -63,5 +68,10 @@ EXPOSE 8300
 HEALTHCHECK --interval=10s --timeout=2s --start-period=20s --retries=3 \
     CMD curl -fsS http://localhost:8300/healthz || exit 1
 
+# Invoke uvicorn via `python -m` rather than the bare console script: the venv
+# is built at /build/.venv but copied to /app/.venv, so the uvicorn script's
+# shebang (#!/build/.venv/bin/python) points at a path that does not exist in
+# the runtime image → `exec uvicorn: No such file or directory`. The `python`
+# symlink resolves correctly, so `python -m uvicorn` is path-independent.
 ENTRYPOINT ["tini", "--"]
-CMD ["uvicorn", "aegis.dashboard.app:app", "--host", "0.0.0.0", "--port", "8300", "--log-level", "warning"]
+CMD ["python", "-m", "uvicorn", "aegis.dashboard.app:app", "--host", "0.0.0.0", "--port", "8300", "--log-level", "warning"]

@@ -11,6 +11,9 @@ Settlement flow per order:
   3. Net PnL = revenue − refund − shipping − platform_fee − unit_cost.
   4. `ExecutionEngine.record_settlement(pnl)` is called to update daily total.
   5. EOD: `settle_daily()` aggregates and persists the full-day snapshot.
+  6. PASS3-3A: each persisted order is bridged to Phase 9 as a `TradeOutcome`
+     ground-truth label (best-effort — settlement never fails because the
+     evolution layer is unavailable).
 
 Tax CSV export is provided for accountant handoff.
 """
@@ -102,6 +105,17 @@ class SettlementManager:
 
         If `settlement_date` is None, uses today (UTC). Returns the snapshot
         even when no orders were staged (zero-revenue day).
+
+        DORMANT-UNTIL-REAL-EXECUTION (PROJECT OMEGA): this is the entry point of
+        the *capital* outcome loop. It has **no scheduled caller by design** —
+        AEGIS runs in advisory mode and places no real orders, so there are no
+        settled PnL rows to flush, and ``prediction_outcomes`` stays empty. The
+        downstream consumers (RetrainingPipeline, FailureForecaster, buyer/
+        supplier trust, drawdown breaker) are therefore DORMANT, not broken.
+        Wiring this into a scheduled EOD job + the fulfillment webhook is gated
+        on a real live-mode integration test (see forensic.md, Remediation Pass
+        2026-06-17). The capital-free signal-outcome loop (Phase A,
+        ``job_settle_claims``) is the live feedback path today.
         """
         target_date = settlement_date or datetime.now(UTC).date()
         outcomes = list(self._pending.values())
@@ -119,6 +133,10 @@ class SettlementManager:
                 total_cost += Decimal(str(o.unit_cost_usd * o.quantity))
                 total_pnl += pnl
                 await self._persist_outcome(o, pnl, tenant_id=tenant_id)
+                # PASS3-3A: bridge settled order → Phase 9 ground truth.
+                await self._record_outcome_for_evolution(o, pnl, tenant_id=tenant_id)
+                # Phase D (S1/S2): bridge settled order → Execution Intelligence.
+                await self._record_execution_intel(o, pnl, tenant_id=tenant_id)
             except Exception as exc:
                 errors.append(f"order {o.order_id}: {exc}")
                 _log.error(
@@ -169,6 +187,211 @@ class SettlementManager:
     # ------------------------------------------------------------------
     # Private
     # ------------------------------------------------------------------
+
+    async def _record_outcome_for_evolution(
+        self,
+        outcome: OrderOutcome,
+        pnl: Decimal,
+        *,
+        tenant_id: str | None,
+    ) -> None:
+        """PASS3-3A: bridge Phase 6 settlement to Phase 9 evolution.
+
+        Builds a `TradeOutcome` ground-truth label from the settled order and
+        records it via `OutcomeRecorder`, then publishes an `outcome_recorded`
+        event onto the evolve stream. Best-effort end to end: settlement must
+        never fail because the evolution layer is missing or unhealthy.
+
+        Prediction score/confidence are not stored on `execution_plans`; they
+        are resolved via plan → intent → alert. Missing links degrade to a
+        neutral 0.5 — the label (ROI/PnL) is the valuable part.
+        """
+        if self._pool is None:
+            return
+        try:
+            from aegis.evolve.outcomes import OutcomeRecorder
+            from aegis.evolve.schemas import TradeOutcome
+
+            trend_id, score, confidence = await self._fetch_plan_context(
+                outcome.plan_id, tenant_id=tenant_id
+            )
+
+            cost = Decimal(str(outcome.unit_cost_usd)) * outcome.quantity
+            roi_pct = float(pnl / max(cost, Decimal("0.01"))) * 100.0
+
+            if pnl > 0:
+                status = "successful"
+            elif outcome.refund_usd >= outcome.revenue_usd and outcome.refund_usd > 0:
+                status = "full_refund"
+            elif outcome.refund_usd > 0:
+                status = "partial_refund"
+            else:
+                # Unprofitable, no refund — must be a value allowed by the
+                # prediction_outcomes CHECK constraint ("failed" is not).
+                status = "dispute"
+
+            trade = TradeOutcome(
+                execution_plan_id=outcome.plan_id,
+                trend_id=trend_id,
+                prediction_score=score,
+                prediction_confidence=confidence,
+                actual_roi_pct=Decimal(str(round(roi_pct, 4))),
+                pnl_usd=pnl,
+                units_sold=outcome.quantity,
+                total_cost=cost,
+                shipping_cost=Decimal(str(outcome.shipping_usd)),
+                settlement_timestamp=datetime.now(UTC),
+                resolution_status=status,
+            )
+
+            recorder = (
+                OutcomeRecorder(self._pool, tenant_id=tenant_id)  # type: ignore[arg-type]
+                if tenant_id
+                else OutcomeRecorder(self._pool)  # type: ignore[arg-type]
+            )
+            recorded = await recorder.record_outcome(trade)
+
+            from aegis.core.event_bus import STREAM_EVOLVE, publish_event
+
+            await publish_event(
+                STREAM_EVOLVE,
+                {
+                    "event": "outcome_recorded",
+                    "plan_id": outcome.plan_id,
+                    "order_id": outcome.order_id,
+                    "trend_id": trend_id,
+                    "roi_pct": round(roi_pct, 4),
+                    "pnl_usd": round(float(pnl), 2),
+                    "status": status,
+                    "recorded": recorded,
+                },
+            )
+        except Exception as exc:
+            # INTENTIONAL: settlement succeeds regardless of evolution recording.
+            _log.debug(
+                "execute.settlement.evolution_record_skipped",
+                order_id=outcome.order_id,
+                plan_id=outcome.plan_id,
+                reason=str(exc),
+            )
+
+    async def _record_execution_intel(
+        self,
+        outcome: OrderOutcome,
+        pnl: Decimal,
+        *,
+        tenant_id: str | None,
+    ) -> None:
+        """Phase D: bridge a settled order → Execution Knowledge Engine (S1/S2).
+
+        Builds an ``ExecutionRecord`` from the settled order (real ground truth)
+        and, when the supplier is known, increments its measured fulfillment
+        reliability. Best-effort: settlement never fails because the execution
+        intelligence layer is missing or unhealthy.
+        """
+        if self._pool is None:
+            return
+        try:
+            from aegis.execution_intel.memory import ExecutionMemory
+            from aegis.execution_intel.supplier import SupplierIntel
+            from aegis.execution_intel.taxonomy import (
+                ExecutionFailureCategory,
+                ExecutionOutcome,
+            )
+
+            trend_id, _, _ = await self._fetch_plan_context(
+                outcome.plan_id, tenant_id=tenant_id
+            )
+
+            cost = float(outcome.unit_cost_usd) * outcome.quantity
+            cancelled = (
+                outcome.refund_usd >= outcome.revenue_usd and outcome.refund_usd > 0
+            )
+            succeeded = pnl > 0
+
+            if cancelled:
+                exec_outcome = ExecutionOutcome.CANCELLED
+                failure_cat = ExecutionFailureCategory.PAYMENT_ISSUE
+            elif succeeded:
+                exec_outcome = ExecutionOutcome.SUCCEEDED
+                failure_cat = ExecutionFailureCategory.NONE
+            else:
+                exec_outcome = ExecutionOutcome.FAILED
+                failure_cat = ExecutionFailureCategory.MARGIN_EVAPORATED
+
+            supplier_name = outcome.__dict__.get("supplier_name") or None
+            tid = tenant_id or "00000000-0000-0000-0000-000000000001"
+
+            mem = ExecutionMemory(self._pool, tenant_id=tid)
+            await mem.upsert_settled(
+                outcome.plan_id,
+                exec_outcome,
+                trend_id=trend_id,
+                supplier_name=supplier_name,
+                realized_units=outcome.quantity,
+                realized_pnl_usd=round(float(pnl), 4),
+                realized_cost_usd=round(cost, 4),
+                failure_category=failure_cat,
+                failure_detail="" if succeeded else "unprofitable settled order",
+            )
+
+            if supplier_name:
+                intel = SupplierIntel(self._pool, tenant_id=tid)
+                await intel.record_fulfillment(
+                    supplier_name,
+                    succeeded=succeeded and not cancelled,
+                    cancelled=cancelled,
+                )
+        except Exception as exc:
+            # INTENTIONAL: settlement succeeds regardless of execution-intel recording.
+            _log.debug(
+                "execute.settlement.execution_intel_skipped",
+                order_id=outcome.order_id,
+                plan_id=outcome.plan_id,
+                reason=str(exc),
+            )
+
+    async def _fetch_plan_context(
+        self,
+        plan_id: str,
+        *,
+        tenant_id: str | None,
+    ) -> tuple[str, float, float]:
+        """Resolve (trend_id, score, confidence) for a plan via its alert.
+
+        Falls back to ("unknown", 0.5, 0.5) when any link is missing.
+        """
+        trend_id, score, confidence = "unknown", 0.5, 0.5
+        try:
+            async with self._pool.acquire() as conn:  # type: ignore[union-attr]
+                if tenant_id:
+                    await conn.execute(
+                        "SELECT set_config('app.current_tenant', $1, false)",
+                        tenant_id,
+                    )
+                row = await conn.fetchrow(
+                    """
+                    SELECT p.trend_id, a.score, a.confidence
+                    FROM execution_plans p
+                    LEFT JOIN execution_intents i ON i.intent_id = p.intent_id
+                    LEFT JOIN alerts a ON a.alert_id = i.alert_id
+                    WHERE p.plan_id = $1::uuid
+                    """,
+                    plan_id,
+                )
+            if row:
+                trend_id = str(row["trend_id"] or "unknown")
+                if row["score"] is not None:
+                    score = float(row["score"])
+                if row["confidence"] is not None:
+                    confidence = float(row["confidence"])
+        except Exception as exc:
+            _log.debug(
+                "execute.settlement.plan_context_fallback",
+                plan_id=plan_id,
+                reason=str(exc),
+            )
+        return trend_id, score, confidence
 
     async def _persist_outcome(
         self,

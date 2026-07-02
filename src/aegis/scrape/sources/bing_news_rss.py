@@ -41,6 +41,7 @@ from aegis.schemas.signal import (
     compute_content_hash,
 )
 from aegis.scrape.base import AdapterConfig, ScrapeContext, SourceAdapter
+from aegis.scrape.http_client import get_or_create_client
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -105,17 +106,17 @@ class BingNewsRSSAdapter(SourceAdapter[dict[str, Any]]):
         return "bing-news-rss"
 
     async def setup(self, ctx: ScrapeContext) -> None:
-        self._client = httpx.AsyncClient(
-            timeout=httpx.Timeout(self._bn_config.timeout_seconds),
+        self._client = await get_or_create_client(
+            "www.bing.com",
+            http2=False,
+            timeout=self._bn_config.timeout_seconds,
             headers=_BING_HEADERS,
             follow_redirects=True,
-            http2=False,
         )
 
     async def teardown(self, ctx: ScrapeContext) -> None:
-        if self._client is not None:
-            await self._client.aclose()
-            self._client = None
+        # Shared pooled client (PASS5-5B / ADP-7) — release the reference, never close.
+        self._client = None
 
     async def fetch_raw(  # type: ignore[override]
         self,

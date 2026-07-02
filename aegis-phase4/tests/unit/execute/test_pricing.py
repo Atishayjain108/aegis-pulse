@@ -131,3 +131,84 @@ def test_competitor_based_price_anchors_near_third_cheapest():
     p = _competitor_based_price(10.0, prices)
     # Should be ≤ cheapest * 1.10
     assert p <= 12.0 * 1.10 + 1e-6
+
+
+# ---------------------------------------------------------------------------
+# PASS3-3D — Phase 9 RL policy weight loading
+# ---------------------------------------------------------------------------
+
+
+class TestPolicyWeightLoading:
+    @pytest.fixture(autouse=True)
+    def _clean_cache(self):
+        """Class-wide cache must never leak into (or out of) these tests."""
+        PricingStrategy._reset_policy_cache()
+        yield
+        PricingStrategy._reset_policy_cache()
+
+    @pytest.mark.asyncio
+    async def test_fallback_to_defaults_when_no_policy(self) -> None:
+        # No db_pool → OnlinePricingPolicy.load() returns False → defaults.
+        weights = await PricingStrategy._get_policy_weights(db_pool=None)
+        assert weights == list(PricingStrategy._DEFAULT_WEIGHTS)
+        # Failure is not cached — next call retries.
+        assert PricingStrategy._policy_weights is None
+
+    @pytest.mark.asyncio
+    async def test_loaded_weights_cached_for_ttl(self) -> None:
+        from unittest.mock import AsyncMock as _AsyncMock
+        from unittest.mock import patch as _patch
+
+        import numpy as np
+
+        fake_weights = np.array([0.4, 0.3, 0.2, 0.1])
+        with (
+            _patch(
+                "aegis.evolve.rl_policy.OnlinePricingPolicy.load",
+                new_callable=_AsyncMock,
+                return_value=True,
+            ) as load,
+            _patch(
+                "aegis.evolve.rl_policy.OnlinePricingPolicy.get_weights",
+                return_value=fake_weights,
+            ),
+        ):
+            first = await PricingStrategy._get_policy_weights()
+            second = await PricingStrategy._get_policy_weights()
+
+        assert first == pytest.approx([0.4, 0.3, 0.2, 0.1])
+        assert second == first
+        load.assert_awaited_once()  # second call served from class cache
+
+    @pytest.mark.asyncio
+    async def test_new_instance_seeds_from_cache(self) -> None:
+        from datetime import UTC, datetime
+
+        PricingStrategy._policy_weights = [0.4, 0.3, 0.2, 0.1]
+        PricingStrategy._policy_loaded_at = datetime.now(UTC)
+
+        strat = PricingStrategy("SKU-CACHED", seed=1)
+        assert strat._weights == pytest.approx([0.4, 0.3, 0.2, 0.1])
+
+    def test_stale_cache_ignored(self) -> None:
+        from datetime import UTC, datetime, timedelta
+
+        PricingStrategy._policy_weights = [0.4, 0.3, 0.2, 0.1]
+        PricingStrategy._policy_loaded_at = datetime.now(UTC) - timedelta(hours=7)
+
+        assert PricingStrategy._cached_policy_weights() is None
+        strat = PricingStrategy("SKU-STALE", seed=1)
+        assert strat._weights == list(PricingStrategy._DEFAULT_WEIGHTS)
+
+    @pytest.mark.asyncio
+    async def test_load_exception_falls_back_to_defaults(self) -> None:
+        from unittest.mock import AsyncMock as _AsyncMock
+        from unittest.mock import patch as _patch
+
+        with _patch(
+            "aegis.evolve.rl_policy.OnlinePricingPolicy.load",
+            new_callable=_AsyncMock,
+            side_effect=RuntimeError("policy table missing"),
+        ):
+            weights = await PricingStrategy._get_policy_weights()
+        assert weights == list(PricingStrategy._DEFAULT_WEIGHTS)

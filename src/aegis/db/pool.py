@@ -108,6 +108,30 @@ class PgConfig:
         return cls(**kwargs)
 
 
+def resolve_dsn() -> str:
+    """Return the canonical Postgres DSN used across the whole system.
+
+    Precedence:
+
+    1. ``AEGIS_PG_DSN`` exported in the process environment (explicit override).
+    2. ``settings().pg_dsn_str`` — the pydantic-settings value, which loads
+       ``.env``. This is the same source the scheduler jobs and services use.
+
+    CLIs must call this rather than ``PgConfig.from_env(os.environ)`` directly:
+    ``AEGIS_PG_DSN`` lives in ``.env`` (read only by pydantic-settings), so a
+    raw ``os.environ`` read silently falls back to the wrong default
+    (``aegis:@localhost:5432``).
+    """
+    import os
+
+    explicit = os.environ.get("AEGIS_PG_DSN")
+    if explicit:
+        return explicit
+    from aegis.config import settings
+
+    return settings().pg_dsn_str
+
+
 # =============================================================================
 # The pool
 # =============================================================================

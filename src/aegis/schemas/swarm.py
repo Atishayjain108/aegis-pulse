@@ -35,6 +35,7 @@ class SwarmResult(BaseModel):
     hot_categories: list[str] = Field(default_factory=list)
     market_pulse: str = "neutral"
     conclusion: str = ""
+    creator_graph_metrics: dict | None = None
 
 
 __all__ = ["SwarmResult", "WaveStats"]

@@ -36,6 +36,7 @@ class Platform(StrEnum):
     DHGATE = "dhgate"
     GOOGLE_SHOPPING = "google_shopping"
     EBAY = "ebay"
+    BESTBUY = "bestbuy"
 
     # --- Tier 3: search + ad intel --------------------------------------------
     GOOGLE_TRENDS = "google_trends"
@@ -104,6 +105,10 @@ class Platform(StrEnum):
     SNAPDEAL = "snapdeal"
     INDIAMART = "indiamart"
 
+    # --- Phase 5: global radar adapters (keyless, any region/continent) -------
+    WIKIMEDIA = "wikimedia"
+    GOOGLE_TRENDS_GLOBAL = "google_trends_global"
+
 
 @unique
 class SourceTier(StrEnum):
@@ -134,6 +139,7 @@ _PLATFORM_TIER: dict[Platform, SourceTier] = {
     Platform.DHGATE: SourceTier.TIER_2_COMMERCE,
     Platform.GOOGLE_SHOPPING: SourceTier.TIER_2_COMMERCE,
     Platform.EBAY: SourceTier.TIER_2_COMMERCE,
+    Platform.BESTBUY: SourceTier.TIER_2_COMMERCE,
     Platform.GOOGLE_TRENDS: SourceTier.TIER_3_SEARCH,
     Platform.META_AD_LIBRARY: SourceTier.TIER_3_SEARCH,
     Platform.TIKTOK_CREATIVE: SourceTier.TIER_3_SEARCH,
@@ -190,6 +196,9 @@ _PLATFORM_TIER: dict[Platform, SourceTier] = {
     Platform.NYKAA: SourceTier.TIER_3_SEARCH,
     Platform.SNAPDEAL: SourceTier.TIER_3_SEARCH,
     Platform.INDIAMART: SourceTier.TIER_3_SEARCH,
+    # Phase 5 adapters — global radar
+    Platform.WIKIMEDIA: SourceTier.TIER_3_SEARCH,
+    Platform.GOOGLE_TRENDS_GLOBAL: SourceTier.TIER_3_SEARCH,
 }
 
 

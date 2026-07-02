@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -180,6 +181,17 @@ async def run_trend(
     """
     started_at = datetime.now(tz=UTC)
 
+    # Buyer-demand stamp: fetch Google Trends ONCE per query here (harvest/entry)
+    # and stash it on the candidate so SCOUT reads the stamped value instead of
+    # re-querying Trends per node and getting 429'd. Fail-open + auto-disabled
+    # under AEGIS_ENV=test (see aegis.agents.nodes._demand.stamp_demand).
+    try:
+        from aegis.agents.nodes._demand import stamp_demand
+
+        await stamp_demand(candidate)
+    except Exception as exc:
+        _log.debug("runner.demand_stamp_failed", error=type(exc).__name__)
+
     # Fetch latest SwarmResult from Redis for cross-platform market context.
     # Non-blocking: any failure is logged and pipeline continues with None.
     swarm_context: SwarmResult | None = None
@@ -190,6 +202,15 @@ async def run_trend(
                 swarm_context = SwarmResult.model_validate_json(raw)
         except Exception as exc:
             _log.warning("swarm_context_fetch_failed", error=str(exc))
+
+    # PASS2-2D: best-effort accuracy-weight refresh (1-hour in-process cache;
+    # neutral weights when Redis or the hash is absent). Never raises.
+    try:
+        from aegis.agents.supervisor import refresh_agent_weights
+
+        await refresh_agent_weights(stream_client)
+    except Exception as exc:
+        _log.debug("agent_weights_refresh_failed", error=str(exc))
 
     state: GraphState = initial_state(
         candidate, tenant_id=tenant_id, signals=signals, swarm_context=swarm_context
@@ -241,6 +262,24 @@ async def run_trend(
         )
 
     result = build_graph_result(final_state, started_at=started_at)
+
+    # PASS6-6A: attach raw signal metadata for the deep-verify checks, then run
+    # the second-pass verification on P0 results (score >= 0.85). Never raises;
+    # a verification failure downgrades to P1, it never blocks the result.
+    try:
+        result = result.model_copy(update={
+            "trend_data": {
+                "velocity_1h": candidate.velocity_1h,
+                "velocity_6h": candidate.velocity_6h,
+                "velocity_24h": candidate.velocity_24h,
+                "platforms": list(candidate.platforms),
+                "signal_count": candidate.signal_count,
+                "unique_authors": candidate.unique_authors,
+            },
+        })
+        result = await _deep_verify_high_confidence_result(result)
+    except Exception as exc:
+        _log.warning("deep_verify.error", trend_id=candidate.trend_id, error=str(exc))
 
     # Best-effort causal explanation — non-blocking; never affects verdict.
     if _explainer_available and _gen_exp is not None:
@@ -327,6 +366,106 @@ async def run_trend(
 # ----------------------------------------------------------------------
 
 
+# ----------------------------------------------------------------------
+# PASS6-6A: deep verification of high-confidence (P0) results
+# ----------------------------------------------------------------------
+
+# Score floor for the P0 deep-verify gate; results below it pass through.
+_DEEP_VERIFY_THRESHOLD = 0.85
+
+
+async def _deep_verify_high_confidence_result(result: GraphResult) -> GraphResult:
+    """Second-pass verification for P0 signals (score >= 0.85).
+
+    Runs 3 independent verification checks:
+      1. Temporal consistency: velocity pattern consistent with organic trend?
+      2. Cross-source confirmation: at least 2 independent platforms agree?
+      3. Red-team challenge: does the RED_TEAM agent's analysis hold up?
+
+    If all 3 checks pass: result.deep_verified = True.
+    If any check fails: score reduced by 0.10, priority downgraded to P1.
+
+    Never delays below actionable range: a failed P0 becomes P1 with a
+    score floor of 0.70 — still actionable, just flagged.
+    """
+    if result.final_score < _DEEP_VERIFY_THRESHOLD:
+        return result  # only deep-verify P0
+
+    checks: list[tuple[str, bool]] = []
+
+    # Check 1: temporal consistency
+    try:
+        checks.append(("temporal_consistency", _check_temporal_consistency(result)))
+    except Exception:
+        checks.append(("temporal_consistency", True))  # benefit of doubt on error
+
+    # Check 2: cross-source confirmation
+    try:
+        checks.append(("cross_source_confirmation", _check_cross_source_confirmation(result)))
+    except Exception:
+        checks.append(("cross_source_confirmation", True))
+
+    # Check 3: red-team decision review
+    try:
+        rt_decision = next(
+            (d for d in (result.decisions or []) if d.agent == "red_team"), None
+        )
+        rt_ok = rt_decision is None or rt_decision.verdict is not AgentVerdict.BLOCK
+        checks.append(("red_team_review", rt_ok))
+    except Exception:
+        checks.append(("red_team_review", True))
+
+    failures = [name for name, ok in checks if not ok]
+    if failures:
+        new_score = max(0.70, result.final_score - 0.10)
+        _log.warning(
+            "deep_verify.failed",
+            trend_id=result.trend_id,
+            failed_checks=failures,
+            original_score=result.final_score,
+            adjusted_score=new_score,
+        )
+        return result.model_copy(update={
+            "final_score": new_score,
+            "final_priority": Priority.P1_EXIT,
+            "deep_verified": False,
+            "deep_verify_failures": failures,
+        })
+
+    _log.info(
+        "deep_verify.passed",
+        trend_id=result.trend_id,
+        score=result.final_score,
+    )
+    return result.model_copy(update={"deep_verified": True, "deep_verify_failures": []})
+
+
+def _check_temporal_consistency(result: GraphResult) -> bool:
+    """Velocity pattern must be accelerating, not spike-and-crash.
+
+    Organic trends accelerate (1h pace >= 6h average pace, 6h pace >= 24h
+    average pace); coordinated spikes decelerate. Insufficient data passes.
+    """
+    try:
+        v1h = float(result.trend_data.get("velocity_1h", 0))
+        v6h = float(result.trend_data.get("velocity_6h", 0))
+        v24h = float(result.trend_data.get("velocity_24h", 0))
+        if v6h > 0 and v24h > 0:
+            return v1h >= v6h / 6 and v6h >= v24h / 4
+        return True  # insufficient data → pass
+    except Exception:
+        return True
+
+
+def _check_cross_source_confirmation(result: GraphResult) -> bool:
+    """At least 2 independent platforms must show the signal."""
+    try:
+        platforms = result.trend_data.get("platforms", [])
+        return len(set(platforms)) >= 2
+    except Exception:
+        return True
+
+
 # Maps Phase 2 AgentVerdict values to Phase 4's execution vocabulary.
 # Phase 4 composer expects ENTER/HOLD/EXIT/BLOCK; AgentVerdict uses proceed/hold/block/escalate.
 _VERDICT_TO_PHASE4: dict[str, str] = {
@@ -335,6 +474,86 @@ _VERDICT_TO_PHASE4: dict[str, str] = {
     "block": "BLOCK",
     "escalate": "HOLD",  # escalation has no Phase 4 equivalent; conservatively hold
 }
+
+# OMEGA (b): minimum *calibrated* P(correct) required to let an ENTER through to
+# Phase 4. Below this, a calibrated ENTER is downgraded to HOLD. Only applied
+# when a fitted calibration map exists (never on raw/UNVERIFIED confidence).
+# Default 0.5 == refuse to ENTER on a measured worse-than-coin-flip.
+_CALIBRATED_ENTER_FLOOR: float = float(os.getenv("AEGIS_CALIBRATED_ENTER_FLOOR", "0.5"))
+
+# OMEGA (skill gate): minimum measured Brier *skill* (vs a base-rate predictor)
+# required to let an ENTER reach Phase 4. brier_skill <= 0 means the model is no
+# better than always guessing the majority class — acting on its ENTERs is
+# acting on noise. Read from the latest calibration_snapshots row (refreshed by
+# the daily refit job). Default 0.0 == refuse to ENTER until skill is positive.
+_MODEL_SKILL_FLOOR: float = float(os.getenv("AEGIS_MODEL_SKILL_FLOOR", "0.0"))
+# Cache the measured skill briefly so we do not hit the DB once per trend.
+_skill_cache: dict[str, tuple[float, float | None]] = {}
+_SKILL_CACHE_TTL_S: float = 300.0
+
+
+async def _recent_model_skill(tenant_id: str) -> float | None:
+    """Latest measured Brier skill of the deployed heuristic, or None.
+
+    Returns ``None`` (→ do NOT gate) when no snapshot exists yet, so a fresh
+    deployment with no measurements never blocks. Once the refit job persists a
+    snapshot, a non-positive skill gates ENTERs. Fails open on any error.
+    """
+    import time as _time
+
+    cached = _skill_cache.get(tenant_id)
+    if cached is not None and (_time.monotonic() - cached[0]) < _SKILL_CACHE_TTL_S:
+        return cached[1]
+    skill: float | None = None
+    try:
+        from aegis.db.pool import get_shared_pool
+
+        pool = get_shared_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "SELECT set_config('app.current_tenant', $1, false)", tenant_id
+            )
+            row = await conn.fetchrow(
+                "SELECT brier_skill FROM calibration_snapshots "
+                "WHERE entity_kind = 'model' AND status = 'ok' "
+                "AND brier_skill IS NOT NULL "
+                "ORDER BY computed_at DESC LIMIT 1"
+            )
+        if row is not None and row["brier_skill"] is not None:
+            skill = float(row["brier_skill"])
+    except Exception as exc:  # fail open — never block on a measurement error
+        _log.debug("runner.skill_unavailable", error=str(exc)[:120])
+        skill = None
+    _skill_cache[tenant_id] = (_time.monotonic(), skill)
+    return skill
+
+
+async def _calibrate_confidence(
+    raw_confidence: float, tenant_id: str
+) -> tuple[float, bool]:
+    """Map raw blended confidence through the fitted isotonic calibration map.
+
+    PROJECT OMEGA (A-deep): the agent path produces evidence-volume confidence
+    that is badly miscalibrated (measured 0.98 → 0.38 realized). When a REAL
+    fitted map exists in ``calibration_maps`` (built from settled signal
+    outcomes), we surface the calibrated number instead. Returns
+    ``(value, calibrated)`` where ``calibrated`` is ``True`` only when a fitted
+    map was applied. Fails OPEN — any error, no shared pool, or only an identity
+    (unfitted) map → returns the raw value with ``calibrated=False`` (the caller
+    labels it UNVERIFIED). We never fabricate calibration from thin data.
+    """
+    try:
+        from aegis.db.pool import get_shared_pool
+        from aegis.trust.store import TrustStore
+
+        pool = get_shared_pool()
+        cal = await TrustStore(pool, tenant_id=tenant_id).load_map()
+        if not cal.knots:  # identity / unfitted → do not touch the raw number
+            return raw_confidence, False
+        return max(0.0, min(1.0, cal.apply(raw_confidence))), True
+    except Exception as exc:  # fail open — confidence is advisory, never blocks
+        _log.debug("runner.calibration_unavailable", error=str(exc)[:120])
+        return raw_confidence, False
 
 
 async def _publish_phase2_result(
@@ -345,17 +564,71 @@ async def _publish_phase2_result(
     """XADD a GraphResult summary to the Phase 4 intake stream."""
     raw_verdict = result.final_verdict.value
     phase4_verdict = _VERDICT_TO_PHASE4.get(raw_verdict, "HOLD")
+    # A-deep: surface the calibrated confidence when a fitted map exists; else
+    # keep the raw value and label it UNVERIFIED. Best-effort, never blocks.
+    raw_confidence = result.final_confidence
+    shown_confidence, confidence_calibrated = await _calibrate_confidence(
+        raw_confidence, tenant_id
+    )
     # Pull data_confidence from result metadata if the runner attached it.
     # Falls back to 1.0 (assume clean) when not set — avoids breaking old
     # callers that do not run the confidence gate.
     data_confidence: float = getattr(result, "data_confidence", 1.0)
 
+    # ── OMEGA (b): wire the settled-outcome loop into the LIVE verdict ──────
+    # The calibration map is fitted from settled signal_outcomes, so a
+    # *calibrated* confidence is a real measured P(correct). We refuse to send
+    # an ENTER downstream when that measured probability is below the floor
+    # (default 0.5 — worse than a coin flip). This only fires when a fitted map
+    # exists (`confidence_calibrated`); with no real evidence we never override.
+    confidence_gated = False
+    if (
+        phase4_verdict == "ENTER"
+        and confidence_calibrated
+        and shown_confidence < _CALIBRATED_ENTER_FLOOR
+    ):
+        phase4_verdict = "HOLD"
+        confidence_gated = True
+        _log.info(
+            "runner.enter_gated_by_calibration",
+            trend_id=result.trend_id,
+            calibrated_confidence=round(shown_confidence, 4),
+            floor=_CALIBRATED_ENTER_FLOOR,
+        )
+
+    # ── OMEGA (skill gate): refuse to ENTER while the model has no measured ──
+    # skill. brier_skill <= floor means the deployed predictor is no better than
+    # guessing the base rate; its ENTERs are noise. Only fires once a real
+    # snapshot exists (None → no measurement yet → never gate). This is the
+    # system being honest by default: it will not act on a skill-less model.
+    skill_gated = False
+    if phase4_verdict == "ENTER":
+        measured_skill = await _recent_model_skill(tenant_id)
+        if measured_skill is not None and measured_skill <= _MODEL_SKILL_FLOOR:
+            phase4_verdict = "HOLD"
+            confidence_gated = True
+            skill_gated = True
+            _log.info(
+                "runner.enter_gated_by_skill",
+                trend_id=result.trend_id,
+                measured_brier_skill=round(measured_skill, 4),
+                floor=_MODEL_SKILL_FLOOR,
+            )
+
     payload = {
         # Phase 4 intake fields (verdict mapped to P4 vocabulary)
         "trend_id": result.trend_id,
         "final_verdict": phase4_verdict,
+        "confidence_gated": confidence_gated,
+        "skill_gated": skill_gated,
         "final_score": result.final_score,
-        "final_confidence": result.final_confidence,
+        # A-deep: `final_confidence` is the calibrated number when a fitted map
+        # exists; `confidence_raw` always preserves the original; the flag +
+        # basis tell the UI whether the shown number is measured or UNVERIFIED.
+        "final_confidence": round(shown_confidence, 4),
+        "confidence_raw": round(raw_confidence, 4),
+        "confidence_calibrated": confidence_calibrated,
+        "confidence_basis": "calibrated" if confidence_calibrated else "UNVERIFIED_raw",
         "final_priority": int(result.final_priority),
         "halt_reason": result.halt_reason,
         "blocked_by": list(result.blocked_by),
@@ -388,6 +661,9 @@ async def _publish_phase2_result(
         # Provenance (HALLU-1) — lets the dashboard badge heuristic-only verdicts.
         "llm_used": result.llm_used,
         "reasoning_source": result.reasoning_source,
+        # PASS6-6A: second-pass verification outcome for P0 results.
+        "deep_verified": result.deep_verified,
+        "deep_verify_failures": list(result.deep_verify_failures),
     }
     body = json.dumps(payload, default=str)
     await redis_client.xadd(

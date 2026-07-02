@@ -34,7 +34,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from .. import DEFAULT_FEATURE_WINDOW, DEFAULT_HORIZONS
+from .. import DEFAULT_FEATURE_WINDOW, DEFAULT_HORIZONS, FEATURE_DIM
 from ..causal import (
     CausalAttribution,
     DeterministicAttributor,
@@ -43,7 +43,7 @@ from ..constants import (
     INFERENCE_HARD_TIMEOUT_S,
     INFERENCE_LATENCY_BUDGET_MS,
 )
-from ..features.builder import build_window_from_rows
+from ..features.builder import build_window_from_rows, pad_legacy_window
 from ..features.graph import CreatorGraph, build_creator_graph
 from ..models.factory import load_model
 from ..models.fusion import FusionWeights, fuse
@@ -152,6 +152,10 @@ class InferenceRunner:
             )
         if window is None:
             raise RuntimeError("FeatureWindow construction returned None — signal data missing")
+        # PASS2-2E: callers may still hold 20-dim (schema 3.0.0) windows —
+        # pad to the current 24-dim layout before any model consumes them.
+        if window.feature_dim != FEATURE_DIM:
+            window = pad_legacy_window(window)
 
         # ---- 2. Graph ------------------------------------------------------
         if graph is None:
@@ -242,6 +246,28 @@ class InferenceRunner:
             "density": float(graph.density),
             "coordination_score": float(graph.coordination_score),
         }
+
+        # Pass 9A: blend the River online velocity classifier (real-time, in-process).
+        # Best-effort — falls back to 0.5 when River is unavailable, so this never
+        # changes behaviour in the heuristic-only / no-extras test path.
+        try:
+            from aegis.predict.online import get_velocity_classifier
+
+            online_proba = get_velocity_classifier().predict_proba(
+                {
+                    "velocity_1h": float(getattr(graph, "n_authors", 0.0)),
+                    "velocity_6h": float(graph.density),
+                    "velocity_24h": float(graph.coordination_score),
+                    "signal_count": float(getattr(graph, "n_authors", 0.0)),
+                    "unique_authors": float(graph.n_authors),
+                    "sentiment": 0.0,
+                    "commercial_intent": 0.0,
+                    "novelty": 0.0,
+                }
+            )
+            graph_summary["online_velocity_proba"] = float(online_proba)
+        except Exception:  # online blend is advisory enrichment
+            pass
 
         return InferenceResult(
             bundle=fused_bundle,
@@ -339,8 +365,6 @@ class InferenceRunner:
 
 def _empty_window(tenant_id: str, trend_id: str, size: int, captured_at: datetime) -> FeatureWindow:
     """Return a zero-filled window with the canonical shape."""
-    from .. import FEATURE_DIM
-
     return FeatureWindow(
         tenant_id=tenant_id,
         trend_id=trend_id,

@@ -15,7 +15,7 @@ BEGIN;
 -- One row per (product_sku, origin_region, destination_region, analysis_ts).
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS geo_opportunities (
-    opportunity_id          UUID            PRIMARY KEY DEFAULT gen_random_uuid(),
+    opportunity_id          UUID            NOT NULL DEFAULT gen_random_uuid(),
     tenant_id               UUID            NOT NULL,
     product_sku             TEXT            NOT NULL,
     product_title           TEXT            NOT NULL,
@@ -46,7 +46,9 @@ CREATE TABLE IF NOT EXISTS geo_opportunities (
     execution_plan_id       UUID,           -- FK to execution_plans when acted on
     analysis_ts             TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
     expires_at              TIMESTAMPTZ     NOT NULL DEFAULT NOW() + INTERVAL '24 hours',
-    metadata                JSONB           NOT NULL DEFAULT '{}'
+    metadata                JSONB           NOT NULL DEFAULT '{}',
+    -- Partition column must be part of any PK/UNIQUE index on a hypertable.
+    PRIMARY KEY (opportunity_id, analysis_ts)
 );
 
 SELECT create_hypertable(
@@ -76,7 +78,7 @@ CREATE POLICY geo_opportunities_tenant ON geo_opportunities
 -- Populated by demand.py when signals with price_amount are ingested.
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS geo_price_snapshots (
-    snapshot_id     UUID            PRIMARY KEY DEFAULT gen_random_uuid(),
+    snapshot_id     UUID            NOT NULL DEFAULT gen_random_uuid(),
     tenant_id       UUID            NOT NULL,
     product_sku     TEXT            NOT NULL,
     region          TEXT            NOT NULL,
@@ -85,7 +87,9 @@ CREATE TABLE IF NOT EXISTS geo_price_snapshots (
     currency        TEXT            NOT NULL DEFAULT 'USD',
     price_usd       NUMERIC(14, 4)  NOT NULL,
     signal_id       UUID,           -- source signal if available
-    observed_at     TIMESTAMPTZ     NOT NULL DEFAULT NOW()
+    observed_at     TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
+    -- Partition column must be part of any PK/UNIQUE index on a hypertable.
+    PRIMARY KEY (snapshot_id, observed_at)
 );
 
 SELECT create_hypertable(

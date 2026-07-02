@@ -25,6 +25,7 @@ import numpy as np
 import structlog
 
 from aegis.evolve.constants import ERR_HPO_FAILED, SUPPORTED_ARCHITECTURES
+from aegis.evolve.errors import HPOFailedError
 
 if TYPE_CHECKING:
     pass
@@ -143,10 +144,13 @@ def _proxy_auc(
         proba = clf.predict_proba(x_vl)[:, 1]
         return float(roc_auc_score(y_val, proba))
 
-    except Exception:
-        # Fallback: random AUC in [0.45, 0.65] so study still converges
-        rng = np.random.default_rng(42)
-        return float(rng.uniform(0.45, 0.65))
+    except Exception as exc:
+        # OMEGA reality-first (FIX-5): never fabricate an AUC. A random score
+        # would let Optuna "converge" on noise and select hyperparameters tuned
+        # against nothing. Raise instead — Optuna marks this trial failed; if the
+        # proxy is unavailable for *all* trials, optimize_hyperparameters() falls
+        # back to documented defaults rather than to a fake-optimized config.
+        raise HPOFailedError(f"proxy AUC unavailable: {exc}") from exc
 
 
 async def optimize_hyperparameters(

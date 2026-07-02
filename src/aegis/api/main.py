@@ -28,6 +28,8 @@ _ROUTER_MODULES: tuple[tuple[str, str], ...] = (
     ("geo", "aegis.geo.api"),
     ("compliance", "aegis.compliance.api"),
     ("evolve", "aegis.evolve.api"),
+    ("capital", "aegis.execute.api.routes.capital"),
+    ("dr", "aegis.api.dr_router"),
 )
 
 _MOUNTED: list[str] = []

@@ -34,6 +34,7 @@ from aegis.schemas.signal import (
     compute_content_hash,
 )
 from aegis.scrape.base import AdapterConfig, ScrapeContext, SourceAdapter
+from aegis.scrape.http_client import get_or_create_client
 from aegis.scrape.sentiment import score_text
 
 if TYPE_CHECKING:
@@ -91,17 +92,14 @@ def _atom_entry_to_post(entry: ET.Element, sub: str) -> dict[str, Any]:
     }
 
 
+# Trimmed to a focused 5-subreddit set so the Reddit JSON API rate limit
+# (~1 req/3s anonymous) does not blow the 20s per-adapter harvest budget — 11
+# subreddits serialized previously timed out and returned nothing.
 _DEFAULT_SUBREDDITS: tuple[str, ...] = (
     "ecommerce",
     "dropshipping",
     "FulfillmentByAmazon",
-    "AmazonSeller",
-    "shopify",
     "Entrepreneur",
-    "smallbusiness",
-    "Business_Ideas",
-    "India",
-    "IndiaBusiness",
     "IndiaStartups",
 )
 
@@ -109,7 +107,7 @@ _DEFAULT_SUBREDDITS: tuple[str, ...] = (
 @dataclass(frozen=True, slots=True)
 class RedditEcommerceConfig(AdapterConfig):
     name: str = "reddit_ecommerce"
-    per_source_rps: float = 0.33
+    per_source_rps: float = 0.5
     timeout_seconds: float = 20.0
     max_retries: int = 3
     use_cloudflare_bypass: bool = False
@@ -133,17 +131,17 @@ class RedditEcommerceAdapter(SourceAdapter[dict[str, Any]]):
         return "reddit_ecommerce"
 
     async def setup(self, ctx: ScrapeContext) -> None:
-        self._client = httpx.AsyncClient(
-            timeout=httpx.Timeout(self._re_config.timeout_seconds),
+        self._client = await get_or_create_client(
+            "www.reddit.com",
+            http2=False,
+            timeout=self._re_config.timeout_seconds,
             headers=_HEADERS,
             follow_redirects=True,
-            http2=False,
         )
 
     async def teardown(self, ctx: ScrapeContext) -> None:
-        if self._client is not None:
-            await self._client.aclose()
-            self._client = None
+        # Shared pooled client (PASS5-5B / ADP-7) — release the reference, never close.
+        self._client = None
 
     async def _fetch_subreddit(self, sub: str, per_sub: int) -> list[dict[str, Any]]:
         if self._client is None:

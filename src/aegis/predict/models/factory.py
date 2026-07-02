@@ -24,7 +24,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 
-from .. import DEFAULT_FEATURE_WINDOW, DEFAULT_HORIZONS
+from .. import DEFAULT_FEATURE_WINDOW, DEFAULT_HORIZONS, FEATURE_DIM
 from ..errors import ModelNotFoundError
 from .base import Predictor
 from .heuristic import (
@@ -51,7 +51,7 @@ def _make_patchtst() -> Predictor:
     from .patchtst import PatchTSTPredictor
 
     return PatchTSTPredictor(
-        feature_dim=20,
+        feature_dim=FEATURE_DIM,
         window_size=DEFAULT_FEATURE_WINDOW,
         horizons=DEFAULT_HORIZONS,
     )
@@ -61,7 +61,7 @@ def _make_autoformer() -> Predictor:
     from .autoformer import AutoformerPredictor
 
     return AutoformerPredictor(
-        feature_dim=20,
+        feature_dim=FEATURE_DIM,
         window_size=DEFAULT_FEATURE_WINDOW,
         horizons=DEFAULT_HORIZONS,
     )

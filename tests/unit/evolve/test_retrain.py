@@ -14,6 +14,7 @@ from aegis.evolve.constants import (
     STATUS_COMPLETED,
     STATUS_FAILED,
     STATUS_NO_IMPROVEMENT,
+    STATUS_SHADOW_DEPLOYED,
 )
 from aegis.evolve.retrain import RetrainingPipeline
 from aegis.evolve.schemas import TradeOutcome
@@ -203,3 +204,167 @@ class TestRollback:
         pipeline = RetrainingPipeline(db_pool=pool)
         ok = await pipeline.rollback_champion()
         assert ok is False
+
+
+def _make_candidate(auc: float = 0.9, cid: str = "cand-1"):
+    from aegis.evolve.schemas import ModelCandidate
+
+    return ModelCandidate(candidate_id=cid, architecture="heuristic", test_auc=auc)
+
+
+class TestShadowDeployment:
+    """PASS3-3C: improved candidates shadow-deploy instead of instant promote."""
+
+    @pytest.mark.asyncio
+    async def test_improved_candidate_registers_shadow_not_promote(self) -> None:
+        pool, conn = _make_pool_no_ops()
+        cfg = _make_cfg(min_outcomes_for_retrain=10, fast_promote=False)
+        pipeline = RetrainingPipeline(db_pool=pool, settings=cfg)
+        outcomes = [_make_outcome(f"p{i}") for i in range(50)]
+
+        with (
+            patch(
+                "aegis.evolve.retrain.OutcomeRecorder.fetch_recent_outcomes",
+                new_callable=AsyncMock,
+                return_value=outcomes,
+            ),
+            patch.object(
+                pipeline,
+                "_train_candidate",
+                new_callable=AsyncMock,
+                return_value=_make_candidate(auc=0.9),
+            ),
+            patch("aegis.core.event_bus.publish_event", new_callable=AsyncMock),
+        ):
+            run = await pipeline.run_weekly_retrain()
+
+        assert run.status == STATUS_SHADOW_DEPLOYED
+        # Champion unchanged — only the shadow row was written.
+        assert run.champion_after == run.champion_before
+        shadow_inserts = [
+            c for c in conn.execute.await_args_list if "is_shadow" in str(c.args[0])
+        ]
+        assert shadow_inserts, "expected an INSERT touching is_shadow"
+
+    @pytest.mark.asyncio
+    async def test_fast_promote_skips_shadow(self) -> None:
+        pool, _conn = _make_pool_no_ops()
+        cfg = _make_cfg(min_outcomes_for_retrain=10, fast_promote=True)
+        pipeline = RetrainingPipeline(db_pool=pool, settings=cfg)
+        outcomes = [_make_outcome(f"p{i}") for i in range(50)]
+
+        with (
+            patch(
+                "aegis.evolve.retrain.OutcomeRecorder.fetch_recent_outcomes",
+                new_callable=AsyncMock,
+                return_value=outcomes,
+            ),
+            patch.object(
+                pipeline,
+                "_train_candidate",
+                new_callable=AsyncMock,
+                return_value=_make_candidate(auc=0.9, cid="cand-fast"),
+            ),
+            patch("aegis.core.event_bus.publish_event", new_callable=AsyncMock),
+        ):
+            run = await pipeline.run_weekly_retrain()
+
+        assert run.status == STATUS_COMPLETED
+        assert run.champion_after == "cand-fast"
+
+    @pytest.mark.asyncio
+    async def test_register_shadow_no_pool_returns_false(self) -> None:
+        pipeline = RetrainingPipeline(db_pool=None)
+        ok = await pipeline._register_shadow(_make_candidate())
+        assert ok is False
+
+    @pytest.mark.asyncio
+    async def test_register_shadow_publishes_event(self) -> None:
+        pool, _conn = _make_pool_no_ops()
+        pipeline = RetrainingPipeline(db_pool=pool)
+        with patch(
+            "aegis.core.event_bus.publish_event", new_callable=AsyncMock
+        ) as publish:
+            ok = await pipeline._register_shadow(_make_candidate(auc=0.8))
+        assert ok is True
+        payload = publish.await_args[0][1]
+        assert payload["event"] == "shadow_deployment_started"
+        assert payload["candidate_auc"] == pytest.approx(0.8)
+        assert "shadow_until" in payload
+
+    @pytest.mark.asyncio
+    async def test_register_shadow_db_failure_returns_false(self) -> None:
+        pool, conn = _make_pool_no_ops()
+        conn.execute = AsyncMock(side_effect=RuntimeError("insert failed"))
+        pipeline = RetrainingPipeline(db_pool=pool)
+        ok = await pipeline._register_shadow(_make_candidate())
+        assert ok is False
+
+
+class TestEvaluateShadows:
+    def _pool_with_shadows(self, shadows, champion_auc: float = 0.5):
+        conn = AsyncMock()
+        conn.fetch = AsyncMock(return_value=shadows)
+        conn.fetchrow = AsyncMock(return_value={"test_auc": champion_auc})
+        conn.execute = AsyncMock()
+        ctx = AsyncMock()
+        ctx.__aenter__ = AsyncMock(return_value=conn)
+        ctx.__aexit__ = AsyncMock(return_value=None)
+        pool = MagicMock()
+        pool.acquire = MagicMock(return_value=ctx)
+        return pool, conn
+
+    @pytest.mark.asyncio
+    async def test_promotes_winner(self) -> None:
+        pool, conn = self._pool_with_shadows(
+            [{"candidate_id": "cand-1", "test_auc": 0.9}], champion_auc=0.5
+        )
+        pipeline = RetrainingPipeline(db_pool=pool)
+        with patch("aegis.core.event_bus.publish_event", new_callable=AsyncMock):
+            results = await pipeline.evaluate_shadows()
+        assert len(results) == 1
+        assert results[0]["promoted"] is True
+        promote_updates = [
+            c for c in conn.execute.await_args_list if "is_champion = TRUE" in str(c.args[0])
+        ]
+        assert promote_updates, "expected the shadow to be promoted to champion"
+
+    @pytest.mark.asyncio
+    async def test_retires_loser(self) -> None:
+        pool, conn = self._pool_with_shadows(
+            [{"candidate_id": "cand-2", "test_auc": 0.51}], champion_auc=0.5
+        )
+        pipeline = RetrainingPipeline(db_pool=pool)
+        with patch(
+            "aegis.core.event_bus.publish_event", new_callable=AsyncMock
+        ) as publish:
+            results = await pipeline.evaluate_shadows()
+        assert results[0]["promoted"] is False
+        retire_updates = [
+            c for c in conn.execute.await_args_list if "is_shadow = FALSE" in str(c.args[0])
+        ]
+        assert retire_updates, "expected the shadow to be retired"
+        assert publish.await_args[0][1]["event"] == "shadow_evaluated"
+
+    @pytest.mark.asyncio
+    async def test_no_pool_returns_empty(self) -> None:
+        pipeline = RetrainingPipeline(db_pool=None)
+        assert await pipeline.evaluate_shadows() == []
+
+    @pytest.mark.asyncio
+    async def test_fetch_failure_returns_empty(self) -> None:
+        pool, conn = self._pool_with_shadows([])
+        conn.fetch = AsyncMock(side_effect=RuntimeError("db dead"))
+        pipeline = RetrainingPipeline(db_pool=pool)
+        assert await pipeline.evaluate_shadows() == []
+
+    @pytest.mark.asyncio
+    async def test_no_expired_shadows_no_events(self) -> None:
+        pool, _conn = self._pool_with_shadows([])
+        pipeline = RetrainingPipeline(db_pool=pool)
+        with patch(
+            "aegis.core.event_bus.publish_event", new_callable=AsyncMock
+        ) as publish:
+            results = await pipeline.evaluate_shadows()
+        assert results == []
+        publish.assert_not_awaited()

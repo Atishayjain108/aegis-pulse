@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Final
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from aegis.execute.constants import (
@@ -109,6 +109,18 @@ class ExecuteSettings(BaseSettings):
     shopify_shop_domain: str = Field(default="", description="Shopify store domain.")
     shopify_access_token: str = Field(default="", description="Shopify Admin API token.")
 
+    # Fulfillment recipient (REALITY-FIRST): the REAL shipping destination orders
+    # ship to. Empty = no recipient configured ⇒ POD/Dropship order creation is
+    # REFUSED (no "TBD"/placeholder address is ever used). All fields must be set
+    # together before a live order can be placed.
+    fulfillment_recipient_name: str = Field(default="", description="Recipient full name.")
+    fulfillment_recipient_address1: str = Field(default="", description="Street address line 1.")
+    fulfillment_recipient_city: str = Field(default="", description="Recipient city.")
+    fulfillment_recipient_province: str = Field(default="", description="State/province.")
+    fulfillment_recipient_zip: str = Field(default="", description="Postal/ZIP code.")
+    fulfillment_recipient_country: str = Field(default="", description="ISO country code.")
+    fulfillment_recipient_phone: str = Field(default="", description="Recipient phone.")
+
     # ----- Optional API auth -------------------------------------------------
     api_bearer_token: str = Field(default="")  # empty = no auth
 
@@ -121,6 +133,31 @@ class ExecuteSettings(BaseSettings):
                 f"AEGIS_EXECUTE_MODE must be one of {sorted(ALLOWED_MODES)}, got {v!r}"
             )
         return v
+
+    @model_validator(mode="after")
+    def _validate_live_recipient(self) -> ExecuteSettings:
+        """In non-advisory mode a COMPLETE real recipient must be configured.
+
+        Prevents switching to staging/live while shipping fields are blank —
+        which would otherwise silently produce zero-order "executed" plans. In
+        advisory mode the fields stay optional (no real orders are placed).
+        """
+        if self.mode != MODE_ADVISORY:
+            required = {
+                "fulfillment_recipient_name": self.fulfillment_recipient_name,
+                "fulfillment_recipient_address1": self.fulfillment_recipient_address1,
+                "fulfillment_recipient_city": self.fulfillment_recipient_city,
+                "fulfillment_recipient_zip": self.fulfillment_recipient_zip,
+                "fulfillment_recipient_country": self.fulfillment_recipient_country,
+                "fulfillment_recipient_phone": self.fulfillment_recipient_phone,
+            }
+            missing = [k for k, v in required.items() if not v]
+            if missing:
+                raise ValueError(
+                    f"mode={self.mode!r} requires a complete fulfillment recipient; "
+                    f"missing: {sorted(missing)}"
+                )
+        return self
 
 
 _singleton: ExecuteSettings | None = None

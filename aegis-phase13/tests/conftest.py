@@ -21,7 +21,7 @@ Design rules:
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Generator
+from collections.abc import Generator  # noqa: TCH003
 from datetime import UTC, datetime, timedelta
 import json
 from typing import Any
@@ -29,7 +29,7 @@ from unittest.mock import MagicMock
 import uuid
 
 from faker import Faker
-from pydantic import BaseModel
+from pydantic import BaseModel  # noqa: TCH002
 import pytest
 import structlog
 
@@ -271,7 +271,16 @@ def graph_result(trend_candidate: dict[str, Any]) -> dict[str, Any]:
 # FeatureWindow factory (Phase 3)
 # ---------------------------------------------------------------------------
 
-FEATURE_DIM = 20  # matches aegis.predict.FEATURE_DIM
+def _get_feature_dim() -> int:
+    """Return the canonical FEATURE_DIM from aegis.predict, or the 3.1.0 default."""
+    try:
+        from aegis.predict import FEATURE_DIM as _DIM  # type: ignore[import-untyped]
+        return _DIM
+    except ImportError:
+        return 24
+
+
+FEATURE_DIM = _get_feature_dim()  # PASS2-2E: tracks aegis.predict (24 since 3.1.0)
 
 
 def _get_feature_names() -> tuple[str, ...]:
@@ -722,7 +731,8 @@ def _make_alert_envelope(
     """Build a nested AlertEnvelope-compatible dict matching actual Phase 4 schemas.
 
     AlertEnvelope wraps Alert: { envelope_version, alert: Alert, signature_hex }.
-    Alert requires: alert_id, tenant_id, trend_id, verdict, priority, score, confidence, source, title.
+    Alert requires: alert_id, tenant_id, trend_id, verdict, priority,
+    score, confidence, source, title.
     """
     alert_data = {
         "alert_id": str(uuid.uuid4()),

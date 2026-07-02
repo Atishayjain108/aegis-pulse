@@ -39,6 +39,7 @@ from aegis.schemas.signal import (
     compute_content_hash,
 )
 from aegis.scrape.base import AdapterConfig, ScrapeContext, SourceAdapter
+from aegis.scrape.http_client import get_or_create_client
 from aegis.scrape.schema_guard import validate_batch
 from aegis.scrape.sentiment import score_text
 from aegis.scrape.sources._rss_base import _parse_date, fetch_feed_entries
@@ -167,17 +168,17 @@ class MoneycontrolAdapter(SourceAdapter[dict[str, Any]]):
         return "moneycontrol"
 
     async def setup(self, ctx: ScrapeContext) -> None:
-        self._client = httpx.AsyncClient(
-            timeout=httpx.Timeout(self._mc_config.timeout_seconds),
+        self._client = await get_or_create_client(
+            "www.moneycontrol.com",
+            http2=False,
+            timeout=self._mc_config.timeout_seconds,
             headers=_HEADERS,
             follow_redirects=True,
-            http2=False,
         )
 
     async def teardown(self, ctx: ScrapeContext) -> None:
-        if self._client is not None:
-            await self._client.aclose()
-            self._client = None
+        # Shared pooled client (PASS5-5B / ADP-7) — release the reference, never close.
+        self._client = None
 
     async def _fetch_movers_html(self) -> list[dict[str, Any]]:
         if self._client is None:

@@ -132,8 +132,19 @@ FEATURE_NAMES: tuple[str, ...] = (
     "hour_of_day_cos",
     "day_of_week_sin",
     "day_of_week_cos",
+    # ---- PASS2-2E additions (schema 3.1.0). Appended at the tail so the
+    # first 20 indices stay binary-compatible with 3.0.0 windows.
+    "cross_platform_coherence",  # title similarity across platforms in bucket
+    "temporal_autocorr_lag1",  # lag-1 autocorrelation of arrival counts
+    "author_diversity_ratio",  # distinct authors / signals (0 = one voice)
+    "geo_spread_entropy",  # normalized entropy across signal regions
 )
 FEATURE_DIM: int = len(FEATURE_NAMES)
 
+# Schema 3.0.0 feature order — accepted on inbound windows and padded to the
+# current 24-dim layout by features.builder.pad_legacy_window().
+LEGACY_FEATURE_NAMES_V3: tuple[str, ...] = FEATURE_NAMES[:20]
+LEGACY_FEATURE_DIM_V3: int = len(LEGACY_FEATURE_NAMES_V3)
+
 # Bump on any change to FEATURE_NAMES order or semantics.
-FEATURE_SCHEMA_VERSION: str = "3.0.0"
+FEATURE_SCHEMA_VERSION: str = "3.1.0"

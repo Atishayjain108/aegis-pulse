@@ -130,11 +130,11 @@ class TestNaNCheckIdiom:
     def test_nan_check_v_neq_v(self) -> None:
         nan = float("nan")
         # The idiom used in silver/builder.py
-        assert nan != nan, "float('nan') != float('nan') must be True"
+        assert nan != nan, "float('nan') != float('nan') must be True"  # noqa: PLR0124
 
     def test_non_nan_values_not_equal_to_themselves_never(self) -> None:
         for v in [0.0, 1.0, -1.0, 99.9, float("inf")]:
-            assert v == v, f"{v} should equal itself"
+            assert v == v, f"{v} should equal itself"  # noqa: PLR0124
 
     def test_math_isnan_not_applicable_to_non_float(self) -> None:
         """math.isnan raises on non-float — the v!=v idiom is safer."""
@@ -213,7 +213,7 @@ class TestRetentionEnforcer:
         plan = enforcer.plan("bronze", bronze_retention_days=7)
         # plan() must return an object — basic existence check
         assert plan is not None
-        assert hasattr(plan, "layer") or hasattr(plan, "items") or isinstance(plan, (list, dict, object))
+        assert hasattr(plan, "layer") or hasattr(plan, "items") or isinstance(plan, (list, dict, object))  # noqa: E501,UP038
 
 
 # ---------------------------------------------------------------------------

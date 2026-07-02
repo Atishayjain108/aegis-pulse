@@ -28,6 +28,7 @@ lookups under ``docs/errors/``.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
 import shutil
@@ -404,6 +405,9 @@ _ADAPTER_REGISTRY: dict[str, tuple[str, str]] = {
     "reddit-finance": ("aegis.scrape.sources.reddit_finance", "RedditFinanceAdapter"),
     "reddit-ecommerce": ("aegis.scrape.sources.reddit_ecommerce", "RedditEcommerceAdapter"),
     "devto": ("aegis.scrape.sources.devto", "DevToAdapter"),
+    "gdelt": ("aegis.scrape.sources.gdelt", "GdeltAdapter"),
+    "wikimedia": ("aegis.scrape.sources.wikimedia", "WikimediaAdapter"),
+    "google-trends-global": ("aegis.scrape.sources.google_trends_global", "GoogleTrendsGlobalAdapter"),
     "producthunt": ("aegis.scrape.sources.producthunt", "ProductHuntAdapter"),
     "google-trends-india": ("aegis.scrape.sources.google_trends_india", "GoogleTrendsIndiaAdapter"),
     "youtube-rss": ("aegis.scrape.sources.youtube_rss", "YouTubeRSSAdapter"),
@@ -419,12 +423,12 @@ _ADAPTER_REGISTRY: dict[str, tuple[str, str]] = {
     "moneycontrol": ("aegis.scrape.sources.moneycontrol", "MoneycontrolAdapter"),
     "yahoo-finance": ("aegis.scrape.sources.yahoo_finance_rss", "YahooFinanceRSSAdapter"),
     "investing-com": ("aegis.scrape.sources.investing_com_rss", "InvestingComRSSAdapter"),
+    "ebay": ("aegis.scrape.sources.ebay_browse", "EbayBrowseAdapter"),
+    "bestbuy": ("aegis.scrape.sources.bestbuy", "BestBuyAdapter"),
+    "etsy": ("aegis.scrape.sources.etsy", "EtsyAdapter"),
     "flipkart": ("aegis.scrape.sources.flipkart", "FlipkartAdapter"),
-    "meesho": ("aegis.scrape.sources.meesho", "MeeshoAdapter"),
     "myntra": ("aegis.scrape.sources.myntra", "MyntraAdapter"),
-    "indiamart": ("aegis.scrape.sources.indiamart", "IndiaMartAdapter"),
-    "ajio": ("aegis.scrape.sources.ajio", "AjioAdapter"),
-    "nykaa": ("aegis.scrape.sources.nykaa", "NykaaAdapter"),
+    # nykaa/ajio/meesho/indiamart removed 2026-06-24 — WAF-gated, no free path.
     "snapdeal": ("aegis.scrape.sources.snapdeal", "SnapdealAdapter"),
     "amazon-in": ("aegis.scrape.sources.amazon_in", "AmazonINAdapter"),
     "nse-bse": ("aegis.scrape.sources.nse_bse", "NSEBSEAdapter"),
@@ -1130,6 +1134,245 @@ async def _analyze_async(
             f"{dec.confidence:>6.3f}  {(dec.reasoning or '')[:50]}"
         )
     click.echo("=" * 62)
+
+
+# ---------------------------------------------------------------------
+# PASS6-6B: Deep research — multi-pass ResearchEngine report
+# ---------------------------------------------------------------------
+
+
+@main.command()
+@click.option("--topic", "topic_", required=True, help="Topic or query to research.")
+@click.option(
+    "--depth",
+    type=click.Choice(["surface", "standard", "deep"]),
+    default="standard",
+    show_default=True,
+    help="surface = harvest only; standard = + temporal/cross-verify; deep = + risks.",
+)
+@click.option(
+    "--max-signals",
+    type=int,
+    default=200,
+    show_default=True,
+    help="Total signal budget across all routed adapters.",
+)
+@click.option(
+    "--json-out",
+    is_flag=True,
+    default=False,
+    help="Print the full research report as raw JSON.",
+)
+def research(topic_: str, depth: str, max_signals: int, json_out: bool) -> None:
+    """Run the multi-pass ResearchEngine on a topic and print the report.
+
+    5-pass methodology: broad harvest → cross-verification → temporal
+    analysis → competitive landscape → risk synthesis. Every conclusion is
+    backed by multiple independent sources where possible.
+
+    Examples:\n
+        aegis research --topic "wireless earbuds" --depth deep\n
+        aegis research --topic "AI chips" --json-out
+    """
+    asyncio.run(_research_async(topic=topic_, depth=depth, max_signals=max_signals, json_out=json_out))
+
+
+async def _research_async(
+    *, topic: str, depth: str, max_signals: int, json_out: bool
+) -> None:
+    import json as _json
+
+    from aegis.core.logging import configure_logging
+    from aegis.intelligence.research_engine import ResearchEngine
+
+    configure_logging()
+
+    redis_client = None
+    try:
+        import redis.asyncio as aioredis
+
+        redis_client = aioredis.from_url(settings().redis_url_str, decode_responses=True)
+    except Exception:
+        redis_client = None
+
+    try:
+        engine = ResearchEngine(redis=redis_client)
+        report = await engine.research(topic, depth=depth, max_signals=max_signals)
+    finally:
+        if redis_client is not None:
+            with contextlib.suppress(Exception):
+                await redis_client.aclose()
+
+    if json_out:
+        click.echo(_json.dumps(report.to_dict(), indent=2, default=str))
+        return
+
+    click.echo("=" * 62)
+    click.echo(f"  DEEP RESEARCH — {report.query}  [{report.research_depth}]")
+    click.echo("=" * 62)
+    click.echo(f"Topic type:  {report.topic_type}")
+    click.echo(f"Verdict:     {report.trend_verdict}")
+    click.echo(f"Confidence:  {report.confidence_score:.3f}")
+    click.echo(f"Signals:     {report.signal_count} from {len(report.sources_consulted)} sources")
+    click.echo("")
+    click.echo(report.executive_summary)
+    if report.cross_verified_findings:
+        click.echo("\nCross-verified themes (2+ sources):")
+        for theme in report.cross_verified_findings[:10]:
+            click.echo(f"  • {theme}")
+    if report.key_findings:
+        click.echo("\nKey findings:")
+        for f in report.key_findings[:8]:
+            mark = "✓" if f.verified_by else "?"
+            click.echo(f"  {mark} [{f.source}] {f.claim[:90]}")
+    if report.risks:
+        click.echo("\nRisks:")
+        for r in report.risks:
+            click.echo(f"  ⚠ {r}")
+    if report.opportunities:
+        click.echo("\nOpportunities:")
+        for o in report.opportunities:
+            click.echo(f"  ↑ {o}")
+    click.echo("\nRecommended actions:")
+    for a in report.recommended_actions:
+        click.echo(f"  → {a}")
+    click.echo("=" * 62)
+
+
+# ---------------------------------------------------------------------
+# Market intelligence — product-level competitive analysis
+# ---------------------------------------------------------------------
+
+
+@main.command()
+@click.argument("query")
+@click.option(
+    "--depth",
+    type=click.Choice(["surface", "standard", "deep"]),
+    default="standard",
+    show_default=True,
+    help="surface = top marketplaces; standard/deep = wider adapter fan-out.",
+)
+@click.option(
+    "--max-products",
+    type=int,
+    default=240,
+    show_default=True,
+    help="Total product budget across all routed marketplaces.",
+)
+@click.option("--llm/--no-llm", default=True, show_default=True,
+              help="Add an LLM-written operator verdict (uses both models when council is on).")
+@click.option("--gate/--no-gate", default=True, show_default=True,
+              help="Run the best pick through compliance + geo + capital advisory gates.")
+@click.option("--json-out", is_flag=True, default=False, help="Print the full report as JSON.")
+def market(query: str, depth: str, max_products: int, llm: bool, gate: bool, json_out: bool) -> None:
+    """Analyze a product market end-to-end like a market operator.
+
+    Harvests live listings across every reachable marketplace, then compares
+    price bands, competitors, top products, value picks and cross-platform
+    arbitrage gaps for the QUERY you give it — no default topic.
+
+    Examples:\n
+        aegis market "men's trimmer"\n
+        aegis market "wireless earbuds" --depth deep --json-out
+    """
+    asyncio.run(_market_async(
+        query=query, depth=depth, max_products=max_products,
+        llm=llm, gate=gate, json_out=json_out,
+    ))
+
+
+async def _market_async(
+    *, query: str, depth: str, max_products: int, llm: bool, gate: bool, json_out: bool
+) -> None:
+    import json as _json
+
+    from aegis.core.logging import configure_logging
+    from aegis.intelligence.product_intel import ProductIntelligenceEngine
+
+    configure_logging()
+
+    pool = redis_client = None
+    try:
+        from aegis.db.pool import PgPool
+
+        pool = PgPool(dsn=settings().pg_dsn_str)
+        await pool.connect()
+    except Exception:
+        pool = None
+    try:
+        import redis.asyncio as aioredis
+
+        redis_client = aioredis.from_url(settings().redis_url_str, decode_responses=True)
+    except Exception:
+        redis_client = None
+
+    try:
+        engine = ProductIntelligenceEngine(pool=pool, redis=redis_client)
+        report = await engine.analyze(
+            query, depth=depth, max_products=max_products, use_llm=llm, gate=gate,
+        )
+    finally:
+        if redis_client is not None:
+            with contextlib.suppress(Exception):
+                await redis_client.aclose()
+        if pool is not None:
+            with contextlib.suppress(Exception):
+                await pool.aclose()
+
+    if json_out:
+        click.echo(_json.dumps(report.to_dict(), indent=2, default=str))
+        return
+
+    d = report
+    click.echo("=" * 64)
+    click.echo(f"  MARKET ANALYSIS — {d.query}  [{depth}]")
+    click.echo("=" * 64)
+    click.echo(d.executive_summary)
+    click.echo("")
+    click.echo(f"Products:  {d.product_count} across {len(d.platforms)} marketplaces "
+               f"({', '.join(d.platforms) or '—'})")
+    if d.price_summary.get("available"):
+        ps = d.price_summary
+        click.echo(f"Price:     min {ps['min']} · median {ps['median']} · max {ps['max']} "
+                   f"({ps.get('spread_pct')}% spread)")
+    m = d.momentum
+    click.echo(f"Momentum:  {m['label'].upper()} ({m['score']}) · {m['total_reviews']} reviews")
+    if d.competitors:
+        click.echo("\nTop competitors (by listings):")
+        for c in d.competitors[:6]:
+            click.echo(f"  • {c['brand']:<18} {c['listings']:>3} listings · "
+                       f"{c['share_pct']}% · avg {c['avg_price']} · ★{c['avg_rating']}")
+    if d.best_value:
+        click.echo("\nBest value:")
+        for p in d.best_value[:5]:
+            click.echo(f"  ◆ [{p['platform']}] {p['title'][:60]} — {p['price']} ★{p['rating']}")
+    if d.arbitrage:
+        click.echo("\nCross-platform arbitrage gaps:")
+        for a in d.arbitrage[:5]:
+            click.echo(f"  ↔ {a['product'][:50]} — {a['cheapest']['platform']} "
+                       f"{a['cheapest']['price']} → {a['dearest']['platform']} "
+                       f"{a['dearest']['price']} (+{a['gap_pct']}%)")
+    if d.gated_pick:
+        g = d.gated_pick
+        click.echo("\nGated best pick:")
+        click.echo(f"  {g.get('product','—')[:60]} [{g.get('platform','?')}]")
+        if g.get("compliance"):
+            c = g["compliance"]
+            click.echo(f"    compliance: {c.get('recommendation')} (risk {c.get('risk_score','—')})")
+        if g.get("geo"):
+            click.echo(f"    geo: {g['geo'].get('route')} · margin {g['geo'].get('gross_margin_pct')}%")
+        if g.get("capital"):
+            cap = g["capital"]
+            click.echo(f"    capital ({cap.get('mode')}): kelly {cap.get('kelly_fraction')} — {cap.get('rationale')}")
+    if d.llm_narrative:
+        click.echo("\nLLM operator verdict:")
+        for line in d.llm_narrative.splitlines():
+            click.echo(f"  {line}")
+    click.echo("\nRecommended actions:")
+    for a in d.recommended_actions:
+        click.echo(f"  → {a}")
+    click.echo("=" * 64)
 
 
 # ---------------------------------------------------------------------
@@ -2263,6 +2506,48 @@ try:
 
     for _cmd in _evolve_cli.commands.values():
         evolve_group.add_command(_cmd)
+except (ImportError, ModuleNotFoundError):
+    pass
+
+
+@main.group("trust")
+def trust_group() -> None:
+    """Phase B — Trust Reconstruction (calibration · trust scores)."""
+
+
+try:
+    from aegis.trust.cli import trust_group as _trust_cli
+
+    for _cmd in _trust_cli.commands.values():
+        trust_group.add_command(_cmd)
+except (ImportError, ModuleNotFoundError):
+    pass
+
+
+@main.group("memory")
+def memory_group() -> None:
+    """Phase C — Knowledge Expansion (opportunity · failure memory)."""
+
+
+try:
+    from aegis.memory.cli import memory_group as _memory_cli
+
+    for _cmd in _memory_cli.commands.values():
+        memory_group.add_command(_cmd)
+except (ImportError, ModuleNotFoundError):
+    pass
+
+
+@main.group("exec")
+def exec_group() -> None:
+    """Phase D — Execution Intelligence (execution memory · supplier trust)."""
+
+
+try:
+    from aegis.execution_intel.cli import exec_group as _exec_cli
+
+    for _cmd in _exec_cli.commands.values():
+        exec_group.add_command(_cmd)
 except (ImportError, ModuleNotFoundError):
     pass
 

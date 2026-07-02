@@ -21,8 +21,11 @@ from typing import TYPE_CHECKING
 
 import structlog
 
-from aegis.evolve.constants import ERR_OUTCOME_RECORD_FAILED
-from aegis.evolve.schemas import TradeOutcome
+from aegis.evolve.constants import (
+    ERR_OUTCOME_RECORD_FAILED,
+    ERR_SIGNAL_OUTCOME_RECORD_FAILED,
+)
+from aegis.evolve.schemas import SignalOutcome, TradeOutcome
 
 if TYPE_CHECKING:
     from asyncpg import Pool
@@ -199,3 +202,94 @@ class OutcomeRecorder:
         except Exception as exc:
             _log.error("evolve.drift_fetch_failed", error=str(exc))
             return []
+
+    # ------------------------------------------------------------------
+    # Signal outcomes — capital-free self-supervised ground truth (Phase A)
+    # ------------------------------------------------------------------
+
+    async def record_signal_outcome(self, outcome: SignalOutcome) -> bool:
+        """
+        Persist a self-supervised signal outcome (pending claim or settled row).
+
+        Idempotent on (prediction_id, trend_key, metric). Returns True on
+        success, False on non-fatal failure.
+        """
+        try:
+            async with self._pool.acquire() as conn:
+                await conn.execute(
+                    "SELECT set_config('app.current_tenant', $1, false)",
+                    self._tenant_id,
+                )
+                await conn.execute(
+                    """
+                    INSERT INTO signal_outcomes (
+                        outcome_id, prediction_id, trend_key, metric,
+                        claimed_direction, prediction_score, prediction_confidence,
+                        baseline_value, horizon_hours, claim_ts, settle_after,
+                        observed_value, observed_direction, settled_at,
+                        settlement_timestamp, resolution_status, metadata
+                    ) VALUES (
+                        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+                        $12, $13, $14, $15, $16, $17
+                    )
+                    ON CONFLICT DO NOTHING
+                    """,
+                    outcome.outcome_id,
+                    outcome.prediction_id,
+                    outcome.trend_key,
+                    outcome.metric,
+                    outcome.claimed_direction,
+                    outcome.prediction_score,
+                    outcome.prediction_confidence,
+                    float(outcome.baseline_value),
+                    outcome.horizon_hours,
+                    outcome.claim_ts,
+                    outcome.settle_after,
+                    outcome.observed_value,
+                    outcome.observed_direction,
+                    outcome.settled_at,
+                    outcome.settlement_timestamp,
+                    outcome.resolution_status,
+                    json.dumps(outcome.metadata, default=str),
+                )
+            return True
+        except Exception as exc:
+            _log.error(
+                "evolve.signal_outcome_record_failed",
+                error=str(exc),
+                error_code=ERR_SIGNAL_OUTCOME_RECORD_FAILED,
+                outcome_id=outcome.outcome_id,
+            )
+            return False
+
+    async def count_signal_outcomes(
+        self,
+        days_back: int = 30,
+        *,
+        settled_only: bool = True,
+    ) -> int:
+        """Count signal outcomes in the last N days (settled by default)."""
+        clause = (
+            "AND resolution_status IN ('correct', 'incorrect')"
+            if settled_only
+            else ""
+        )
+        try:
+            async with self._pool.acquire() as conn:
+                await conn.execute(
+                    "SELECT set_config('app.current_tenant', $1, false)",
+                    self._tenant_id,
+                )
+                row = await conn.fetchrow(
+                    f"""
+                    SELECT COUNT(*) AS n
+                    FROM signal_outcomes
+                    WHERE settlement_timestamp > NOW() - $1::INTERVAL
+                    {clause}
+                    """,  # noqa: S608 — clause is a fixed literal, not user input
+                    timedelta(days=days_back),
+                )
+            return int(row["n"]) if row else 0
+        except Exception as exc:
+            _log.error("evolve.signal_count_failed", error=str(exc))
+            return 0

@@ -37,7 +37,8 @@ from aegis.schemas.signal import (
     compute_content_hash,
 )
 from aegis.scrape.base import AdapterConfig, ScrapeContext, SourceAdapter
-from aegis.scrape.ecommerce_utils import random_ua
+from aegis.scrape.ecommerce_utils import extract_card_image
+from aegis.scrape.http_client import get_or_create_client
 from aegis.scrape.playwright_fetcher import fetch_page_html as _playwright_fetch
 
 if TYPE_CHECKING:
@@ -49,6 +50,8 @@ SCRAPER_VERSION = "meesho-0.1.0"
 
 _JSON_API_URL = "https://api.meesho.com/v1/catalogue/collections/trending"
 _HTML_URL = "https://meesho.com/trending"
+# Keyword search — returns products RELEVANT to the query (the intelligence path).
+_SEARCH_URL = "https://www.meesho.com/search?q={q}"
 
 _HEADERS = {
     "Accept": "application/json, text/plain, */*",
@@ -165,6 +168,7 @@ def _parse_meesho_html(html: str) -> list[dict[str, Any]]:
                     "scraped_at": scraped_at,
                     "raw_json": {
                         "currency": "INR",
+                        "image_url": extract_card_image(card),
                         "price_inr": price_inr,
                         "order_count": 0,
                         "score": 0.0,
@@ -206,17 +210,20 @@ class MeeshoAdapter(SourceAdapter[dict[str, Any]]):
         return "meesho"
 
     async def setup(self, ctx: ScrapeContext) -> None:
-        self._client = httpx.AsyncClient(
-            timeout=httpx.Timeout(self._cfg.timeout_seconds),
-            headers={**_HEADERS, "User-Agent": random_ua()},
-            follow_redirects=True,
+        # Shared client: per-host throttle + header/UA rotation + optional
+        # proxy via http_client event hooks (see http_client.py). The JSON API
+        # lives on api.meesho.com but httpx clients are not host-locked, so a
+        # single shared client serves both the API and the HTML host.
+        self._client = await get_or_create_client(
+            "www.meesho.com",
+            timeout=self._cfg.timeout_seconds,
+            headers=dict(_HEADERS),
             http2=False,
+            follow_redirects=True,
         )
 
     async def teardown(self, ctx: ScrapeContext) -> None:
-        if self._client is not None:
-            await self._client.aclose()
-            self._client = None
+        self._client = None  # shared client — release reference, never close
 
     async def _fetch_json(self) -> list[dict[str, Any]]:
         if self._client is None:
@@ -261,17 +268,62 @@ class MeeshoAdapter(SourceAdapter[dict[str, Any]]):
 
         return items
 
+    async def _fetch_search(self, query: str) -> list[dict[str, Any]]:
+        """Keyword search — returns products relevant to the query.
+
+        Meesho's search page is React-rendered, so plain httpx usually returns a
+        shell. Try httpx first (cheap), then fall back to Playwright which runs
+        the JS and yields real product cards.
+        """
+        if self._client is None:
+            return []
+        from urllib.parse import quote_plus
+
+        url = _SEARCH_URL.format(q=quote_plus(query))
+        self._record_request_metric(method="search")
+        items: list[dict[str, Any]] = []
+        # Primary: curl_cffi browser-TLS impersonation (beats the WAF 403 that
+        # plain httpx triggers). Falls back to Playwright (JS render) then httpx.
+        from aegis.scrape.ecommerce_utils import extract_products_from_structured
+        from aegis.scrape.http_client import impersonated_fetch
+
+        code, html = await impersonated_fetch(url)
+        if code == 200 and html:
+            # Try DOM cards first, then site-agnostic structured data (JSON-LD /
+            # __NEXT_DATA__) which survives SPA shells that have no DOM cards.
+            items = _parse_meesho_html(html) or extract_products_from_structured(html)
+        if not items:
+            html2 = await _playwright_fetch(url)
+            if html2:
+                items = _parse_meesho_html(html2)
+        if not items:
+            try:
+                await self._rate_limit()
+                resp = await self._client.get(url)
+                resp.raise_for_status()
+                items = _parse_meesho_html(resp.text)
+            except Exception as e:
+                _log.warning("meesho.search.httpx_failed", error=str(e))
+        _log.info("meesho.search", query=query, results=len(items))
+        return items
+
     async def fetch_raw(  # type: ignore[override]
         self,
         ctx: ScrapeContext,
         *,
         limit: int = 50,
+        query: str | None = None,
         **_: Any,
     ) -> AsyncIterator[dict[str, Any]]:
-        items = await self._fetch_json()
+        # Query-driven search is the real intelligence path; trending JSON/HTML
+        # is the no-query fallback so the adapter still surfaces hot products.
+        if query and query.strip():
+            items = await self._fetch_search(query.strip())
+        else:
+            items = await self._fetch_json()
 
         if not items:
-            _log.info("meesho.json_empty_falling_back_to_html")
+            _log.info("meesho.empty_falling_back_to_html")
             items = await self._fetch_html()
 
         for item in items[:limit]:

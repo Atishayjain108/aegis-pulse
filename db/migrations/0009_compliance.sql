@@ -20,7 +20,7 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 -- compliance_assessments
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS compliance_assessments (
-    assessment_id       UUID        PRIMARY KEY DEFAULT uuid_generate_v4(),
+    assessment_id       UUID        NOT NULL DEFAULT uuid_generate_v4(),
     tenant_id           UUID        NOT NULL,
     product_sku         TEXT        NOT NULL,
     product_title       TEXT        NOT NULL,
@@ -58,7 +58,10 @@ CREATE TABLE IF NOT EXISTS compliance_assessments (
     assessed_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
     -- Immutability marker (chain-hash for audit integrity)
-    integrity_hash      TEXT
+    integrity_hash      TEXT,
+
+    -- Partition column must be part of any PK/UNIQUE index on a hypertable.
+    PRIMARY KEY (assessment_id, assessed_at)
 );
 
 -- RLS
@@ -87,7 +90,7 @@ SELECT create_hypertable(
 CREATE TABLE IF NOT EXISTS compliance_blocks (
     block_id        UUID        PRIMARY KEY DEFAULT uuid_generate_v4(),
     tenant_id       UUID        NOT NULL,
-    assessment_id   UUID        REFERENCES compliance_assessments(assessment_id),
+    assessment_id   UUID,  -- soft ref to compliance_assessments (hypertable: no FK)
     product_sku     TEXT        NOT NULL,
     plan_id         TEXT,           -- Phase 6 ExecutionPlan.plan_id
     intent_id       TEXT,           -- Phase 6 ExecutionIntent.intent_id
@@ -153,7 +156,7 @@ CREATE TRIGGER trg_prune_trademark_cache
 CREATE TABLE IF NOT EXISTS sanction_hits (
     hit_id          UUID        PRIMARY KEY DEFAULT uuid_generate_v4(),
     tenant_id       UUID        NOT NULL,
-    assessment_id   UUID        REFERENCES compliance_assessments(assessment_id),
+    assessment_id   UUID,  -- soft ref to compliance_assessments (hypertable: no FK)
     match_type      TEXT        NOT NULL,   -- 'country_sanction' | 'fatf_high_risk' | 'entity_match'
     matched_value   TEXT        NOT NULL,
     program         TEXT,

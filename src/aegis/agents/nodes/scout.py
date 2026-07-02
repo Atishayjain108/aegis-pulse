@@ -88,7 +88,16 @@ class ScoutAgent(AgentNode):
             - coord_penalty
             - astroturf_penalty
         )
-        score = max(0.0, min(1.0, score))
+
+        # Buyer-demand signal (Google Trends). The features above measure how
+        # loudly a trend is being *talked about* (media/social arrival rate);
+        # this is the one keyless source of how much people actually *want to
+        # buy* it. It is a reward-only nudge (max +0.12) so genuine search
+        # demand can push a borderline HOLD into PROCEED, but its absence never
+        # sinks the deterministic floor. Fail-open: None → no adjustment.
+        demand = await self._demand_factor(candidate)
+        demand_bonus = 0.12 * demand if demand is not None else 0.0
+        score = max(0.0, min(1.0, score + demand_bonus))
 
         if score >= _PROCEED_THRESHOLD:
             verdict = AgentVerdict.PROCEED
@@ -108,6 +117,8 @@ class ScoutAgent(AgentNode):
             f"sentiment_mag={sent_mag:.2f}",
             f"author_diversity={diversity:.2f}",
         ]
+        if demand is not None:
+            reasoning_parts.append(f"buyer_demand={demand:.2f} (+{demand_bonus:.2f})")
         if coord_penalty:
             reasoning_parts.append(f"coord_penalty=-{coord_penalty:.2f}")
         if astroturf_penalty:
@@ -128,8 +139,33 @@ class ScoutAgent(AgentNode):
                 "diversity_ratio": diversity,
                 "astroturf_penalty": astroturf_penalty,
                 "coordination_penalty": coord_penalty,
+                "buyer_demand": demand,
+                "demand_bonus": demand_bonus,
             },
         )
+
+    async def _demand_factor(self, candidate: TrendCandidate) -> float | None:
+        """Google Trends buyer-demand factor for this candidate, or None.
+
+        Isolated here (and fail-open) so the heuristic stays fully deterministic
+        and offline-safe when Trends is disabled/unreachable — see
+        ``aegis.agents.nodes._demand``.
+        """
+        # Prefer a value stamped at harvest time (see _demand.stamp_demand):
+        # fetching Google Trends once per query during harvest avoids every
+        # SCOUT invocation re-querying and getting 429'd. The stamped value is
+        # authoritative — a sentinel of None under the key means "fetched, no
+        # signal" so we still skip the live call.
+        if isinstance(candidate.metadata, dict) and "buyer_demand" in candidate.metadata:
+            stamped = candidate.metadata.get("buyer_demand")
+            return float(stamped) if isinstance(stamped, int | float) else None
+        try:
+            from ._demand import demand_factor
+
+            return await demand_factor(candidate.title)
+        except Exception as exc:  # pragma: no cover - defensive
+            _log.debug("scout.demand_skipped", reason=type(exc).__name__)
+            return None
 
     async def _augment_with_phase3(
         self,
@@ -166,6 +202,13 @@ class ScoutAgent(AgentNode):
         # Skip blending if Phase 3 itself failed (inference error, no signals).
         halt_reasons: list[str] = p3.get("halt_reasons", [])
         if any(r.startswith("phase3_inference_failed") for r in halt_reasons):
+            return None
+
+        # Skip blending if Phase 3 was a no-op (no signal/feature data to run
+        # on). The bridge returns a score=0.0 placeholder in that case; blending
+        # it would wrongly clobber the heuristic floor. Doctrine: a skipped
+        # Phase 3 must never lower the deterministic score.
+        if str(p3.get("reasoning", "")).startswith("phase3_skipped"):
             return None
 
         return self._blend_phase3(heuristic, p3)

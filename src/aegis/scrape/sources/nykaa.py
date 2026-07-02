@@ -35,7 +35,8 @@ from aegis.schemas.signal import (
     compute_content_hash,
 )
 from aegis.scrape.base import AdapterConfig, ScrapeContext, SourceAdapter
-from aegis.scrape.ecommerce_utils import random_ua
+from aegis.scrape.ecommerce_utils import extract_card_image, join_brand_title
+from aegis.scrape.http_client import get_or_create_client
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -45,6 +46,8 @@ _log = structlog.get_logger("aegis.scrape.nykaa")
 SCRAPER_VERSION = "nykaa-0.1.0"
 
 _URL = "https://www.nykaa.com/beauty/c/3?sort=popularity"
+# Keyword search — query-relevant products (the real intelligence path).
+_SEARCH_URL = "https://www.nykaa.com/search/result/?q={q}"
 
 _HEADERS = {
     "Accept": "text/html,application/xhtml+xml,*/*;q=0.8",
@@ -81,7 +84,7 @@ def _parse_nykaa_html(html: str) -> list[dict[str, Any]]:
                 title_el = card.select_one(_TITLE_SEL)
                 brand = brand_el.get_text(strip=True) if brand_el else ""
                 name = title_el.get_text(strip=True) if title_el else ""
-                title = f"{brand} {name}".strip() if brand else name
+                title = join_brand_title(brand, name)
                 if not title:
                     continue
 
@@ -120,6 +123,7 @@ def _parse_nykaa_html(html: str) -> list[dict[str, Any]]:
                     "scraped_at": scraped_at,
                     "raw_json": {
                         "currency": "INR",
+                        "image_url": extract_card_image(card),
                         "brand": brand,
                         "price_inr": price_inr,
                         "rating": rating,
@@ -165,41 +169,66 @@ class NykaaAdapter(SourceAdapter[dict[str, Any]]):
         return "nykaa"
 
     async def setup(self, ctx: ScrapeContext) -> None:
-        self._client = httpx.AsyncClient(
-            timeout=httpx.Timeout(self._cfg.timeout_seconds),
-            headers={**_HEADERS, "User-Agent": random_ua()},
-            follow_redirects=True,
+        # Shared client: per-host throttle, header/UA rotation, and optional
+        # proxy are applied via http_client event hooks (see http_client.py).
+        self._client = await get_or_create_client(
+            "www.nykaa.com",
+            timeout=self._cfg.timeout_seconds,
+            headers=dict(_HEADERS),
             http2=False,
+            follow_redirects=True,
         )
 
     async def teardown(self, ctx: ScrapeContext) -> None:
-        if self._client is not None:
-            await self._client.aclose()
-            self._client = None
+        self._client = None  # shared client — release reference, never close
 
     async def fetch_raw(  # type: ignore[override]
         self,
         ctx: ScrapeContext,
         *,
         limit: int = 50,
+        query: str | None = None,
         **_: Any,
     ) -> AsyncIterator[dict[str, Any]]:
         if self._client is None:
             return
 
-        await self._rate_limit()
-        self._record_request_metric(method="html_page")
+        from urllib.parse import quote_plus
 
-        try:
-            resp = await self._client.get(_URL)
-            resp.raise_for_status()
-            items = _parse_nykaa_html(resp.text)
-        except httpx.HTTPStatusError as e:
-            _log.warning("nykaa.http_error", status=e.response.status_code)
-            return
-        except Exception as e:
-            _log.warning("nykaa.fetch.failed", error=str(e))
-            return
+        q = (query or "").strip()
+        # Query-driven search is the intelligence path; the popularity-sorted
+        # category page is the no-query fallback.
+        url = _SEARCH_URL.format(q=quote_plus(q)) if q else _URL
+
+        await self._rate_limit()
+        self._record_request_metric(method="search" if q else "html_page")
+
+        items: list[dict[str, Any]] = []
+        # Primary: curl_cffi browser-TLS impersonation beats the WAF 403 that
+        # plain httpx triggers; then DOM cards or site-agnostic structured data.
+        from aegis.scrape.ecommerce_utils import extract_products_from_structured
+        from aegis.scrape.http_client import impersonated_fetch
+
+        code, imp_html = await impersonated_fetch(url)
+        if code == 200 and imp_html:
+            items = _parse_nykaa_html(imp_html) or extract_products_from_structured(imp_html)
+
+        if not items:
+            try:
+                resp = await self._client.get(url)
+                resp.raise_for_status()
+                items = _parse_nykaa_html(resp.text)
+            except httpx.HTTPStatusError as e:
+                _log.warning("nykaa.http_error", status=e.response.status_code)
+            except Exception as e:
+                _log.warning("nykaa.fetch.failed", error=str(e))
+
+        # Nykaa search results are JS-rendered; plain httpx often returns a shell.
+        if not items:
+            from aegis.scrape.playwright_fetcher import fetch_page_html
+            html = await fetch_page_html(url)
+            if html:
+                items = _parse_nykaa_html(html)
 
         for item in items[:limit]:
             if self.is_cancelled:

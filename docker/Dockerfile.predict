@@ -38,6 +38,13 @@ RUN pip install uv==0.5.7
 WORKDIR /app
 COPY pyproject.toml README.md /app/
 COPY src /app/src
+# uv reads [tool.uv.workspace].members from pyproject.toml and must be able to
+# parse each member's pyproject — copy them all even though predict only needs
+# the `aegis` package. Missing dirs → "Failed to parse entry: aegis-harden".
+COPY aegis-phase4 /app/aegis-phase4
+COPY aegis-harden /app/aegis-harden
+COPY aegis-phase12 /app/aegis-phase12
+COPY aegis-phase13 /app/aegis-phase13
 
 # Install runtime deps (heuristic-only by default).
 # Versions are driven by pyproject.toml [project.optional-dependencies.predict]

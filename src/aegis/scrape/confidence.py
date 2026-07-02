@@ -38,6 +38,27 @@ _log = structlog.get_logger("aegis.scrape.confidence")
 # Default threshold: below this, self-healing is triggered.
 DEFAULT_CONFIDENCE_THRESHOLD: float = 0.85
 
+# BRAIN-3: dynamic override pushed by async callers (topic.py / scheduler) from
+# aegis.core.dynamic_thresholds. score_batch is a sync CPU function run via
+# asyncio.to_thread (§12), so the adaptive value is injected rather than awaited
+# here. None → fall back to DEFAULT_CONFIDENCE_THRESHOLD.
+_DYNAMIC_THRESHOLD: float | None = None
+
+
+def set_confidence_threshold(value: float | None) -> None:
+    """Inject (or clear, with None) the adaptive confidence gate threshold."""
+    global _DYNAMIC_THRESHOLD  # noqa: PLW0603 - cross-task injection point
+    _DYNAMIC_THRESHOLD = value
+
+
+def get_confidence_threshold() -> float:
+    """Effective confidence gate: dynamic override or the static default."""
+    return (
+        _DYNAMIC_THRESHOLD
+        if _DYNAMIC_THRESHOLD is not None
+        else DEFAULT_CONFIDENCE_THRESHOLD
+    )
+
 # Sub-dimension score below this emits a remediation hint.
 _DIM_WARN_THRESHOLD: float = 0.70
 
@@ -173,7 +194,7 @@ def _author_diversity_score(signals: list[Any]) -> float:
 def score_batch(
     signals: list[Any],
     *,
-    threshold: float = DEFAULT_CONFIDENCE_THRESHOLD,
+    threshold: float | None = None,
 ) -> ConfidenceResult:
     """Compute a confidence score for a scraped signal batch.
 
@@ -188,6 +209,8 @@ def score_batch(
         ConfidenceResult with overall score, per-dimension breakdown, and
         remediation hints for any dimension below 0.70.
     """
+    if threshold is None:
+        threshold = get_confidence_threshold()
     n = len(signals)
 
     if n == 0:
@@ -292,5 +315,7 @@ def score_batch(
 __all__ = [
     "DEFAULT_CONFIDENCE_THRESHOLD",
     "ConfidenceResult",
+    "get_confidence_threshold",
     "score_batch",
+    "set_confidence_threshold",
 ]

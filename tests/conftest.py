@@ -67,6 +67,9 @@ _TEST_ENV: dict[str, str] = {
     "AEGIS_DISABLE_OLLAMA": "1",
     # Phase 2 — deterministic HMAC key for messaging tests
     "AEGIS_AGENT_HMAC_KEY": "test-key-do-not-use-in-prod",
+    # PASS4 — keep scrape_topic hermetic: routed extra adapters would hit the
+    # live network beyond the explicitly mocked core adapter classes.
+    "AEGIS_SCRAPE_TOPIC_ROUTING_EXTRAS": "false",
 }
 
 

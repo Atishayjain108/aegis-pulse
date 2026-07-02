@@ -39,6 +39,7 @@ from aegis.schemas.signal import (
     compute_content_hash,
 )
 from aegis.scrape.base import AdapterConfig, ScrapeContext, SourceAdapter
+from aegis.scrape.http_client import get_or_create_client
 from aegis.scrape.schema_guard import validate_batch
 from aegis.scrape.sentiment import score_text
 
@@ -185,17 +186,18 @@ class ProductHuntAdapter(SourceAdapter[dict[str, Any]]):
         return "producthunt"
 
     async def setup(self, ctx: ScrapeContext) -> None:
-        self._client = httpx.AsyncClient(
-            timeout=httpx.Timeout(self._ph_config.timeout_seconds),
-            headers=_HEADERS,
-            follow_redirects=True,
+        # Shared client: per-host throttle + header/UA rotation + optional
+        # proxy via http_client event hooks (see http_client.py).
+        self._client = await get_or_create_client(
+            "www.producthunt.com",
+            timeout=self._ph_config.timeout_seconds,
+            headers=dict(_HEADERS),
             http2=False,
+            follow_redirects=True,
         )
 
     async def teardown(self, ctx: ScrapeContext) -> None:
-        if self._client is not None:
-            await self._client.aclose()
-            self._client = None
+        self._client = None  # shared client — release reference, never close
 
     async def _fetch_page(self, url: str) -> str:
         if self._client is None:

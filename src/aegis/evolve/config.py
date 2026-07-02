@@ -74,6 +74,18 @@ class EvolveSettings(BaseSettings):
     shadow_holdout_days: int = Field(
         default=7, ge=1, description="Days of holdout used for champion comparison."
     )
+    shadow_period_hours: int = Field(
+        default=72,
+        ge=1,
+        description="Hours a candidate runs as a shadow before promotion is evaluated.",
+    )
+    fast_promote: bool = Field(
+        default=False,
+        description=(
+            "Skip the shadow period and promote improved candidates immediately "
+            "(AEGIS_EVOLVE_FAST_PROMOTE=true — dev/testing only)."
+        ),
+    )
 
     # -------------------------------------------------------------------------
     # HTTP timeout

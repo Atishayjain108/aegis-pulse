@@ -112,3 +112,107 @@ async def test_swarm_quarantines_drifting_adapter():
     assert run.status == AdapterStatus.SCHEMA_DRIFT
     # One-strike threshold → adapter is now cooling (quarantined).
     assert agent.is_cooling is True
+
+
+# ---------------------------------------------------------------------------
+# PASS2-2F: QuarantineReason + clean-batch auto-recovery
+# ---------------------------------------------------------------------------
+
+
+def test_quarantine_reason_stored_and_retrievable():
+    from aegis.scrape.schema_drift import QuarantineReason
+
+    t = SchemaDriftTracker()
+    t.quarantine("meesho", QuarantineReason.SCHEMA_DRIFT, "shape changed")
+    assert t.is_quarantined("meesho") is True
+    assert t.quarantine_reason("meesho") is QuarantineReason.SCHEMA_DRIFT
+    # Unknown platform → no reason
+    assert t.quarantine_reason("hn") is None
+    assert t.is_quarantined("hn") is False
+
+
+def test_credentials_missing_reason():
+    from aegis.scrape.schema_drift import QuarantineReason
+
+    t = SchemaDriftTracker()
+    t.quarantine("reddit", QuarantineReason.CREDENTIALS_MISSING, "no client_id")
+    assert t.quarantine_reason("reddit") is QuarantineReason.CREDENTIALS_MISSING
+
+
+def test_clean_batches_incremented_on_each_clean_call():
+    t = SchemaDriftTracker()
+    t.record_clean_batch("hn", 20)
+    t.record_clean_batch("hn", 20)
+    assert t._state["hn"].clean_batches == 2
+
+
+def test_should_unquarantine_false_with_two_clean_batches():
+    from aegis.scrape.schema_drift import QuarantineReason
+
+    t = SchemaDriftTracker()
+    t.quarantine("ajio", QuarantineReason.SCHEMA_DRIFT)
+    t.record_clean_batch("ajio", 20)
+    t.record_clean_batch("ajio", 20)
+    assert t.should_unquarantine("ajio") is False
+    assert t.is_quarantined("ajio") is True
+
+
+def test_should_unquarantine_true_after_three_clean_batches():
+    from aegis.scrape.schema_drift import QuarantineReason
+
+    t = SchemaDriftTracker()
+    t.quarantine("ajio", QuarantineReason.SCHEMA_DRIFT)
+    for _ in range(3):
+        t.record_clean_batch("ajio", 20)
+    # Third clean batch auto-lifts the quarantine.
+    assert t.is_quarantined("ajio") is False
+    assert t.quarantine_reason("ajio") is None
+
+
+def test_quarantine_lifted_log_event_emitted():
+    from structlog.testing import capture_logs
+
+    from aegis.scrape.schema_drift import QuarantineReason
+
+    t = SchemaDriftTracker()
+    t.quarantine("nykaa", QuarantineReason.ERROR_RATE)
+    with capture_logs() as logs:
+        for _ in range(3):
+            t.record_clean_batch("nykaa", 20)
+    assert any(e["event"] == "schema_drift.quarantine_lifted" for e in logs)
+
+
+def test_ewma_decays_toward_clean_on_consecutive_clean_batches():
+    t = SchemaDriftTracker()
+    # Start drifting hard.
+    for _ in range(4):
+        t.record_batch("flipkart", total=20, valid=2)
+    dirty_rate = t.drop_rate("flipkart")
+    assert dirty_rate > 0.5
+    # Clean batches decay the EWMA monotonically toward 0.
+    rates = []
+    for _ in range(6):
+        t.record_clean_batch("flipkart", 20)
+        rates.append(t.drop_rate("flipkart"))
+    assert all(rates[i] > rates[i + 1] for i in range(len(rates) - 1))
+    assert rates[-1] < dirty_rate
+
+
+def test_record_batch_clean_path_also_recovers():
+    """validate_batch() feeds record_batch — clean batches there must recover too."""
+    from aegis.scrape.schema_drift import QuarantineReason
+
+    t = SchemaDriftTracker()
+    t.quarantine("snapdeal", QuarantineReason.SCHEMA_DRIFT)
+    for _ in range(3):
+        t.record_batch("snapdeal", total=20, valid=20)
+    assert t.is_quarantined("snapdeal") is False
+
+
+def test_dirty_batch_resets_clean_counter():
+    t = SchemaDriftTracker()
+    t.record_clean_batch("mint", 20)
+    t.record_clean_batch("mint", 20)
+    # 50% drop → dirty → counter resets.
+    t.record_batch("mint", total=20, valid=10)
+    assert t._state["mint"].clean_batches == 0

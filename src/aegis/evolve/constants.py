@@ -15,6 +15,9 @@ ERR_ROLLBACK_TRIGGERED = "AEGIS-EVOLVE-0007"
 ERR_OUTCOME_RECORD_FAILED = "AEGIS-EVOLVE-0008"
 ERR_HPO_FAILED = "AEGIS-EVOLVE-0009"
 ERR_POLICY_PERSIST_FAILED = "AEGIS-EVOLVE-0010"
+ERR_SHADOW_REGISTER_FAILED = "AEGIS-EVOLVE-0011"
+ERR_SIGNAL_OUTCOME_RECORD_FAILED = "AEGIS-EVOLVE-0012"
+ERR_SIGNAL_SETTLE_FAILED = "AEGIS-EVOLVE-0013"
 ERR_RETRAIN_GENERAL = "AEGIS-EVOLVE-0099"
 
 # ---------------------------------------------------------------------------
@@ -42,7 +45,7 @@ POLICY_WEIGHT_LABELS: tuple[str, ...] = (
 # ---------------------------------------------------------------------------
 # Feature dimension (must match Phase 3 FEATURE_DIM)
 # ---------------------------------------------------------------------------
-EVOLVE_FEATURE_DIM: int = 20
+EVOLVE_FEATURE_DIM: int = 24  # PASS2-2E: matches Phase 3 FEATURE_DIM (schema 3.1.0)
 
 # ---------------------------------------------------------------------------
 # Default champion AUC when no champion exists (conservative)
@@ -68,3 +71,4 @@ STATUS_RUNNING = "running"
 STATUS_COMPLETED = "completed"
 STATUS_FAILED = "failed"
 STATUS_NO_IMPROVEMENT = "no_improvement"
+STATUS_SHADOW_DEPLOYED = "shadow_deployed"

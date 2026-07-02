@@ -92,7 +92,7 @@ class TestConfidenceGate:
 # ---------------------------------------------------------------------------
 
 class TestNormalizer:
-    """Normalizer API: z_score_batch / percentile_rank_batch take list[dict] and return list[dict]."""
+    """Normalizer API: z_score_batch / percentile_rank_batch take list[dict] and return list[dict]."""  # noqa: E501
 
     def test_z_score_normalised_output_range(self) -> None:
         normalizer = _import_normalizer()
@@ -109,7 +109,7 @@ class TestNormalizer:
         assert all(isinstance(s, dict) for s in normed)
 
     def test_percentile_normalisation_bounds(self) -> None:
-        """percentile_rank_batch adds a `percentile_rank` field (0–100) to each signal."""
+        """percentile_rank_batch adds a `percentile_rank` field (0-100) to each signal."""
         normalizer = _import_normalizer()
         signals = [{"score": float(i)} for i in range(1, 101)]
         normed = normalizer.percentile_rank_batch(signals)
@@ -176,7 +176,7 @@ class TestAnalytics:
         from datetime import UTC, datetime, timedelta
         now = datetime.now(UTC)
         return [
-            {"scraped_at": (now - timedelta(hours=hours_spread * (1 - i / max(count - 1, 1)))).isoformat()}
+            {"scraped_at": (now - timedelta(hours=hours_spread * (1 - i / max(count - 1, 1)))).isoformat()}  # noqa: E501
             for i in range(count)
         ]
 

@@ -177,6 +177,12 @@ class SentinelAgent(AgentNode):
         if any(r.startswith("phase3_inference_failed") for r in halt_reasons):
             return None
 
+        # Skip blending if Phase 3 was a no-op (no signal/feature data). The
+        # bridge returns a score=0.0 placeholder; blending it would clobber the
+        # heuristic floor. A skipped Phase 3 must never alter the score.
+        if str(p3.get("reasoning", "")).startswith("phase3_skipped"):
+            return None
+
         return self._blend_phase3(heuristic, p3)
 
     def _blend_phase3(

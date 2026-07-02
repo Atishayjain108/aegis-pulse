@@ -91,6 +91,48 @@ class RedisStreamIngester:
                 hint="check Redis URL and that the stream exists",
             ) from exc
 
+    async def _reclaim_stale_entries(
+        self, redis: Any, *, min_idle_ms: int = 300_000
+    ) -> list[tuple[Any, dict[Any, Any]]]:
+        """Reclaim PEL entries held by dead consumers (crash recovery).
+
+        CONN-4: a consumer that read entries and crashed before XACK leaves
+        them in the Pending Entries List forever. XAUTOCLAIM transfers
+        entries idle > 5 minutes to this consumer so they are re-processed.
+        Returns ``[]`` when the client lacks ``xautoclaim`` (older redis-py
+        or test fakes) or the call fails — reclaim is best-effort, the new
+        entries path must never be blocked by it.
+        """
+        xautoclaim = getattr(redis, "xautoclaim", None)
+        if xautoclaim is None:
+            return []
+        try:
+            resp = await xautoclaim(
+                self._stream_key,
+                self._consumer_group,
+                self._consumer_name,
+                min_idle_time=min_idle_ms,
+                start_id="0-0",
+                count=self._read_batch,
+            )
+        except Exception as exc:
+            _log.warning(
+                "redis.xautoclaim.failed",
+                stream=self._stream_key,
+                error=str(exc),
+            )
+            return []
+        # redis-py returns (next_start_id, entries) or
+        # (next_start_id, entries, deleted_ids) depending on version.
+        entries = resp[1] if isinstance(resp, list | tuple) and len(resp) >= 2 else []
+        if entries:
+            _log.info(
+                "redis.xautoclaim.reclaimed",
+                stream=self._stream_key,
+                count=len(entries),
+            )
+        return list(entries or [])
+
     async def ingest_once(
         self,
         *,
@@ -112,6 +154,19 @@ class RedisStreamIngester:
         entries_read = 0
         last_id: str | None = None
         successful_ids: list[str] = []
+
+        # CONN-4: crash recovery — process entries abandoned in the PEL by a
+        # dead consumer before reading new ones.
+        for msg_id, fields in await self._reclaim_stale_entries(redis):
+            entries_read += 1
+            last_id = _decode_if_bytes(msg_id)
+            bronze_row = self._decode_entry(last_id, fields)
+            if bronze_row is None:
+                successful_ids.append(last_id)
+                continue
+            day_key = _to_day_key(bronze_row.get("finished_at"))
+            per_day_buckets[day_key].append(bronze_row)
+            successful_ids.append(last_id)
 
         for _ in range(max_iterations):
             try:

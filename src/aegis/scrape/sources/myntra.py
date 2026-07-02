@@ -39,8 +39,10 @@ from aegis.schemas.signal import (
     compute_content_hash,
 )
 from aegis.scrape.base import AdapterConfig, ScrapeContext, SourceAdapter
-from aegis.scrape.ecommerce_utils import flaresolverr_get, random_ua
+from aegis.scrape.ecommerce_utils import extract_card_image, flaresolverr_get, join_brand_title
+from aegis.scrape.http_client import get_or_create_client
 from aegis.scrape.playwright_fetcher import fetch_page_html as _playwright_fetch
+from aegis.scrape.session_tokens import get_session_bundle
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -49,8 +51,19 @@ _log = structlog.get_logger("aegis.scrape.myntra")
 
 SCRAPER_VERSION = "myntra-0.1.0"
 
-_JSON_URL = "https://www.myntra.com/gateway/v2/search/trending"
+# The bare /trending endpoint returns only metadata (totalCount/filters) with an
+# empty products[]. The ?rows=&o= pagination params are required to get actual
+# product objects back (verified live 2026-06-19).
+_JSON_URL = "https://www.myntra.com/gateway/v2/search/trending?rows=50&o=0"
 _HTML_URL = "https://www.myntra.com/trending-now"
+# Keyword search — query-relevant products (the real intelligence path).
+# The gateway needs the term BOTH as the path segment AND as the ``rawQuery``
+# parameter — without ``rawQuery`` it silently degrades to generic/trending
+# results (the old bug: "garlic press" returned bamboo kitchenware). The path
+# segment must be %20-encoded (quote), NOT +-encoded (quote_plus), or the
+# gateway treats the whole phrase as one unmatched token.
+_SEARCH_JSON_URL = "https://www.myntra.com/gateway/v2/search/{path}?rawQuery={raw}&rows=50&o=0&plaEnabled=false"
+_SEARCH_HTML_URL = "https://www.myntra.com/{q}"
 
 _HEADERS = {
     "Accept": "application/json, */*",
@@ -92,7 +105,7 @@ def _extract_json_products(data: Any) -> list[dict[str, Any]]:
 
             name = str(p.get("productName") or p.get("product") or "").strip()
             brand = str(p.get("brand") or p.get("brandName") or "").strip()
-            title = f"{brand} {name}".strip() if brand else name
+            title = join_brand_title(brand, name)
             if not title:
                 continue
 
@@ -160,7 +173,7 @@ def _parse_myntra_html(html: str) -> list[dict[str, Any]]:
                 title_el = card.select_one(_TITLE_SEL)
                 brand = brand_el.get_text(strip=True) if brand_el else ""
                 name = title_el.get_text(strip=True) if title_el else ""
-                title = f"{brand} {name}".strip() if brand else name
+                title = join_brand_title(brand, name)
                 if not title:
                     continue
 
@@ -184,6 +197,7 @@ def _parse_myntra_html(html: str) -> list[dict[str, Any]]:
                     "scraped_at": scraped_at,
                     "raw_json": {
                         "currency": "INR",
+                        "image_url": extract_card_image(card),
                         "brand": brand,
                         "price_inr": price_inr,
                         "discount_pct": 0.0,
@@ -242,36 +256,81 @@ class MyntraAdapter(SourceAdapter[dict[str, Any]]):
         return "myntra"
 
     async def setup(self, ctx: ScrapeContext) -> None:
-        self._client = httpx.AsyncClient(
-            timeout=httpx.Timeout(self._cfg.timeout_seconds),
-            headers={**_HEADERS, "User-Agent": random_ua()},
-            follow_redirects=True,
+        # Shared client: per-host throttle + header/UA rotation + optional
+        # proxy via http_client event hooks (see http_client.py).
+        self._client = await get_or_create_client(
+            "www.myntra.com",
+            timeout=self._cfg.timeout_seconds,
+            headers=dict(_HEADERS),
             http2=False,
+            follow_redirects=True,
         )
 
     async def teardown(self, ctx: ScrapeContext) -> None:
-        if self._client is not None:
-            await self._client.aclose()
-            self._client = None
+        self._client = None  # shared client — release reference, never close
+
+    async def _session_headers(self) -> dict[str, str]:
+        """Harvest Myntra's session token/cookies via a headless browser.
+
+        The /gateway/ JSON API returns 401 without the session cookie + tracking
+        headers the homepage JS mints. We capture them once (cached, TTL'd) and
+        inject into the httpx request so the rich JSON path works. Returns an
+        empty dict when Playwright is unavailable — callers fall back to HTML.
+        """
+        bundle = await get_session_bundle(
+            "https://www.myntra.com/",
+            host="www.myntra.com",
+            capture_url_substrings=("/gateway/", "/web/"),
+        )
+        if bundle is None:
+            return {}
+        headers: dict[str, str] = {}
+        if bundle.cookies:
+            headers["Cookie"] = bundle.cookie_header
+        # Carry over the browser's auth-relevant request headers (x-*, etc.).
+        for name, value in bundle.headers.items():
+            if name in {"cookie", "host", "content-length"}:
+                continue
+            headers[name] = value
+        return headers
 
     async def fetch_raw(  # type: ignore[override]
         self,
         ctx: ScrapeContext,
         *,
         limit: int = 50,
+        query: str | None = None,
         **_: Any,
     ) -> AsyncIterator[dict[str, Any]]:
         if self._client is None:
             return
+
+        from urllib.parse import quote, quote_plus
+
+        q = (query or "").strip()
+        # Query-driven search is the intelligence path; trending is the no-query
+        # fallback. Both reuse the same gateway → FlareSolverr → Playwright chain.
+        # Path segment uses %20 (quote); rawQuery uses +/%20 form (quote_plus).
+        json_url = (
+            _SEARCH_JSON_URL.format(path=quote(q, safe=""), raw=quote_plus(q))
+            if q
+            else _JSON_URL
+        )
+        html_url = (
+            _SEARCH_HTML_URL.format(q=quote(q.replace(" ", "-"), safe="")) if q else _HTML_URL
+        )
 
         # --- JSON path (primary) ---
         await self._rate_limit()
         self._record_request_metric(method="json_api")
         items: list[dict[str, Any]] = []
         try:
-            resp = await self._client.get(_JSON_URL, headers={"User-Agent": random_ua()})
-            if resp.status_code == 403:
-                _log.warning("myntra.json_api.forbidden")
+            # Inject a harvested browser session so the gateway accepts us
+            # (bare requests get 401). Falls back gracefully to {} headers.
+            session_headers = await self._session_headers()
+            resp = await self._client.get(json_url, headers=session_headers)
+            if resp.status_code in (401, 403):
+                _log.warning("myntra.json_api.forbidden", status=resp.status_code)
             else:
                 resp.raise_for_status()
                 items = _extract_json_products(resp.json())
@@ -284,7 +343,7 @@ class MyntraAdapter(SourceAdapter[dict[str, Any]]):
             await self._rate_limit()
             self._record_request_metric(method="html_flaresolverr")
             html = await flaresolverr_get(
-                _HTML_URL, self._cfg.flaresolverr_url, self._client, self._governor
+                html_url, self._cfg.flaresolverr_url, self._client, self._governor
             )
             if html:
                 items = _parse_myntra_html(html)
@@ -294,7 +353,7 @@ class MyntraAdapter(SourceAdapter[dict[str, Any]]):
         # --- Playwright stealth fallback ---
         if not items:
             _log.info("myntra.trying_playwright")
-            pw_html = await _playwright_fetch(_HTML_URL)
+            pw_html = await _playwright_fetch(html_url)
             if pw_html:
                 items = _parse_myntra_html(pw_html)
             else:

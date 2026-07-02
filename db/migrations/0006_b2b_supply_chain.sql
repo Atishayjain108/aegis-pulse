@@ -79,7 +79,7 @@ CREATE INDEX IF NOT EXISTS sku_lot_tenant_category_idx
 -- Valid until valid_until (NULL = no known expiry).
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS price_quote (
-    quote_id        UUID            PRIMARY KEY DEFAULT gen_random_uuid(),
+    quote_id        UUID            NOT NULL DEFAULT gen_random_uuid(),
     tenant_id       UUID            NOT NULL,
     node_id         UUID            NOT NULL REFERENCES supply_chain_node(node_id) ON DELETE CASCADE,
     sku_id          UUID            NOT NULL REFERENCES sku_lot(sku_id) ON DELETE CASCADE,
@@ -88,7 +88,9 @@ CREATE TABLE IF NOT EXISTS price_quote (
     valid_until     TIMESTAMPTZ,
     source_adapter  TEXT,
     raw_json        JSONB,
-    observed_at     TIMESTAMPTZ     NOT NULL DEFAULT NOW()
+    observed_at     TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
+    -- Partition column must be part of any PK/UNIQUE index on a hypertable.
+    PRIMARY KEY (quote_id, observed_at)
 );
 
 SELECT create_hypertable('price_quote', 'observed_at', if_not_exists => TRUE);
@@ -139,10 +141,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS logistics_lane_route_idx
 -- AEGIS_EXECUTE_MODE=live and the killswitch is armed.
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS arbitrage_opportunity (
-    opportunity_id  UUID            PRIMARY KEY DEFAULT gen_random_uuid(),
+    opportunity_id  UUID            NOT NULL DEFAULT gen_random_uuid(),
     tenant_id       UUID            NOT NULL,
-    buy_quote_id    UUID            NOT NULL REFERENCES price_quote(quote_id) ON DELETE CASCADE,
-    sell_quote_id   UUID            NOT NULL REFERENCES price_quote(quote_id) ON DELETE CASCADE,
+    -- price_quote is a hypertable: quote_id alone is not unique, so no FK here.
+    buy_quote_id    UUID            NOT NULL,
+    sell_quote_id   UUID            NOT NULL,
     sku_id          UUID            NOT NULL REFERENCES sku_lot(sku_id) ON DELETE CASCADE,
     margin_pct      REAL            NOT NULL CHECK (margin_pct BETWEEN -100 AND 1000),
     confidence      REAL            NOT NULL DEFAULT 0.5 CHECK (confidence BETWEEN 0 AND 1),
@@ -152,7 +155,9 @@ CREATE TABLE IF NOT EXISTS arbitrage_opportunity (
     vyapar_action   JSONB,          -- draft Vyapar webhook payload (null until execute-api sends it)
     halt_reason     TEXT,
     detected_at     TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
-    expires_at      TIMESTAMPTZ
+    expires_at      TIMESTAMPTZ,
+    -- Partition column must be part of any PK/UNIQUE index on a hypertable.
+    PRIMARY KEY (opportunity_id, detected_at)
 );
 
 SELECT create_hypertable('arbitrage_opportunity', 'detected_at', if_not_exists => TRUE);

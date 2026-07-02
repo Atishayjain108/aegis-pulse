@@ -662,43 +662,20 @@ async def test_dashboard_swarm_history_db_error() -> None:
     assert resp.json()["runs"] == []
 
 
+# DASH-3 [2026-06-11]: test_dashboard_platform_stats_db_error and
+# test_dashboard_platform_trends_db_error removed with their endpoints
+# (/api/platforms/stats superseded by /api/signals/platforms;
+#  /api/platforms/trends superseded by /api/signals/velocity).
+# The tombstone below guards against accidental route resurrection.
 @pytest.mark.asyncio
-async def test_dashboard_platform_stats_db_error() -> None:
-    from unittest.mock import patch
-
+async def test_dash3_deleted_routes_stay_deleted() -> None:
     from httpx import ASGITransport, AsyncClient
 
     from aegis.dashboard.app import app
 
-    with patch(
-        "aegis.dashboard.app.asyncpg.connect",
-        side_effect=ConnectionRefusedError("no db"),
-    ):
-        async with AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test"
-        ) as client:
-            resp = await client.get("/api/platforms/stats")
-
-    assert resp.status_code == 200
-    assert resp.json()["status"] == "error"
-
-
-@pytest.mark.asyncio
-async def test_dashboard_platform_trends_db_error() -> None:
-    from unittest.mock import patch
-
-    from httpx import ASGITransport, AsyncClient
-
-    from aegis.dashboard.app import app
-
-    with patch(
-        "aegis.dashboard.app.asyncpg.connect",
-        side_effect=ConnectionRefusedError("no db"),
-    ):
-        async with AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test"
-        ) as client:
-            resp = await client.get("/api/platforms/trends")
-
-    assert resp.status_code == 200
-    assert resp.json()["status"] == "error"
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        for path in ("/api/platforms/stats", "/api/platforms/trends", "/api/execute/alerts"):
+            resp = await client.get(path)
+            assert resp.status_code == 404, f"{path} was deleted in DASH-3 and must stay deleted"

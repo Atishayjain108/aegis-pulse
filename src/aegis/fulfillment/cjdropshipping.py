@@ -24,7 +24,18 @@ _log = structlog.get_logger(__name__)
 
 _CJ_BASE_URL: Final[str] = "https://developers.cjdropshipping.com/api2.0"
 _CJ_AUTH_URL: Final[str] = "https://developers.cjdropshipping.com/api2.0/v1/authentication/getAccessToken"
-_MOCK_PRODUCT_SKU: Final[str] = "CJ-PLACEHOLDER-001"  # replace with real CJ product SKU
+
+# REALITY-FIRST (PROJECT OMEGA): the recipient fields a CJ order MUST carry. No
+# placeholder/"TBD" defaults exist anymore — a missing field means we refuse to
+# place the order rather than ship to a fake address.
+_REQUIRED_RECIPIENT_FIELDS: Final[tuple[str, ...]] = (
+    "name",
+    "address1",
+    "city",
+    "country_code",
+    "zip",
+    "phone",
+)
 
 
 class CJDropshipClient:
@@ -46,13 +57,43 @@ class CJDropshipClient:
         product_ref: str,
         quantity: int,
         unit_price_usd: float,
+        product_vid: str | None = None,
+        recipient: dict[str, str] | None = None,
     ) -> list[str]:
-        """Create `quantity` dropship orders and return their CJ order IDs."""
+        """Create `quantity` dropship orders and return their CJ order IDs.
+
+        REALITY-FIRST: refuses (returns ``[]``) unless a real CJ ``product_vid``
+        AND a complete ``recipient`` address are supplied. There is no synthetic
+        SKU or "TBD" address fallback — an order is never placed against fake
+        reality. ``recipient`` must contain every key in
+        ``_REQUIRED_RECIPIENT_FIELDS``.
+        """
         if not self._api_key:
             _log.debug("fulfillment.cjdropship.no_api_key", product_ref=product_ref)
             return []
         if quantity <= 0:
             return []
+        if not product_vid:
+            _log.warning(
+                "fulfillment.cjdropship.no_product_vid",
+                product_ref=product_ref,
+                reason="refusing order: no real CJ product variant resolved",
+            )
+            return []
+        missing = [
+            f
+            for f in _REQUIRED_RECIPIENT_FIELDS
+            if not (recipient or {}).get(f)
+        ]
+        if missing:
+            _log.warning(
+                "fulfillment.cjdropship.incomplete_recipient",
+                product_ref=product_ref,
+                missing=missing,
+                reason="refusing order: no real shipping recipient configured",
+            )
+            return []
+        assert recipient is not None  # narrowed by the missing-field guard above
 
         try:
             import httpx
@@ -70,17 +111,17 @@ class CJDropshipClient:
                 for i in range(quantity):
                     payload = {
                         "orderNumber": f"AEGIS-{product_ref[:12]}-{i}-{uuid.uuid4().hex[:6]}",
-                        "shippingZip": "00000",
-                        "shippingCountryCode": "US",
-                        "shippingCountry": "United States",
-                        "shippingProvince": "CA",
-                        "shippingCity": "TBD",
-                        "shippingAddress": "TBD",
-                        "shippingCustomerName": "AEGIS Drop",
-                        "shippingPhone": "0000000000",
+                        "shippingZip": recipient["zip"],
+                        "shippingCountryCode": recipient["country_code"],
+                        "shippingCountry": recipient.get("country", ""),
+                        "shippingProvince": recipient.get("province", ""),
+                        "shippingCity": recipient["city"],
+                        "shippingAddress": recipient["address1"],
+                        "shippingCustomerName": recipient["name"],
+                        "shippingPhone": recipient["phone"],
                         "products": [
                             {
-                                "vid": _MOCK_PRODUCT_SKU,
+                                "vid": product_vid,
                                 "quantity": 1,
                                 "shippingName": "CJPacket",
                                 "price": str(round(unit_price_usd, 2)),

@@ -68,7 +68,7 @@ CREATE POLICY execution_plans_tenant ON execution_plans
 -- Outcome fields (revenue, refund, pnl) are populated by SettlementManager.
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS execution_orders (
-    order_id            TEXT            PRIMARY KEY,
+    order_id            TEXT            NOT NULL,
     plan_id             UUID            NOT NULL REFERENCES execution_plans (plan_id),
     tenant_id           UUID            NOT NULL,
     fulfillment_order_id TEXT,           -- external ID from Printful / CJ / Shopify
@@ -85,7 +85,9 @@ CREATE TABLE IF NOT EXISTS execution_orders (
                                                 'delivered', 'returned', 'refunded', 'failed'
                                             )),
     created_at          TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
-    settled_at          TIMESTAMPTZ
+    settled_at          TIMESTAMPTZ,
+    -- Partition column must be part of any PK/UNIQUE index on a hypertable.
+    PRIMARY KEY (order_id, created_at)
 );
 
 SELECT create_hypertable(

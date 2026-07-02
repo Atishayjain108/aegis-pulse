@@ -254,6 +254,9 @@ class Settings(BaseSettings):
     log_format: LogFormat = Field(default="console")
     log_json: bool = Field(default=False)
     sentry_dsn: SecretStr | None = Field(default=None)
+
+    # Phase C — Knowledge Expansion. When false, memory hooks no-op (graceful).
+    memory_enabled: bool = Field(default=True)
     otel_exporter_otlp_endpoint: str | None = Field(default=None)
     prometheus_port: int = Field(default=9464, ge=1024, le=65535)
 

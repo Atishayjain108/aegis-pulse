@@ -22,6 +22,7 @@ command works with zero API keys.
 from __future__ import annotations
 
 import asyncio
+import os
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -276,10 +277,15 @@ class TopicScrapeResult:
     errors: list[str] = field(default_factory=list)
     signals: list[Any] = field(default_factory=list)
     patterns: list[Any] = field(default_factory=list)  # list[PatternCluster]
+    realtime_patterns: list[Any] = field(default_factory=list)  # PASS11: RealTimePattern
     started_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     finished_at: datetime | None = None
     batch_confidence: float = 1.0
     """Overall data-quality confidence score [0, 1] from the Phase 5 confidence gate."""
+    topic_type: str | None = None
+    """PASS4: TopicType detected by the adapter-routing classifier (None if routing failed)."""
+    routed_adapters: list[str] = field(default_factory=list)
+    """PASS4: adapter names selected by the AdapterRouter (or the explicit override list)."""
 
     @property
     def duration_s(self) -> float:
@@ -444,6 +450,11 @@ _HTTP_MAX_CONCURRENCY: int = 8
 """Maximum number of adapter HTTP tasks that may run concurrently inside scrape_topic().
 Keeps the outbound connection pool bounded; prevents thundering-herd timeouts."""
 
+_ADAPTER_BUDGET_S: float = float(os.getenv("AEGIS_SCRAPE_ADAPTER_BUDGET_S", "20"))
+"""Hard wall-clock budget for a single adapter run inside scrape_topic().
+A blocked/slow source (e.g. a WAF 403 retry loop over many categories) returns
+its partial results at this deadline instead of stalling the whole harvest."""
+
 
 async def _semaphore_guarded(
     sem: asyncio.Semaphore,
@@ -473,15 +484,30 @@ async def _scrape_source(
     ctx = ScrapeContext()
     error: str | None = None
 
-    try:
+    async def _drain() -> None:
         await adapter.setup(ctx)
         async for signal in adapter.run(**run_kwargs):
             signals.append(signal)
+
+    try:
+        # Hard per-adapter wall clock so one slow/blocked source (e.g. a WAF
+        # 403 loop over many categories) can never stall the parallel harvest.
+        await asyncio.wait_for(_drain(), timeout=_ADAPTER_BUDGET_S)
         _log.debug(
             "topic.source_ok",
             source=source_name,
             signals_collected=len(signals),
         )
+    except (TimeoutError, asyncio.TimeoutError) as exc:  # noqa: UP041
+        error = f"adapter timed out after {_ADAPTER_BUDGET_S:.0f}s"
+        _log.warning(
+            "topic.source_timeout",
+            source=source_name,
+            signals_collected=len(signals),
+            budget_s=_ADAPTER_BUDGET_S,
+            action="returning_partial_continuing",
+        )
+        del exc
     except Exception as exc:
         error = str(exc)
         _log.warning(
@@ -499,58 +525,123 @@ async def _scrape_source(
     return source_name, signals, error
 
 
-async def scrape_topic(
-    topic: str,
-    *,
-    pool: PgPool | None = None,
-    tenant_id: UUID | None = None,
-    limit_per_source: int = 30,
-    dry_run: bool = False,
-    dedup_threshold: float = 0.82,
-    dedup_lookback_hours: int = 72,
-    detect_patterns: bool = True,
-    stream_client: Any | None = None,
-) -> TopicScrapeResult:
-    """The single entry-point for topic-based intelligence scraping.
+# ---------------------------------------------------------------------------
+# PASS4: Intelligent adapter routing — registry adapter resolution + scheduling
+# ---------------------------------------------------------------------------
 
-    Runs ALL available no-auth adapters in parallel across ALL expanded
-    queries. Sources: HackerNews · Google News · Bing News · Reddit (hot
-    subreddits + all-Reddit search) · GitHub Trending · Amazon Bestsellers.
+# Routed/override adapters that need the topic passed as `query` to be useful.
+# E-commerce adapters here implement real keyword search (query-relevant products);
+# adapters NOT listed only expose trending/offers pages, so we don't pass them a
+# query they would silently ignore.
+_ROUTED_QUERY_ADAPTERS: frozenset[str] = frozenset({
+    "google-news", "bing-news", "hacker-news",
+    "snapdeal", "flipkart", "amazon_in", "myntra",
+    "ebay", "bestbuy", "etsy",
+    # nykaa/ajio/meesho/indiamart removed 2026-06-24 — WAF-gated, no free path.
+})
 
-    Semantically deduplicates results and runs pattern detection before
-    persisting to the DB.
 
-    Args:
-        topic: A single keyword or short phrase (e.g. "AI chips").
-        pool: A live PgPool. If None, signals are collected but not stored.
-        tenant_id: Tenant UUID for DB writes.
-        limit_per_source: Max signals per individual adapter run.
-        dry_run: Collect and deduplicate but do not write to DB.
-        dedup_threshold: Similarity threshold for near-duplicate detection.
-        dedup_lookback_hours: Hours back to check DB for semantic duplicates.
-        detect_patterns: Whether to cluster signals into emerging themes.
+def _routing_extras_enabled() -> bool:
+    """Whether routed extra adapters (beyond the core set) may be scheduled.
+
+    Controlled by AEGIS_SCRAPE_TOPIC_ROUTING_EXTRAS (default: enabled). The
+    unit-test environment disables it so scrape_topic stays hermetic.
     """
-    expansion = expand_topic(topic)
-    result = TopicScrapeResult(topic=topic, expansion=expansion)
+    import os
 
-    # Bind a time-seeded HardenShim for this session so all parallel adapter
-    # tasks share one advancing RNG sequence — avoids every task repeating
-    # the same default-seed fingerprint pattern.
-    _shim_token = None
+    raw = os.environ.get("AEGIS_SCRAPE_TOPIC_ROUTING_EXTRAS", "true")
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
+def _resolve_registry_entry(name: str, registry: dict[str, Any]) -> Any | None:
+    """Resolve a registry entry tolerating hyphen/underscore naming differences.
+
+    The swarm registry mixes conventions: file-derived names use ``_``
+    (``reddit_finance``) while some legacy RSS adapters use ``-``
+    (``hacker-news``, ``google-news``). Callers (and the router) may pass
+    either form, so an exact lookup silently rejects valid adapters. This
+    tries the exact key first, then a normalized key where ``-`` and ``_`` are
+    treated as equivalent.
+    """
+    entry = registry.get(name)
+    if entry is not None:
+        return entry
+    norm = name.replace("-", "_")
+    for key, val in registry.items():
+        if key.replace("-", "_") == norm:
+            return val
+    return None
+
+
+def _build_registry_adapter(name: str) -> Any | None:
+    """Instantiate a swarm-registry adapter by name.
+
+    Returns None (never raises) when the name is unknown or the adapter
+    module/config cannot be constructed — the caller logs and skips it.
+    """
+    import importlib
+
     try:
-        import time as _time
+        from aegis.scrape.swarm import _REGISTRY
 
-        from aegis.scrape.harden_shim import HardenShim as _HardenShim
-        from aegis.scrape.harden_shim import set_session_shim as _set_session_shim
+        entry = _resolve_registry_entry(name, _REGISTRY)
+        if entry is None:
+            return None
+        module_path, cls_name, cfg_name, _tier, _risk = entry
+        mod = importlib.import_module(module_path)
+        adapter_cls = getattr(mod, cls_name)
+        if cfg_name is not None:
+            cfg_cls = getattr(mod, cfg_name)
+            return adapter_cls(cfg_cls())
+        from aegis.scrape.sources._rss_base import RSSAdapterConfig
 
-        _shim_token = _set_session_shim(
-            _HardenShim(rng_seed=_time.time_ns() & 0xFFFF_FFFF)
+        return adapter_cls(RSSAdapterConfig())
+    except Exception as exc:
+        _log.debug("topic.registry_adapter_unavailable", adapter=name, error=str(exc))
+        return None
+
+
+def _schedule_routed_adapters(
+    names: list[str],
+    *,
+    sem: asyncio.Semaphore,
+    tasks: list[asyncio.Task[tuple[str, list[ProductSignal], str | None]]],
+    topic: str,
+    limit_per_source: int,
+) -> list[str]:
+    """Schedule swarm-registry adapters by name; return the names scheduled."""
+    scheduled: list[str] = []
+    for name in names:
+        adapter = _build_registry_adapter(name)
+        if adapter is None:
+            _log.debug("topic.routed_adapter_skipped", adapter=name)
+            continue
+        run_kwargs: dict[str, Any] = {"limit": limit_per_source}
+        if name in _ROUTED_QUERY_ADAPTERS:
+            run_kwargs["query"] = topic
+        tasks.append(
+            asyncio.create_task(
+                _semaphore_guarded(sem, f"{name}:routed", adapter, run_kwargs)
+            )
         )
-    except Exception:
-        pass
+        scheduled.append(name)
+    return scheduled
 
-    _sem = asyncio.Semaphore(_HTTP_MAX_CONCURRENCY)
-    tasks: list[asyncio.Task[tuple[str, list[ProductSignal], str | None]]] = []
+
+def _schedule_core_adapters(
+    expansion: TopicExpansion,
+    *,
+    sem: asyncio.Semaphore,
+    tasks: list[asyncio.Task[tuple[str, list[ProductSignal], str | None]]],
+    topic: str,
+    limit_per_source: int,
+) -> set[str]:
+    """Schedule the always-on core adapters (HN, news RSS, Reddit, GitHub, Amazon).
+
+    Returns the set of swarm-registry names this covers, so the routed-extras
+    path does not double-schedule the same platforms.
+    """
+    covered: set[str] = {"hacker-news", "google-news", "bing-news"}
 
     # ── HackerNews: search top terms ──────────────────────────────────
     from aegis.scrape.sources.hacker_news import HackerNewsAdapter, HackerNewsConfig
@@ -561,7 +652,7 @@ async def scrape_topic(
         tasks.append(
             asyncio.create_task(
                 _semaphore_guarded(
-                    _sem,
+                    sem,
                     f"hacker_news:{term[:30]}",
                     adapter_hn,
                     {"query": term, "limit": limit_per_source},
@@ -578,7 +669,7 @@ async def scrape_topic(
         tasks.append(
             asyncio.create_task(
                 _semaphore_guarded(
-                    _sem,
+                    sem,
                     f"google_news:{term[:30]}",
                     adapter_gn,
                     {"query": term, "limit": limit_per_source},
@@ -595,7 +686,7 @@ async def scrape_topic(
         tasks.append(
             asyncio.create_task(
                 _semaphore_guarded(
-                    _sem,
+                    sem,
                     f"bing_news:{term[:30]}",
                     adapter_bn,
                     {"query": term, "limit": limit_per_source},
@@ -611,7 +702,7 @@ async def scrape_topic(
         tasks.append(
             asyncio.create_task(
                 _semaphore_guarded(
-                    _sem,
+                    sem,
                     f"reddit:{sub}",
                     adapter_r,
                     {"subreddit": sub, "limit": limit_per_source},
@@ -637,11 +728,12 @@ async def scrape_topic(
             GitHubTrendingConfig,
         )
 
+        covered.add("github-trending")
         adapter_gh = GitHubTrendingAdapter(GitHubTrendingConfig())
         tasks.append(
             asyncio.create_task(
                 _semaphore_guarded(
-                    _sem,
+                    sem,
                     "github_trending",
                     adapter_gh,
                     {"limit": limit_per_source},
@@ -653,17 +745,146 @@ async def scrape_topic(
     if expansion.category in ("consumer", "ecommerce", "health", "gaming"):
         from aegis.scrape.sources.amazon import AmazonAdapter, AmazonConfig
 
+        covered.add("amazon")
         adapter_amz = AmazonAdapter(AmazonConfig())
         tasks.append(
             asyncio.create_task(
                 _semaphore_guarded(
-                    _sem,
+                    sem,
                     "amazon",
                     adapter_amz,
                     {"query": topic, "limit": limit_per_source},
                 )
             )
         )
+
+    return covered
+
+
+async def scrape_topic(
+    topic: str,
+    *,
+    pool: PgPool | None = None,
+    tenant_id: UUID | None = None,
+    limit_per_source: int = 30,
+    dry_run: bool = False,
+    dedup_threshold: float = 0.82,
+    dedup_lookback_hours: int = 72,
+    detect_patterns: bool = True,
+    stream_client: Any | None = None,
+    adapter_override: list[str] | None = None,
+    max_adapters: int = 12,
+) -> TopicScrapeResult:
+    """The single entry-point for topic-based intelligence scraping.
+
+    Runs the core no-auth adapters in parallel across all expanded queries
+    (HackerNews · Google News · Bing News · Reddit · GitHub Trending ·
+    Amazon Bestsellers), then — PASS4 — uses the intelligent AdapterRouter
+    to schedule additional swarm-registry adapters matched to the topic
+    type (e.g. nse_bse + moneycontrol for finance queries, flipkart +
+    amazon_in for e-commerce queries).
+
+    Semantically deduplicates results and runs pattern detection before
+    persisting to the DB.
+
+    Args:
+        topic: A single keyword or short phrase (e.g. "AI chips").
+        pool: A live PgPool. If None, signals are collected but not stored.
+        tenant_id: Tenant UUID for DB writes.
+        limit_per_source: Max signals per individual adapter run.
+        dry_run: Collect and deduplicate but do not write to DB.
+        dedup_threshold: Similarity threshold for near-duplicate detection.
+        dedup_lookback_hours: Hours back to check DB for semantic duplicates.
+        detect_patterns: Whether to cluster signals into emerging themes.
+        stream_client: Optional Redis client for the real-time stream bridge.
+        adapter_override: PASS4 — run EXACTLY these swarm-registry adapter
+            names instead of the core set + routing (for explicit user
+            requests or testing). Unknown names are skipped with a log.
+        max_adapters: PASS4 — cap on routed adapter recommendations.
+    """
+    expansion = expand_topic(topic)
+    result = TopicScrapeResult(topic=topic, expansion=expansion)
+
+    # Bind a time-seeded HardenShim for this session so all parallel adapter
+    # tasks share one advancing RNG sequence — avoids every task repeating
+    # the same default-seed fingerprint pattern.
+    _shim_token = None
+    try:
+        import time as _time
+
+        from aegis.scrape.harden_shim import HardenShim as _HardenShim
+        from aegis.scrape.harden_shim import set_session_shim as _set_session_shim
+
+        _shim_token = _set_session_shim(
+            _HardenShim(rng_seed=_time.time_ns() & 0xFFFF_FFFF)
+        )
+    except Exception:
+        pass
+
+    _sem = asyncio.Semaphore(_HTTP_MAX_CONCURRENCY)
+    tasks: list[asyncio.Task[tuple[str, list[ProductSignal], str | None]]] = []
+
+    # ── PASS4: adapter selection — explicit override or intelligent routing ──
+    routed_names: list[str] = []
+    if adapter_override is not None:
+        result.routed_adapters = list(adapter_override)
+        _log.info("topic.explicit_adapters", topic=topic, adapters=adapter_override)
+        scheduled = _schedule_routed_adapters(
+            list(adapter_override),
+            sem=_sem,
+            tasks=tasks,
+            topic=topic,
+            limit_per_source=limit_per_source,
+        )
+        for missing in set(adapter_override) - set(scheduled):
+            result.errors.append(f"adapter_override: unknown adapter '{missing}'")
+    else:
+        try:
+            from aegis.scrape.adapter_router import AdapterRouter
+
+            recs = AdapterRouter().route(topic, top_n=max_adapters)
+            result.topic_type = recs[0].topic_type.value if recs else None
+            routed_names = [
+                r.adapter_name
+                for r in recs
+                if r.credentials_available or not r.requires_credentials
+            ]
+            result.routed_adapters = routed_names
+            _log.info(
+                "topic.routed",
+                topic=topic,
+                topic_type=result.topic_type,
+                adapters=routed_names[:5],
+                total=len(routed_names),
+            )
+        except Exception as exc:
+            _log.warning(
+                "topic.routing_failed", error=str(exc), fallback="default_adapters"
+            )
+
+        covered = _schedule_core_adapters(
+            expansion,
+            sem=_sem,
+            tasks=tasks,
+            topic=topic,
+            limit_per_source=limit_per_source,
+        )
+
+        # Routed extras: registry adapters the core set does not already cover.
+        # Gated so unit tests / constrained envs can keep the core-only path.
+        if routed_names and _routing_extras_enabled():
+            extras = [n for n in routed_names if n not in covered]
+            scheduled = _schedule_routed_adapters(
+                extras,
+                sem=_sem,
+                tasks=tasks,
+                topic=topic,
+                limit_per_source=limit_per_source,
+            )
+            if scheduled:
+                _log.info(
+                    "topic.routed_extras_scheduled", topic=topic, adapters=scheduled
+                )
 
     # ── Gather all in parallel ─────────────────────────────────────────
     all_signals: list[ProductSignal] = []
@@ -695,6 +916,20 @@ async def scrape_topic(
         from aegis.scrape.confidence import score_batch
 
         _threshold = settings().scrape.confidence_threshold
+        # PASS2-2C: prefer the outcome-adapted gate when one has been
+        # published; falls back to the static setting on any failure.
+        try:
+            from aegis.core.dynamic_thresholds import get_thresholds
+
+            _dyn = await get_thresholds()
+            _threshold = await _dyn.get_confidence_gate(fallback=_threshold)
+            # BRAIN-3: publish the adaptive gate to the confidence module's
+            # injection point so any sync caller picks up the same value.
+            from aegis.scrape.confidence import set_confidence_threshold
+
+            set_confidence_threshold(_threshold)
+        except Exception:
+            pass
         conf = await asyncio.to_thread(score_batch, all_signals, threshold=_threshold)
         result.batch_confidence = conf.overall_score
         if not conf.passed:
@@ -737,6 +972,18 @@ async def scrape_topic(
     if detect_patterns and unique_signals:
         try:
             import importlib
+
+            # PASS2-2C: inject the adaptive high-priority slope before the
+            # sync clustering runs in a worker thread (it cannot await).
+            try:
+                from aegis.core.dynamic_thresholds import get_thresholds
+                from aegis.scrape.analytics import set_high_priority_slope
+
+                _dyn = await get_thresholds()
+                set_high_priority_slope(await _dyn.get_velocity_slope())
+            except Exception:
+                pass
+
             _pat_mod = importlib.import_module("aegis.scrape.patterns")
             clusters: list[Any] = await asyncio.to_thread(
                 _pat_mod.detect_patterns, unique_signals, min_cluster_size=2
@@ -749,6 +996,25 @@ async def scrape_topic(
             )
         except Exception as exc:
             _log.warning("topic.pattern_detection_failed", error=str(exc))
+
+        # PASS11: real-time first-pass pattern recognition (breakout detection).
+        # Runs alongside the batch clusterer; never blocks the harvest result.
+        try:
+            from aegis.scrape.pattern_engine import PatternEngine
+
+            rt_patterns = await asyncio.to_thread(
+                PatternEngine(min_cluster_size=2).detect, unique_signals
+            )
+            result.realtime_patterns = rt_patterns
+            breakouts = sum(1 for p in rt_patterns if p.is_breakout)
+            _log.info(
+                "topic.realtime_patterns_detected",
+                topic=topic,
+                patterns=len(rt_patterns),
+                breakouts=breakouts,
+            )
+        except Exception as exc:
+            _log.warning("topic.realtime_pattern_failed", error=str(exc))
 
     # ── Persist unique signals ────────────────────────────────────────
     if pool is not None and tenant_id is not None and not dry_run and unique_signals:
@@ -818,8 +1084,9 @@ FINANCE_ADAPTERS: list[str] = [
     "reddit_finance", "screener_in", "investing_com",
 ]
 ECOMMERCE_ADAPTERS: list[str] = [
-    "flipkart", "amazon_in", "meesho", "myntra", "reddit_ecommerce",
-    "ajio", "nykaa", "snapdeal", "indiamart",
+    "ebay", "bestbuy", "etsy",  # free real APIs (key-gated, fail-open)
+    "flipkart", "amazon_in", "myntra", "reddit_ecommerce", "snapdeal",
+    # nykaa/ajio/meesho/indiamart removed 2026-06-24 — WAF-gated, no free path.
 ]
 TECH_ADAPTERS: list[str] = [
     "techcrunch", "devto", "github_public", "npm_trends", "wired",

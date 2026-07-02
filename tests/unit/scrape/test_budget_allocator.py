@@ -55,3 +55,75 @@ def test_exploration_bonus_revisits_quiet_arm():
     alloc.record("rare", 10)  # played once, modest reward
     # The rarely-played arm's exploration bonus keeps it competitive.
     assert alloc.ucb_score("rare") > alloc.ucb_score("dominant") * 0.5
+
+
+# ---------------------------------------------------------------------------
+# PASS2-2B: composite quality reward
+# ---------------------------------------------------------------------------
+
+
+def test_quality_reward_prefers_novel_high_confidence_source():
+    """20 novel high-confidence signals beat 200 duplicate low-confidence ones."""
+    alloc = UCB1Allocator()
+    for _ in range(10):
+        alloc.record_with_quality(
+            source="quality",
+            yield_count=20,
+            elapsed_s=10.0,
+            novelty_fraction=1.0,
+            avg_confidence=0.9,
+        )
+        alloc.record_with_quality(
+            source="spam",
+            yield_count=200,
+            elapsed_s=10.0,
+            novelty_fraction=0.05,
+            avg_confidence=0.2,
+        )
+    stats = alloc.stats()
+    assert stats["quality"]["mean_reward"] > stats["spam"]["mean_reward"]
+
+
+def test_quality_reward_composite_formula():
+    alloc = UCB1Allocator()
+    # normalized_yield = min(1, 50 / (1.0 * 100)) = 0.5
+    alloc.record_with_quality(
+        source="s",
+        yield_count=50,
+        elapsed_s=1.0,
+        novelty_fraction=0.5,
+        avg_confidence=0.5,
+    )
+    expected = 0.5 * 0.5 + 0.3 * 0.5 + 0.2 * 0.5
+    assert abs(alloc.stats()["s"]["mean_reward"] - expected) < 1e-6
+
+
+def test_quality_reward_zero_elapsed_does_not_crash():
+    alloc = UCB1Allocator()
+    alloc.record_with_quality(
+        source="s", yield_count=10, elapsed_s=0.0, novelty_fraction=1.0, avg_confidence=1.0
+    )
+    assert alloc.stats()["s"]["plays"] == 1
+
+
+def test_quality_reward_inputs_clamped_to_unit_interval():
+    alloc = UCB1Allocator()
+    alloc.record_with_quality(
+        source="s",
+        yield_count=10_000,
+        elapsed_s=0.001,
+        novelty_fraction=5.0,
+        avg_confidence=-3.0,
+    )
+    # 0.5*1.0 + 0.3*1.0 + 0.2*0.0 = 0.8 max
+    assert 0.0 <= alloc.stats()["s"]["mean_reward"] <= 0.8 + 1e-9
+
+
+def test_quality_reward_counts_as_play_for_allocation():
+    alloc = UCB1Allocator()
+    alloc.record_with_quality(
+        source="seen", yield_count=10, elapsed_s=1.0, novelty_fraction=1.0, avg_confidence=1.0
+    )
+    out = alloc.allocate(["seen", "unseen"], base_limit=50)
+    assert out["unseen"] == 50  # unexplored arm gets baseline
+    assert "seen" in out

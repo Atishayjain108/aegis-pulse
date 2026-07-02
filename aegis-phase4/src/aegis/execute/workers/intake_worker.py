@@ -51,6 +51,9 @@ CONSUMER_GROUP: Final[str] = "aegis-execute-intake"
 CONSUMER_NAME_PREFIX: Final[str] = "intake-"
 READ_BLOCK_MS: Final[int] = 1000  # blocking read budget
 READ_COUNT: Final[int] = 10
+# Liveness heartbeat: refreshed in the read loop, TTL self-clears on death.
+_HEARTBEAT_INTERVAL_S: Final[float] = 10.0
+_HEARTBEAT_TTL_S: Final[int] = 30
 
 
 @dataclass
@@ -160,7 +163,19 @@ class IntakeWorker:
                 _log.debug("execute.intake.group_exists", stream=stream, error=str(exc))
 
     async def _run(self) -> None:
+        last_beat = 0.0
         while not self._stop.is_set():
+            # Liveness heartbeat for the dashboard (`/api/pipeline/live`). Refresh
+            # at most once per HEARTBEAT_INTERVAL_S; TTL self-clears if we die.
+            now = time.monotonic()
+            if now - last_beat >= _HEARTBEAT_INTERVAL_S:
+                last_beat = now
+                try:
+                    await self._redis.set(
+                        "aegis:execute:intake:running", "1", ex=_HEARTBEAT_TTL_S
+                    )
+                except Exception as exc:  # best-effort, never fatal
+                    _log.debug("execute.intake.heartbeat_failed", error=str(exc))
             try:
                 await self._read_once()
             except asyncio.CancelledError:

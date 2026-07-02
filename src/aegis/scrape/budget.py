@@ -17,10 +17,18 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 
+import structlog
+
+_log = structlog.get_logger("aegis.scrape.budget")
+
 # UCB1 exploration constant. Higher → more re-exploration of quiet arms.
 _DEFAULT_C = 1.4
 # Reward saturates here so one viral run can't dominate the mean forever.
 _REWARD_CAP = 100.0
+# PASS2-2B: normalised-yield ceiling — signals per second of wall time above
+# which extra speed earns no additional reward (prevents extremely fast but
+# low-quality sources from dominating the bandit).
+_YIELD_PER_SECOND_CAP = 100.0
 
 
 @dataclass
@@ -44,10 +52,55 @@ class UCB1Allocator:
 
     def record(self, arm: str, signals: int) -> None:
         """Fold one run's yield into the arm's reward history."""
-        a = self._arms.setdefault(arm, _Arm())
         reward = min(max(signals, 0), self.reward_cap) / self.reward_cap
+        self._record_reward(arm, reward)
+
+    def record_with_quality(
+        self,
+        source: str,
+        *,
+        yield_count: int,
+        elapsed_s: float,
+        novelty_fraction: float,
+        avg_confidence: float,
+    ) -> None:
+        """PASS2-2B: record a composite quality reward, not a raw count.
+
+        reward = 0.5 × normalized_yield
+               + 0.3 × novelty_fraction   (fraction not seen in last 24 h)
+               + 0.2 × avg_confidence     (mean confidence of yielded signals)
+
+        Normalized yield is signals per second of wall time, capped at
+        ``_YIELD_PER_SECOND_CAP``. A source producing 200 duplicate
+        low-confidence signals scores below one producing 20 novel,
+        high-confidence ones — the bandit rewards quality, not quantity.
+        """
+        if elapsed_s <= 0:
+            elapsed_s = 1.0
+        normalized_yield = min(
+            1.0, max(yield_count, 0) / max(elapsed_s * _YIELD_PER_SECOND_CAP, 1.0)
+        )
+        composite = (
+            0.5 * normalized_yield
+            + 0.3 * max(0.0, min(1.0, novelty_fraction))
+            + 0.2 * max(0.0, min(1.0, avg_confidence))
+        )
+        self._record_reward(source, composite)
+        _log.debug(
+            "ucb1.quality_reward",
+            source=source,
+            yield_count=yield_count,
+            elapsed_s=round(elapsed_s, 2),
+            novelty=round(novelty_fraction, 3),
+            avg_confidence=round(avg_confidence, 3),
+            composite=round(composite, 4),
+        )
+
+    def _record_reward(self, arm: str, reward: float) -> None:
+        """Fold one normalised reward in [0, 1] into the arm's history."""
+        a = self._arms.setdefault(arm, _Arm())
         a.plays += 1
-        a.reward_sum += reward
+        a.reward_sum += max(0.0, min(1.0, reward))
         self._total_plays += 1
 
     def ucb_score(self, arm: str) -> float:

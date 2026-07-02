@@ -23,6 +23,8 @@ Halt reasons from Phase 3 (e.g. `latency_budget_exceeded`,
 
 from __future__ import annotations
 
+import os
+from dataclasses import dataclass, field
 from typing import Any
 
 import structlog
@@ -31,6 +33,69 @@ from aegis.predict.inference import InferenceResult
 from aegis.predict.schemas import PredictionAction
 
 logger = structlog.get_logger("aegis.agents_phase3_glue.bridge")
+
+# CONN-3: agents use the in-process bridge exclusively (see ADR 0016).
+# AEGIS_PREDICT_FORCE_HTTP=true is a debugging override that routes the
+# enrichment through the HTTP :8100 service instead — useful for verifying
+# parity between the two paths. Any HTTP failure falls back to in-process.
+_FORCE_HTTP_ENV = "AEGIS_PREDICT_FORCE_HTTP"
+_HTTP_TIMEOUT_S = 10.0
+
+
+def _force_http() -> bool:
+    return os.environ.get(_FORCE_HTTP_ENV, "false").strip().lower() in {"1", "true", "yes"}
+
+
+@dataclass(frozen=True)
+class _HttpInferenceResult:
+    """Duck-typed stand-in for `InferenceResult` built from a /predict response.
+
+    Carries exactly the attributes `inference_to_agent_decision` reads.
+    `causal` is empty and `audit` is None — the HTTP envelope exposes only
+    summaries of those, and this path exists for debugging parity, not audit.
+    """
+
+    bundle: Any
+    halt_reasons: tuple[str, ...] = ()
+    duration_ms: float = 0.0
+    causal: tuple[Any, ...] = ()
+    audit: Any = None
+    graph_summary: dict[str, float] = field(default_factory=dict)
+
+
+async def _run_via_http(state: dict, trend_id: str) -> _HttpInferenceResult:
+    """POST to the Phase 3 serving API and rebuild a bridge-shaped result.
+
+    Raises on any transport/validation error — the caller falls back to the
+    in-process runner.
+    """
+    import httpx
+
+    from aegis.predict.schemas import PredictionBundle
+
+    base_url = os.environ.get("AEGIS_PREDICT_API_URL", "http://localhost:8100").rstrip("/")
+    payload: dict[str, Any] = {
+        "tenant_id": state.get("tenant_id", "default"),
+        "trend_id": trend_id,
+        "signals": state.get("signals"),
+    }
+    window = state.get("feature_window")
+    if window is not None:
+        payload["feature_window"] = (
+            window.model_dump(mode="json") if hasattr(window, "model_dump") else window
+        )
+        payload.pop("signals", None)
+
+    async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_S) as client:
+        resp = await client.post(f"{base_url}/predict", json=payload)
+        resp.raise_for_status()
+    data = resp.json()
+    return _HttpInferenceResult(
+        bundle=PredictionBundle.model_validate(data["bundle"]),
+        halt_reasons=tuple(data.get("halt_reasons", ())),
+        duration_ms=float(data.get("duration_ms", 0.0)),
+        graph_summary=dict(data.get("graph_summary", {})),
+    )
 
 
 # Verdict mapping — kept as a top-level constant so it's editable
@@ -177,6 +242,33 @@ async def enrich_sentinel_decision(
     return await _enrich(state, agent_name="SENTINEL", primary_horizon=primary_horizon)
 
 
+async def _persist_prediction(result: Any, *, tenant_id: str | None) -> None:
+    """Best-effort write of the inference bundle to the ``predictions`` table.
+
+    Uses the process-wide shared pool (set at startup); a no-op when it is
+    unset (e.g. unit tests, or callers that never configured a DB). Never
+    raises — Phase 3 output is advisory, persistence is observability only.
+    """
+    try:
+        from aegis.db.pool import get_shared_pool
+        from aegis.db.predictions import insert_prediction
+
+        pool = get_shared_pool()
+        if pool is None:
+            return
+        bundle = getattr(result, "bundle", None)
+        if bundle is None:
+            return
+        record = getattr(result, "record", None)
+        signature = getattr(record, "signature", "UNSIGNED") if record else "UNSIGNED"
+        kwargs: dict[str, Any] = {"signature": signature}
+        if tenant_id:
+            kwargs["tenant_id"] = str(tenant_id)
+        await insert_prediction(pool, bundle, **kwargs)
+    except Exception as exc:  # never break inference on a persistence error
+        logger.debug("phase3_glue.persist_skipped", error=str(exc)[:160])
+
+
 async def _enrich(
     state: dict,
     *,
@@ -195,12 +287,57 @@ async def _enrich(
         runner = InferenceRunner()
         state = {**state, "_phase3_runner": runner}
 
+    # CONN-3 debugging override: route through HTTP :8100 when forced.
+    # Falls back to the canonical in-process path on any HTTP failure.
+    http_result: _HttpInferenceResult | None = None
+    if _force_http():
+        try:
+            http_result = await _run_via_http(state, trend_id)
+            logger.info(
+                "phase3_glue.http_override_used",
+                agent=agent_name,
+                trend_id=trend_id,
+                duration_ms=http_result.duration_ms,
+            )
+        except Exception as exc:
+            logger.warning(
+                "phase3_glue.http_override_failed_falling_back",
+                agent=agent_name,
+                error=str(exc)[:200],
+            )
+
+    # Guard: InferenceRunner.run() requires non-empty signals OR a feature window.
+    # When dedup + the confidence/stale-data gate drain the batch, both are
+    # empty/None and runner.run() would raise ValueError. Degrade gracefully to
+    # an OBSERVE no-op instead of crashing the SCOUT/SENTINEL node.
+    _signals = state.get("signals")
+    _window = state.get("feature_window")
+    if http_result is None and not _signals and _window is None:
+        logger.warning(
+            "phase3_glue.no_input_data",
+            agent=agent_name,
+            trend_id=trend_id,
+        )
+        return {
+            **state,
+            "phase3_decision": {
+                "agent_name": agent_name,
+                "verdict": "hold",
+                "halt": False,
+                "score": 0.0,
+                "confidence": 0.0,
+                "reasoning": "phase3_skipped:no_signal_data",
+                "halt_reasons": [],
+                "trend_id": trend_id,
+            },
+        }
+
     try:
-        result = await runner.run(
+        result = http_result or await runner.run(
             tenant_id=state.get("tenant_id", "default"),
             trend_id=trend_id,
-            signals=state.get("signals"),
-            window=state.get("feature_window"),
+            signals=_signals,
+            window=_window,
         )
     except Exception as exc:
         logger.exception("phase3_glue.inference_failed", agent=agent_name, exc_type=type(exc).__name__)
@@ -217,6 +354,12 @@ async def _enrich(
                 "trend_id": trend_id,
             },
         }
+
+    # OMEGA: persist the prediction bundle to the `predictions` table. For the
+    # entire project history this was built and discarded, leaving Phase 3 dead
+    # weight (predictions table empty). Best-effort, fail-open — a write error
+    # must never break the SCOUT/SENTINEL node. Idempotent on correlation_id.
+    await _persist_prediction(result, tenant_id=state.get("tenant_id"))
 
     decision = inference_to_agent_decision(
         result, agent_name=agent_name, primary_horizon=primary_horizon

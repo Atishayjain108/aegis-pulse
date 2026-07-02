@@ -307,12 +307,20 @@ def _stage_to_class_probs(
     (dormant/emerging/saturated).
     """
     c = _clamp(confidence, 0.0, HEURISTIC_CONFIDENCE_CEILING)
+    # BUGFIX (OMEGA Phase C): the PEAK tuple summed to 1.40·c and the BREAKOUT
+    # tuple to 1.20·c. With the 0.75 ceiling, PEAK reached 1.05 > 1.0 and the
+    # Prediction validator raised "class probabilities exceed 1.0" — so every
+    # confident PEAK (and borderline BREAKOUT) prediction was silently DROPPED,
+    # biasing the surviving sample. The three classes are mutually exclusive, so
+    # their mass must satisfy p_breakout + p_peak + p_decline ≤ 1; the remainder
+    # is the implicit DORMANT/EMERGING/SATURATED "other" mass. Each tuple below
+    # now sums to ≤ 1·c ≤ ceiling, so the validator can never fire.
     if stage == TrendStage.BREAKOUT:
-        return (c, 0.15 * c, 0.05 * c)
+        return (0.80 * c, 0.15 * c, 0.05 * c)
     if stage == TrendStage.PEAK:
-        return (0.20 * c, c, 0.20 * c)
+        return (0.15 * c, 0.70 * c, 0.15 * c)
     if stage == TrendStage.DECLINING:
-        return (0.05 * c, 0.10 * c, c)
+        return (0.05 * c, 0.10 * c, 0.85 * c)
     if stage == TrendStage.SATURATED:
         return (0.02, 0.05, 0.85 * c)
     if stage == TrendStage.EMERGING:
@@ -380,10 +388,20 @@ def heuristic_predict(
     #   * many signals → up to +0.40
     #   * many authors → up to +0.20
     #   * agreeing v1/v6/v24 sign → up to +0.15
-    sig_conf = _clamp(math.log1p(s["recent_signals"]) / math.log(200.0), 0.0, 0.4)
-    auth_conf = _clamp(math.log1p(s["recent_authors"]) / math.log(50.0), 0.0, 0.2)
+    # max(0, ·) guards the log1p domain: a corrupted/adversarial window can
+    # carry negative counts, and the heuristic must NEVER raise (doctrine).
+    sig_conf = _clamp(math.log1p(max(0.0, s["recent_signals"])) / math.log(200.0), 0.0, 0.4)
+    auth_conf = _clamp(math.log1p(max(0.0, s["recent_authors"])) / math.log(50.0), 0.0, 0.2)
+    # BUGFIX (OMEGA Phase C): the old `0.05 * (1 + abs(same_sign - 1.5) * 2)`
+    # awarded the SAME maximum (+0.20) to a unanimously DECLINING trend
+    # (same_sign=0) as to a unanimously rising one (same_sign=3) — inflating
+    # confidence on trends heading down — and its 0.20 ceiling let evidence
+    # saturate near the cap. Reframe as a bounded *consistency* term: the
+    # fraction of the three velocity horizons that agree on a sign, scaled into
+    # [0, 0.10]. Direction is conveyed by `stage`, not by this term.
     same_sign = int(s["v1"] >= 0) + int(s["v6"] >= 0) + int(s["v24"] >= 0)
-    sign_conf = 0.05 * (1 + abs(same_sign - 1.5) * 2)  # 0.05 → 0.20
+    agree_frac = max(same_sign, 3 - same_sign) / 3.0  # 0.33 (split) … 1.0 (unanimous)
+    sign_conf = _clamp(0.10 * (agree_frac - 1.0 / 3.0) / (2.0 / 3.0), 0.0, 0.10)
 
     # Phase 3.1 — momentum / MA-cross / OLS confidence adjustments.
     # Each bonus is small and individually capped to prevent compounding

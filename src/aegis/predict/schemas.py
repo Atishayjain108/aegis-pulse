@@ -134,11 +134,16 @@ class FeatureWindow(BaseModel):
     @field_validator("feature_names")
     @classmethod
     def _names_match_schema(cls, v: tuple[str, ...]) -> tuple[str, ...]:
-        if tuple(v) != FEATURE_NAMES:
+        # PASS2-2E: legacy 3.0.0 windows (20 features) remain constructible —
+        # InferenceRunner pads them to the current 24-dim layout via
+        # features.builder.pad_legacy_window() before any model sees them.
+        from aegis.predict import LEGACY_FEATURE_NAMES_V3
+
+        if tuple(v) not in (FEATURE_NAMES, LEGACY_FEATURE_NAMES_V3):
             raise ValueError(
                 f"feature_names mismatch: got {v!r}, expected FEATURE_NAMES "
-                f"of length {FEATURE_DIM}. Bump FEATURE_SCHEMA_VERSION if "
-                f"intentional."
+                f"of length {FEATURE_DIM} (or the legacy 3.0.0 tuple). Bump "
+                f"FEATURE_SCHEMA_VERSION if intentional."
             )
         return v
 

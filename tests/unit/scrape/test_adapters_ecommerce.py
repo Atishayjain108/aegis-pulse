@@ -105,6 +105,17 @@ async def test_flipkart_flaresolverr_called_on_403():
 
     with (
         patch.object(adapter._client, "get", new_callable=AsyncMock, return_value=mock_resp),  # type: ignore[union-attr]
+        # Keep the test hermetic: no live session harvest, no live browser fetch.
+        patch(
+            "aegis.scrape.sources.flipkart.get_session_bundle",
+            new_callable=AsyncMock,
+            return_value=None,
+        ),
+        patch(
+            "aegis.scrape.sources.flipkart._playwright_fetch",
+            new_callable=AsyncMock,
+            return_value=None,
+        ),
         patch(
             "aegis.scrape.sources.flipkart.flaresolverr_get",
             new_callable=AsyncMock,
@@ -780,3 +791,16 @@ def test_snapdeal_parse_no_title_returns_none() -> None:
     ctx = ScrapeContext()
     result = adapter.parse({"title": "", "url": "https://example.com", "raw_json": {}}, ctx)
     assert result is None
+
+
+def test_join_brand_title_dedupes_brand_prefix() -> None:
+    from aegis.scrape.ecommerce_utils import join_brand_title
+
+    # name already starts with brand → no doubling.
+    assert join_brand_title("ETUDE", "ETUDE Dear Darling Lip Gloss") == "ETUDE Dear Darling Lip Gloss"
+    # case-insensitive prefix dedupe.
+    assert join_brand_title("boAt", "boat Rockerz 450") == "boat Rockerz 450"
+    # genuine brand + name still joins.
+    assert join_brand_title("Nike", "Air Max 90") == "Nike Air Max 90"
+    # empty brand returns name alone.
+    assert join_brand_title("", "Air Max") == "Air Max"

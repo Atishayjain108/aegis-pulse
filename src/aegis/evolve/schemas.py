@@ -52,6 +52,43 @@ class TradeOutcome(BaseModel, frozen=True):
 
 
 # ---------------------------------------------------------------------------
+# Signal Outcome — capital-free self-supervised ground truth (Phase A)
+# ---------------------------------------------------------------------------
+
+class SignalOutcome(BaseModel, frozen=True):
+    """
+    A falsifiable claim about a trend's re-observable signal trajectory and its
+    settled result. Unlike ``TradeOutcome`` this requires NO capital — it is
+    settled by re-reading the ``signals`` table after the horizon elapses.
+
+    ``resolution_status`` starts ``pending`` and is settled to ``correct`` /
+    ``incorrect`` once ``settle_after`` passes.
+    """
+
+    outcome_id: str = Field(default_factory=_new_uuid)
+    prediction_id: str
+    trend_key: str
+    metric: str = Field(default="signal_count")  # 'signal_count' | 'velocity'
+    claimed_direction: str  # 'rise' | 'fall' | 'flat'
+    prediction_score: float = Field(ge=0.0, le=1.0)
+    prediction_confidence: float = Field(ge=0.0, le=1.0)
+    baseline_value: float = Field(default=0.0)
+    horizon_hours: int = Field(default=72, gt=0)
+    claim_ts: datetime = Field(default_factory=_utcnow)
+    settle_after: datetime
+    observed_value: float | None = None
+    observed_direction: str | None = None
+    settled_at: datetime | None = None
+    settlement_timestamp: datetime = Field(default_factory=_utcnow)
+    resolution_status: str = Field(default="pending")  # pending|correct|incorrect
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @property
+    def is_correct(self) -> bool:
+        return self.resolution_status == "correct"
+
+
+# ---------------------------------------------------------------------------
 # Model Candidate — one training run result
 # ---------------------------------------------------------------------------
 

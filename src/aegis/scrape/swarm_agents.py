@@ -183,6 +183,16 @@ class SwarmAgentPool:
         except Exception:  # pragma: no cover - defensive
             return False
 
+    @staticmethod
+    def _quarantine_platform(platform: str, reason: str, message: str = "") -> None:
+        """PASS2-2F: record a typed quarantine reason (best-effort; never raises)."""
+        try:
+            from aegis.scrape.schema_drift import QuarantineReason, get_drift_tracker
+
+            get_drift_tracker().quarantine(platform, QuarantineReason(reason), message)
+        except Exception:  # pragma: no cover - defensive
+            pass
+
     async def run_agent(
         self,
         agent: ScraperAgent,
@@ -221,6 +231,7 @@ class SwarmAgentPool:
             if self._is_schema_drifting(agent.platform):
                 agent.record_failure(AdapterStatus.SCHEMA_DRIFT, latency_ms)
                 await self._persist_health(agent)
+                self._quarantine_platform(agent.platform, "schema_drift")
                 _log.warning("agent_schema_drift_quarantine", agent=agent.name, platform=agent.platform)
                 return AdapterRun(
                     agent_name=agent.name,
@@ -271,6 +282,9 @@ class SwarmAgentPool:
                 # NOT "success, 0 signals" — surface it distinctly so it doesn't
                 # masquerade as a working-but-empty source.
                 status = AdapterStatus.NEEDS_CREDENTIALS
+                self._quarantine_platform(
+                    agent.platform, "credentials_missing", err_str[:200]
+                )
             elif "403" in err_str or "blocked" in err_str.lower():
                 status = AdapterStatus.BLOCKED
             elif "429" in err_str or "rate" in err_str.lower():

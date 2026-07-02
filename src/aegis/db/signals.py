@@ -70,6 +70,7 @@ async def insert_signals(
             eng = signal.engagement
             prov = signal.provenance
             conf = signal.confidence
+            price = signal.price
 
             result = await conn.execute(
                 """
@@ -78,13 +79,15 @@ async def insert_signals(
                     posted_at, scraped_at, title, raw_text, pii_scrubbed_text, language,
                     modality, tags, intent, author_id,
                     views, likes, comments, shares, saves, watch_time_seconds, reactions,
+                    price_amount, price_currency, price_original, price_on_sale,
                     scrape_method, scraper_version, proxy_id, user_agent, ja3_fingerprint,
                     tos_risk, rate_limit_hit, captcha_encountered,
                     completeness, source_confidence, freshness_seconds,
                     content_hash, platform_specific
                 ) VALUES (
                     $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,
-                    $19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38
+                    $19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,
+                    $30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42
                 )
                 ON CONFLICT (platform, external_id, ts) DO NOTHING
                 """,
@@ -113,6 +116,14 @@ async def insert_signals(
                 eng.saves if eng else None,
                 eng.watch_time_seconds if eng else None,
                 eng.reactions if eng else None,
+                # Price columns — required for T2_commerce by the
+                # signals_commerce_needs_price CHECK constraint. Previously the
+                # price lived only in platform_specific JSONB, so every commerce
+                # signal (eBay/BestBuy/Etsy, all T2) failed to insert.
+                price.amount if price else None,
+                price.currency if price else None,
+                price.original_amount if price else None,
+                price.is_on_sale if price else None,
                 prov.method.value,
                 prov.scraper_version,
                 prov.proxy_id,

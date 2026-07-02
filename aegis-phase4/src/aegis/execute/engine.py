@@ -59,6 +59,9 @@ class PlanStatus(StrEnum):
     FULFILLED = "fulfilled"
     FAILED = "failed"
     CANCELLED = "cancelled"
+    # FIX-4 (forensic audit): no real supplier could be verified, so the plan
+    # is NOT sized on fictional cost data — it is blocked at zero quantity.
+    NO_VERIFIED_SUPPLIER = "no_verified_supplier"
 
 
 # ---------------------------------------------------------------------------
@@ -94,6 +97,9 @@ class ExecutionPlan(BaseModel):
     requires_approval: bool
     status: PlanStatus = PlanStatus.PENDING
     execution_mode: str
+    # Name of the REAL supplier whose cost was verified (staging/live only).
+    # None in advisory mode — there is no verified supplier (Reality First).
+    supplier_name: str | None = None
     created_at: datetime = Field(default_factory=_utc_now)
     order_ids: tuple[str, ...] = Field(default_factory=tuple)
 
@@ -138,9 +144,42 @@ class ExecutionEngine:
     async def create_plan(self, intent: ExecutionIntent) -> ExecutionPlan:
         """Derive a concrete execution plan from an advisory intent.
 
-        Works in all modes — no network calls, no capital at risk.
+        In advisory mode the unit cost is an explicitly-labelled estimate
+        (``_derive_unit_cost``) used only for a paper sketch — nothing is placed.
+        In staging/live mode the cost MUST come from a real supplier API
+        (``_get_verified_unit_cost``); when no supplier can be verified the plan
+        is blocked at zero quantity (``NO_VERIFIED_SUPPLIER``) rather than sized
+        on a fabricated ``margin × 2`` constant (FIX-4, forensic audit).
         """
-        unit_cost = _derive_unit_cost(intent)
+        supplier_name: str | None = None
+        if self._settings.mode == MODE_ADVISORY:
+            unit_cost = _derive_unit_cost(intent)
+        else:
+            verified = await self._get_verified_unit_cost(intent)
+            if verified is None:
+                _log.warning(
+                    "execute.engine.no_verified_supplier",
+                    trend_id=intent.trend_id,
+                    mode=self._settings.mode,
+                )
+                return ExecutionPlan(
+                    intent_id=intent.intent_id,
+                    trend_id=intent.trend_id,
+                    quantity=0,
+                    fulfillment_method=FulfillmentMethod.POD,
+                    unit_cost_usd=0.0,
+                    unit_price_usd=0.0,
+                    total_capital_usd=0.0,
+                    estimated_profit_usd=0.0,
+                    kelly_fraction_raw=0.0,
+                    kelly_fraction_used=0.0,
+                    risk_score=1.0,
+                    requires_approval=True,
+                    status=PlanStatus.NO_VERIFIED_SUPPLIER,
+                    execution_mode=self._settings.mode,
+                )
+            unit_cost, supplier_name = verified
+
         unit_price = _derive_unit_price(intent, unit_cost)
         margin = unit_price - unit_cost
 
@@ -180,6 +219,7 @@ class ExecutionEngine:
             risk_score=round(risk_score, 4),
             requires_approval=requires_approval,
             execution_mode=self._settings.mode,
+            supplier_name=supplier_name,
         )
 
         _log.info(
@@ -263,6 +303,71 @@ class ExecutionEngine:
     # Private helpers
     # ------------------------------------------------------------------
 
+    async def _get_verified_unit_cost(
+        self, intent: ExecutionIntent
+    ) -> tuple[float, str] | None:
+        """Return ``(real unit cost USD, supplier_name)`` from a supplier API.
+
+        FIX-4 (forensic audit): tries Printful (POD) first, then CJ Dropshipping.
+        Returns ``None`` when no real supplier can be verified — the caller then
+        BLOCKS the plan instead of sizing a position on a fabricated constant.
+        The supplier name lets Phase D attribute reliability + forecasts to the
+        real supplier that backed the plan.
+        """
+        category = getattr(intent, "category", "") or ""
+        keywords = list(getattr(intent, "keywords", []) or [])
+        recipient = self._supplier_recipient()
+
+        # 1. Printful (print-on-demand)
+        try:
+            from aegis.fulfillment.printful import PrintfulClient
+
+            printful = PrintfulClient(api_key=self._settings.printful_api_key)
+            product = await printful.find_matching_product(category, keywords)
+            if product is not None and recipient is not None:
+                cost = await printful.get_real_cost(product.variant_id, recipient)
+                if cost is not None and cost > 0:
+                    return float(cost), "printful"
+        except Exception as exc:
+            _log.warning("execute.engine.printful_verify_failed", error=str(exc))
+
+        # 2. CJ Dropshipping
+        try:
+            from aegis.fulfillment.cjdropshipping import CJDropshipClient
+
+            cj = CJDropshipClient(api_key=self._settings.cjdropship_api_key)
+            search = getattr(cj, "search_product", None)
+            if callable(search):
+                product = await search(category, keywords)
+                cost_usd = getattr(product, "cost_usd", None) if product else None
+                if cost_usd is not None and cost_usd > 0:
+                    return float(cost_usd), "cjdropshipping"
+        except Exception as exc:
+            _log.warning("execute.engine.cj_verify_failed", error=str(exc))
+
+        return None
+
+    def _supplier_recipient(self) -> dict[str, str] | None:
+        """Build a real recipient address from settings, or None if unset.
+
+        Reads optional ``fulfillment_recipient_*`` fields off ``ExecuteSettings``.
+        When the operator has not configured a real shipping destination this
+        returns ``None`` and order creation is refused (no "TBD" placeholder).
+        """
+        s = self._settings
+        address1 = getattr(s, "fulfillment_recipient_address1", "") or ""
+        zip_code = getattr(s, "fulfillment_recipient_zip", "") or ""
+        country = getattr(s, "fulfillment_recipient_country", "") or ""
+        if not (address1 and zip_code and country):
+            return None
+        return {
+            "name": getattr(s, "fulfillment_recipient_name", "AEGIS Operator") or "AEGIS Operator",
+            "address1": address1,
+            "city": getattr(s, "fulfillment_recipient_city", "") or "",
+            "country_code": country,
+            "zip": zip_code,
+        }
+
     async def _drawdown_breached(self) -> bool:
         return self._daily_pnl < -Decimal(
             str(self._settings.capital_daily_loss_limit_usd)
@@ -277,23 +382,46 @@ class ExecutionEngine:
         return await self._dispatch_inventory(plan)
 
     async def _dispatch_pod(self, plan: ExecutionPlan) -> list[str]:
+        # FIX-4: resolve a REAL catalog variant + recipient before ordering.
+        # If either is unavailable, create_orders refuses and returns [] — no
+        # fictional "generic T-shirt / TBD address" order is ever placed.
         from aegis.fulfillment.printful import PrintfulClient
 
         client = PrintfulClient(api_key=self._settings.printful_api_key)
+        recipient = self._supplier_recipient()
+        product = await client.find_matching_product(category="", keywords=[plan.trend_id])
+        variant_id = product.variant_id if product else None
         return await client.create_orders(
             product_ref=plan.trend_id,
             quantity=plan.quantity,
             unit_price_usd=plan.unit_price_usd,
+            variant_id=variant_id,
+            recipient=recipient,
         )
 
     async def _dispatch_dropship(self, plan: ExecutionPlan) -> list[str]:
+        # REALITY-FIRST (PROJECT OMEGA): resolve a REAL CJ product variant and a
+        # REAL recipient before ordering. CJDropshipClient.create_orders refuses
+        # (returns []) when either is missing — no "TBD" address / mock SKU order
+        # is ever placed.
         from aegis.fulfillment.cjdropshipping import CJDropshipClient
 
         client = CJDropshipClient(api_key=self._settings.cjdropship_api_key)
+        recipient = self._supplier_recipient()
+        product_vid: str | None = None
+        search = getattr(client, "search_product", None)
+        if callable(search):
+            try:
+                product = await search("", [plan.trend_id])
+                product_vid = getattr(product, "vid", None) if product else None
+            except Exception as exc:  # never order on a failed resolution
+                _log.warning("execute.engine.cj_vid_resolve_failed", error=str(exc))
         return await client.create_orders(
             product_ref=plan.trend_id,
             quantity=plan.quantity,
             unit_price_usd=plan.unit_price_usd,
+            product_vid=product_vid,
+            recipient=recipient,
         )
 
     async def _dispatch_inventory(self, plan: ExecutionPlan) -> list[str]:
@@ -317,7 +445,12 @@ class ExecutionEngine:
 
 
 def _derive_unit_cost(intent: ExecutionIntent) -> float:
-    """Estimate COGS from intent data (50% of implied sale price)."""
+    """ADVISORY-ONLY estimate of COGS from intent data (50% of implied sale price).
+
+    FIX-4 (forensic audit): this is a paper-sketch heuristic used ONLY in
+    advisory mode. It is NOT a real market quote — staging/live plans must use
+    ``ExecutionEngine._get_verified_unit_cost`` (real supplier API) instead.
+    """
     if intent.expected_margin_usd and intent.expected_margin_usd > 0:
         # margin ≈ sale_price − cost  ⇒  cost ≈ sale_price − margin
         # We don't have sale_price, so use margin as proxy for 50% margin products.

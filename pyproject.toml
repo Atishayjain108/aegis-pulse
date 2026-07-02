@@ -83,6 +83,7 @@ dependencies = [
   # --- Datetime / timezones ---
   # (zoneinfo is stdlib on 3.12; no extra dep)
   "langgraph>=0.2,<0.5",
+  "datasketch>=1.6.0",
 ]
 
 # ----------------------------------------------------------------------------
@@ -149,6 +150,7 @@ predict = [
   "fastapi>=0.115,<0.120",           # rationale: Phase 3 HTTP serving surface; Pydantic v2 native
   "uvicorn[standard]>=0.34,<0.40",   # rationale: ASGI server for Phase 3 predict service
   "prometheus-client>=0.21,<0.30",   # rationale: /metrics endpoint for Phase 3 FastAPI
+  "apscheduler>=3.10,<4",            # rationale: `aegis autonomous run` self-driving scheduler loop
 ]
 
 # Phase 3 — optional ML augmentation (torch-based predictors; heavy)
@@ -156,6 +158,16 @@ predict-ml = [
   "torch>=2.5,<2.6",                 # rationale: PatchTST/Autoformer/TimesNet temporal backbones
   "onnx>=1.17,<1.20",                # rationale: model export format for registry
   "onnxruntime>=1.19,<1.22",         # rationale: CPU-viable INT8 inference; aligned with ml extra bound
+]
+
+# Pass 9A — River online/incremental ML (real-time velocity + anomaly scoring)
+predict-online = [
+  "river>=0.21,<0.23",               # rationale: in-process incremental ML; Hoeffding tree + Half-Space Trees
+]
+
+# Pass 9B — FAISS semantic signal index (high-precision dedup + similarity search)
+scrape-semantic = [
+  "faiss-cpu>=1.8,<2",               # rationale: billion-scale exact/ANN vector search; CPU wheel, zero infra
 ]
 
 # Phase 3 — graph relational backbone (heavier; optional)
@@ -216,6 +228,12 @@ compliance = [
 evolve = [
   "optuna>=4.0,<5",                   # rationale: Bayesian TPE hyperparameter search; 4.x drops legacy sampler API
   "scikit-learn>=1.5,<2",             # rationale: LogisticRegression proxy for HPO + training evaluation; aligned with ml extra
+]
+
+# Pass 9C + 9E — production model monitoring (Evidently drift reports + MLflow tracking)
+evolve-monitoring = [
+  "evidently>=0.4,<0.5",              # rationale: HTML/JSON data + target drift reports for the retrain pipeline
+  "mlflow>=2.14,<3",                  # rationale: experiment + metric + artifact tracking; local file store
 ]
 
 # Phase 8 — CLIP counterfeit image similarity (heavy; GPU optional)
@@ -639,10 +657,23 @@ omit = [
   "*/evolve/cli.py",
   # Phase 9 evolve API — FastAPI router; exercised by integration tests.
   "*/evolve/api.py",
+  # Phase C memory CLI — thin Click wrapper around backfill/query; same pattern as */evolve/cli.py.
+  "*/memory/cli.py",
+  # Phase D execution-intel CLI — thin Click wrapper around ExecutionMemory/SupplierIntel; same pattern.
+  "*/execution_intel/cli.py",
   # Google Trends adapters — use pytrends (synchronous, rate-limited live HTTP to Google);
   # same pattern as India-market adapters above. No unit-testable paths without live infra.
   "*/scrape/sources/google_trends.py",
   "*/scrape/sources/google_trends_india.py",
+  # Global-radar adapters — keyless live HTTP to GDELT / Wikimedia / Google Trends
+  # global endpoints. Same network-adapter pattern as the sources above; no
+  # unit-testable paths without live infra.
+  "*/scrape/sources/gdelt.py",
+  "*/scrape/sources/wikimedia.py",
+  "*/scrape/sources/google_trends_global.py",
+  # Trust CLI — thin Click wrapper around the calibration/trust pipeline;
+  # same pattern as */evolve/cli.py and */memory/cli.py.
+  "*/trust/cli.py",
   # Standalone scripts — run as __main__ only; no unit-testable import surface.
   "*/predict/drift_monitor.py",
   "*/scheduler/autonomous.py",
@@ -650,6 +681,9 @@ omit = [
   # pattern as */compliance/api.py and */datalake/api/router.py already omitted.
   # Mounting is asserted by tests/unit/api/test_mounting.py.
   "*/api/main.py",
+  # DR HTTP surface — FastAPI router with graceful-degrade fallbacks to live
+  # backup tooling; same pattern as */compliance/api.py and */api/main.py.
+  "*/api/dr_router.py",
 ]
 
 [tool.coverage.report]

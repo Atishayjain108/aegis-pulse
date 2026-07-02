@@ -10,6 +10,7 @@ Rate-limit: 0.15 req/s.
 from __future__ import annotations
 
 import hashlib
+import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -34,7 +35,8 @@ from aegis.schemas.signal import (
     compute_content_hash,
 )
 from aegis.scrape.base import AdapterConfig, ScrapeContext, SourceAdapter
-from aegis.scrape.ecommerce_utils import random_ua
+from aegis.scrape.ecommerce_utils import extract_card_image
+from aegis.scrape.http_client import get_or_create_client
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -45,6 +47,8 @@ SCRAPER_VERSION = "snapdeal-0.1.0"
 
 _RSS_URL = "https://www.snapdeal.com/rss/products/offers.xml"
 _HTML_URL = "https://www.snapdeal.com/products/offers-deals"
+# Keyword search — returns products RELEVANT to the query (the real intelligence path).
+_SEARCH_URL = "https://www.snapdeal.com/search?keyword={q}&sort=rlvncy"
 
 _HEADERS = {
     "Accept": "text/html,application/xhtml+xml,*/*;q=0.8",
@@ -56,11 +60,14 @@ _HEADERS = {
 # XML namespaces commonly found in RSS feeds
 _NS = {"media": "http://search.yahoo.com/mrss/"}
 
-# HTML selectors for fallback
+# HTML selectors (search results + offers page share the product-tuple markup)
 _CARD_SEL = ".product-tuple-listing, [class*='productCard'], .product-desc-rating"
 _TITLE_SEL = ".product-title, p.product-title"
 _PRICE_SEL = ".product-price, .payBlkBig"
-_ORIG_SEL = ".product-desc-price.slash, .product-desc-price strike"
+_ORIG_SEL = ".product-desc-price.slash, .product-desc-price strike, .product-desc-price"
+_RATING_SEL = ".filled-stars"
+_REVIEW_SEL = ".product-rating-count"
+_DISCOUNT_SEL = ".product-discount, .discount"
 
 
 def _parse_rss_feed(xml_text: str) -> list[dict[str, Any]]:
@@ -114,8 +121,46 @@ def _parse_rss_feed(xml_text: str) -> list[dict[str, Any]]:
     return items
 
 
+def _money(el: Any) -> float | None:
+    """Parse an INR price element → float, or None."""
+    if el is None:
+        return None
+    raw = el.get_text(strip=True).replace("Rs.", "").replace("₹", "").replace(",", "").strip()
+    try:
+        return float(raw.split()[0]) if raw else None
+    except (ValueError, IndexError):
+        return None
+
+
+def _rating_from_stars(el: Any) -> float | None:
+    """Snapdeal renders rating as ``.filled-stars`` with ``style='width:86%'`` → 4.3/5."""
+    if el is None:
+        return None
+    style = str(el.get("style") or "")
+    m = re.search(r"width:\s*([\d.]+)%", style)
+    if not m:
+        return None
+    try:
+        return round(float(m.group(1)) / 20.0, 1)  # 100% width == 5 stars
+    except ValueError:
+        return None
+
+
+def _review_count(el: Any) -> int | None:
+    """Parse ``(123)`` style review counts."""
+    if el is None:
+        return None
+    m = re.search(r"(\d[\d,]*)", el.get_text(strip=True))
+    if not m:
+        return None
+    try:
+        return int(m.group(1).replace(",", ""))
+    except ValueError:
+        return None
+
+
 def _parse_snapdeal_html(html: str) -> list[dict[str, Any]]:
-    """Extract deal cards from Snapdeal HTML page. Returns [] on any failure."""
+    """Extract product cards from Snapdeal HTML (search or offers). Returns [] on failure."""
     try:
         from bs4 import BeautifulSoup  # type: ignore[import-untyped]
     except ImportError:
@@ -134,13 +179,14 @@ def _parse_snapdeal_html(html: str) -> list[dict[str, Any]]:
                 if not title:
                     continue
 
-                price_el = card.select_one(_PRICE_SEL)
-                price_inr: float | None = None
-                try:
-                    raw = (price_el.get_text(strip=True) if price_el else "").replace("Rs.", "").replace("₹", "").replace(",", "").strip()
-                    price_inr = float(raw.split()[0]) if raw else None
-                except (ValueError, IndexError):
-                    pass
+                price_inr = _money(card.select_one(_PRICE_SEL))
+                orig_price = _money(card.select_one(_ORIG_SEL))
+                discount_pct: float | None = None
+                if orig_price and price_inr and orig_price > price_inr > 0:
+                    discount_pct = round((orig_price - price_inr) / orig_price * 100, 1)
+
+                rating = _rating_from_stars(card.select_one(_RATING_SEL))
+                review_count = _review_count(card.select_one(_REVIEW_SEL))
 
                 link_el = card.find("a")
                 href = link_el.get("href", "") if link_el else ""
@@ -152,7 +198,13 @@ def _parse_snapdeal_html(html: str) -> list[dict[str, Any]]:
                     "scraped_at": scraped_at,
                     "raw_json": {
                         "currency": "INR",
+                        "image_url": extract_card_image(card),
                         "price_inr": price_inr,
+                        "disc_price": price_inr,
+                        "orig_price": orig_price,
+                        "discount_pct": discount_pct,
+                        "rating": rating,
+                        "review_count": review_count,
                         "description": None,
                         "source": "html",
                     },
@@ -194,17 +246,18 @@ class SnapdealAdapter(SourceAdapter[dict[str, Any]]):
         return "snapdeal"
 
     async def setup(self, ctx: ScrapeContext) -> None:
-        self._client = httpx.AsyncClient(
-            timeout=httpx.Timeout(self._cfg.timeout_seconds),
-            headers={**_HEADERS, "User-Agent": random_ua()},
-            follow_redirects=True,
+        # Shared client: per-host throttle + header/UA rotation + optional
+        # proxy via http_client event hooks (see http_client.py).
+        self._client = await get_or_create_client(
+            "www.snapdeal.com",
+            timeout=self._cfg.timeout_seconds,
+            headers=dict(_HEADERS),
             http2=False,
+            follow_redirects=True,
         )
 
     async def teardown(self, ctx: ScrapeContext) -> None:
-        if self._client is not None:
-            await self._client.aclose()
-            self._client = None
+        self._client = None  # shared client — release reference, never close
 
     async def _fetch_rss(self) -> list[dict[str, Any]]:
         if self._client is None:
@@ -222,31 +275,45 @@ class SnapdealAdapter(SourceAdapter[dict[str, Any]]):
             _log.warning("snapdeal.rss.failed", error=str(e))
             return []
 
-    async def _fetch_html(self) -> list[dict[str, Any]]:
+    async def _fetch_html(self, url: str = _HTML_URL) -> list[dict[str, Any]]:
         if self._client is None:
             return []
         await self._rate_limit()
         self._record_request_metric(method="html_fallback")
         try:
-            resp = await self._client.get(_HTML_URL)
+            resp = await self._client.get(url)
             resp.raise_for_status()
             return _parse_snapdeal_html(resp.text)
         except Exception as e:
             _log.warning("snapdeal.html.failed", error=str(e))
             return []
 
+    async def _fetch_search(self, query: str) -> list[dict[str, Any]]:
+        """Keyword search — returns products relevant to the query."""
+        from urllib.parse import quote_plus
+
+        url = _SEARCH_URL.format(q=quote_plus(query))
+        items = await self._fetch_html(url)
+        _log.info("snapdeal.search", query=query, results=len(items))
+        return items
+
     async def fetch_raw(  # type: ignore[override]
         self,
         ctx: ScrapeContext,
         *,
         limit: int = 50,
+        query: str | None = None,
         **_: Any,
     ) -> AsyncIterator[dict[str, Any]]:
-        items = await self._fetch_rss()
-
-        if not items:
-            _log.info("snapdeal.rss_empty_falling_back_to_html")
-            items = await self._fetch_html()
+        # Query-driven search is the real intelligence path; offers/RSS is the
+        # no-query fallback so the adapter still surfaces trending deals.
+        if query and query.strip():
+            items = await self._fetch_search(query.strip())
+        else:
+            items = await self._fetch_rss()
+            if not items:
+                _log.info("snapdeal.rss_empty_falling_back_to_html")
+                items = await self._fetch_html()
 
         for item in items[:limit]:
             if self.is_cancelled:
@@ -296,13 +363,21 @@ class SnapdealAdapter(SourceAdapter[dict[str, Any]]):
                     tos_risk=ToSRisk.AMBER,
                 ),
                 confidence=ConfidenceMetadata(
-                    completeness=0.65 if raw_json.get("price_inr") else 0.35,
+                    completeness=0.80 if raw_json.get("image_url") and raw_json.get("price_inr") else (
+                        0.65 if raw_json.get("price_inr") else 0.35
+                    ),
                     source_confidence=0.70,
                 ),
                 content_hash=h,
                 platform_specific={
                     "currency": raw_json.get("currency", "INR"),
                     "price_inr": raw_json.get("price_inr"),
+                    "disc_price": raw_json.get("disc_price"),
+                    "orig_price": raw_json.get("orig_price"),
+                    "discount_pct": raw_json.get("discount_pct"),
+                    "rating": raw_json.get("rating"),
+                    "review_count": raw_json.get("review_count"),
+                    "image_url": raw_json.get("image_url"),
                     "source": raw_json.get("source", "rss"),
                 },
             )

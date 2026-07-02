@@ -153,3 +153,132 @@ class TestFeatureNames:
 
     def test_unique(self):
         assert len(set(FEATURE_NAMES)) == len(FEATURE_NAMES)
+
+
+# --------------------------------------------------------------------------
+# PASS2-2E: schema 3.1.0 — four new features + legacy padding
+# --------------------------------------------------------------------------
+class TestPass2NewFeatures:
+    _END = datetime(2026, 6, 1, 12, 0, 0, tzinfo=UTC)
+
+    def _row(self, *, platform="reddit", title="some title here", author=None,
+             region=None, minutes_ago=10):
+        from datetime import timedelta
+
+        row = {
+            "platform": platform,
+            "title": title,
+            "captured_at": self._END - timedelta(minutes=minutes_ago),
+        }
+        if author is not None:
+            row["author_id"] = author
+        if region is not None:
+            row["region"] = region
+        return row
+
+    def _window(self, rows, size=24):
+        return build_window_from_rows(
+            trend_id="t-2e",
+            tenant_id="default",
+            rows=rows,
+            window_end=self._END,
+            window_size=size,
+        )
+
+    def _last_bucket(self, fw, name):
+        idx = list(FEATURE_NAMES).index(name)
+        offset = (fw.window_size - 1) * fw.feature_dim
+        return fw.values[offset + idx]
+
+    def test_feature_names_length_matches_dim_24(self):
+        assert len(FEATURE_NAMES) == FEATURE_DIM == 24
+
+    def test_new_features_zero_on_empty_signals(self):
+        fw = self._window([])
+        for name in (
+            "cross_platform_coherence",
+            "temporal_autocorr_lag1",
+            "author_diversity_ratio",
+            "geo_spread_entropy",
+        ):
+            assert self._last_bucket(fw, name) == 0.0
+
+    def test_new_features_within_documented_ranges(self):
+        rows = [
+            self._row(platform=p, title=f"breaking story {i}", author=f"a{i}",
+                      region=r, minutes_ago=5 + i)
+            for i, (p, r) in enumerate(
+                [("reddit", "US"), ("hacker_news", "US"), ("flipkart", "IN"),
+                 ("google_news", "EU"), ("reddit", "IN")]
+            )
+        ]
+        fw = self._window(rows)
+        assert 0.0 <= self._last_bucket(fw, "cross_platform_coherence") <= 1.0
+        assert -1.0 <= self._last_bucket(fw, "temporal_autocorr_lag1") <= 1.0
+        assert 0.0 <= self._last_bucket(fw, "author_diversity_ratio") <= 1.0
+        assert 0.0 <= self._last_bucket(fw, "geo_spread_entropy") <= 1.0
+
+    def test_cross_platform_coherence_high_for_identical_text(self):
+        title = "nvidia announces record q3 revenue"
+        rows = [
+            self._row(platform=p, title=title, minutes_ago=5)
+            for p in ("reddit", "hacker_news", "google_news")
+        ]
+        fw = self._window(rows)
+        assert self._last_bucket(fw, "cross_platform_coherence") >= 0.99
+
+    def test_author_diversity_zero_when_single_author(self):
+        rows = [
+            self._row(title=f"post number {i}", author="same_author", minutes_ago=5)
+            for i in range(6)
+        ]
+        fw = self._window(rows)
+        assert self._last_bucket(fw, "author_diversity_ratio") == 0.0
+
+    def test_geo_spread_entropy_one_for_equal_distribution(self):
+        rows = [
+            self._row(title=f"story {i}", region=r, minutes_ago=5)
+            for i, r in enumerate(["US", "US", "IN", "IN", "EU", "EU"])
+        ]
+        fw = self._window(rows)
+        assert abs(self._last_bucket(fw, "geo_spread_entropy") - 1.0) < 1e-9
+
+    def test_pad_legacy_window_preserves_first_20_values(self):
+        from aegis.predict import LEGACY_FEATURE_NAMES_V3
+        from aegis.predict.features.builder import pad_legacy_window
+        from aegis.predict.schemas import FeatureWindow
+
+        legacy_values = [float(i % 7) / 10 for i in range(8 * 20)]
+        legacy = FeatureWindow(
+            trend_id="legacy-1",
+            window_size=8,
+            feature_dim=20,
+            feature_names=LEGACY_FEATURE_NAMES_V3,
+            values=legacy_values,
+            captured_at=self._END,
+        )
+        padded = pad_legacy_window(legacy)
+        assert padded.feature_dim == 24
+        assert len(padded.values) == 8 * 24
+        for t in range(8):
+            assert padded.values[t * 24 : t * 24 + 20] == legacy_values[t * 20 : (t + 1) * 20]
+            assert padded.values[t * 24 + 20 : (t + 1) * 24] == [0.0] * 4
+
+    async def test_inference_runner_accepts_legacy_20_dim_window(self):
+        from aegis.predict import LEGACY_FEATURE_NAMES_V3
+        from aegis.predict.inference.runner import InferenceRunner
+        from aegis.predict.schemas import FeatureWindow
+
+        legacy = FeatureWindow(
+            trend_id="legacy-2",
+            window_size=24,
+            feature_dim=20,
+            feature_names=LEGACY_FEATURE_NAMES_V3,
+            values=[0.1] * (24 * 20),
+            captured_at=self._END,
+        )
+        result = await InferenceRunner().run(
+            tenant_id="default", trend_id="legacy-2", window=legacy
+        )
+        assert result.bundle is not None
+        assert result.bundle.trend_id == "legacy-2"
