@@ -303,6 +303,12 @@ class IntakeWorker:
                 entry_id=str(entry_id),
                 error=str(exc),
             )
+            # audit P1-6: make the failure observable, not just a log line, so
+            # the IntakeHandlerFailing Prometheus alert can fire.
+            with contextlib.suppress(Exception):
+                from aegis.execute.metrics import metrics as _m
+
+                _m.intake_handle_failed_total.labels(stream=stream).inc()
             return
 
         await self._ack(stream, entry_id)

@@ -160,6 +160,7 @@ class _ExecuteMetrics:
         "deliveries_total",
         "delivery_latency_ms",
         "gate_blocks_total",
+        "intake_handle_failed_total",
         "killswitch_tripped",
         "outbox_pending",
         "registry",
@@ -211,6 +212,15 @@ class _ExecuteMetrics:
             "aegis_execute_gate_blocks_total",
             "Risk-gate downgrades to BLOCK by reason code.",
             ["reason"],
+            self.registry,
+        )
+        # audit P1-6/P3-1: intake handler failures left pending for reclaim. A
+        # rising rate here means verdicts are repeatedly failing to compose —
+        # the Prometheus IntakeHandlerFailing alert fires on it.
+        self.intake_handle_failed_total = _make_counter(
+            "aegis_execute_intake_handle_failed_total",
+            "Intake stream messages whose handler raised (left pending for retry).",
+            ["stream"],
             self.registry,
         )
 

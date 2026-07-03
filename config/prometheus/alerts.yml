@@ -27,7 +27,7 @@ groups:
     rules:
       # execute-api exposes intake handle-failure counter (left-pending path).
       - alert: IntakeHandlerFailing
-        expr: increase(aegis_execute_intake_handle_failed_total[15m]) > 5
+        expr: sum(increase(aegis_execute_intake_handle_failed_total[15m])) > 5
         for: 5m
         labels: {severity: warning}
         annotations:
@@ -47,7 +47,7 @@ groups:
     rules:
       # No signals ingested recently = a silent ingestion blackout (P10-2).
       - alert: IngestionBlackout
-        expr: increase(aegis_signals_ingested_total[6h]) < 1
+        expr: sum(increase(aegis_ingest_signals_total[6h])) < 1
         for: 30m
         labels: {severity: critical}
         annotations:
