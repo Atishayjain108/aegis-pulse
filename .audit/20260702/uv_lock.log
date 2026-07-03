@@ -1,0 +1,5 @@
+Resolved 428 packages in 38.84s
+Updated aiohttp v3.10.10 -> v3.10.11
+Updated cryptography v43.0.1 -> v44.0.1
+Added defusedxml v0.7.1
+Updated jinja2 v3.1.4 -> v3.1.6

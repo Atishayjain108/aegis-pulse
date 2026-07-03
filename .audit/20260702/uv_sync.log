@@ -1,0 +1,26 @@
+Resolved 428 packages in 10ms
+   Building aegis-pulse @ file:///home/atishayjain/code/aegis-pulse
+Downloading cryptography (4.0MiB)
+Downloading aiohttp (1.2MiB)
+      Built aegis-pulse @ file:///home/atishayjain/code/aegis-pulse
+ Downloaded aiohttp
+ Downloaded cryptography
+Prepared 4 packages in 8.02s
+Uninstalled 13 packages in 124ms
+Installed 4 packages in 19ms
+ ~ aegis-pulse==0.3.0 (from file:///home/atishayjain/code/aegis-pulse)
+ - aiohttp==3.10.10
+ + aiohttp==3.10.11
+ - boolean-py==5.0
+ - cachecontrol==0.14.4
+ - cryptography==43.0.1
+ + cryptography==44.0.1
+ - cyclonedx-python-lib==11.11.0
+ - jinja2==3.1.4
+ + jinja2==3.1.6
+ - license-expression==30.4.4
+ - packageurl-python==0.17.6
+ - pip-api==0.0.34
+ - pip-audit==2.10.1
+ - pip-requirements-parser==32.0.1
+ - py-serializable==2.1.0
