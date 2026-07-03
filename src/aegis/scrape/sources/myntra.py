@@ -17,6 +17,7 @@ import hashlib
 import os
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from decimal import Decimal
 from math import log1p
 from typing import TYPE_CHECKING, Any
 
@@ -34,6 +35,7 @@ from aegis.schemas.enums import (
 from aegis.schemas.signal import (
     ConfidenceMetadata,
     EngagementMetrics,
+    Price,
     ProductSignal,
     ScrapeProvenance,
     compute_content_hash,
@@ -389,9 +391,27 @@ class MyntraAdapter(SourceAdapter[dict[str, Any]]):
             review_count = int(raw_json.get("review_count") or 0)
             tags_list: list[str] = raw_json.get("tags") or []
 
+            # audit P10-1: promote parsed price into the structured price field.
+            _pinr = raw_json.get("price_inr")
+            _oinr = raw_json.get("orig_price_inr")
+            price_obj: Price | None = None
+            if _pinr is not None:
+                try:
+                    price_obj = Price(
+                        amount=Decimal(str(_pinr)),
+                        currency=str(raw_json.get("currency", "INR")),
+                        original_amount=(
+                            Decimal(str(_oinr)) if _oinr is not None else None
+                        ),
+                        is_on_sale=bool(_oinr and _pinr and float(_oinr) > float(_pinr)),
+                    )
+                except (ArithmeticError, ValueError, TypeError):
+                    price_obj = None
+
             return ProductSignal(
                 platform=Platform.MYNTRA,
                 tier=SourceTier.TIER_3_SEARCH,
+                price=price_obj,
                 external_id=external_id,
                 url=url,  # type: ignore[arg-type]
                 title=title[:512],

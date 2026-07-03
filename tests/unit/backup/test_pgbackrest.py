@@ -287,3 +287,41 @@ def test_pgbackrest_settings_cache() -> None:
         pass
     finally:
         pg_settings.cache_clear()
+
+
+class TestEnsureMinioBucket:
+    """audit P1-4: the bucket-ensure must construct S3StorageBackend with real
+    MinIO kwargs (old code passed none + called a nonexistent method → always
+    silently skipped)."""
+
+    async def test_builds_backend_with_minio_kwargs(self, monkeypatch) -> None:
+        mgr = BackupManager(settings=_settings())
+        mgr._initialized = True
+
+        captured: dict = {}
+
+        class _FakeBackend:
+            def __init__(self, **kwargs):
+                captured.update(kwargs)  # constructor ensures bucket
+
+        monkeypatch.setattr(
+            "aegis.datalake.storage.S3StorageBackend", _FakeBackend, raising=False
+        )
+        await mgr._ensure_minio_bucket()
+        # Must have passed the four previously-missing required kwargs.
+        for key in ("bucket", "endpoint_url", "access_key", "secret_key"):
+            assert key in captured, f"missing {key} (P1-4 regression)"
+        assert captured["endpoint_url"].startswith(("http://", "https://"))
+
+    async def test_never_raises_on_backend_error(self, monkeypatch) -> None:
+        mgr = BackupManager(settings=_settings())
+        mgr._initialized = True
+
+        def _boom(**_k):
+            raise RuntimeError("minio down")
+
+        monkeypatch.setattr(
+            "aegis.datalake.storage.S3StorageBackend", _boom, raising=False
+        )
+        # Best-effort: must swallow and not raise.
+        await mgr._ensure_minio_bucket()

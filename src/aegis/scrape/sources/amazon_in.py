@@ -15,6 +15,7 @@ import os
 import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from decimal import Decimal
 from math import log1p
 from typing import TYPE_CHECKING, Any
 
@@ -32,6 +33,7 @@ from aegis.schemas.enums import (
 from aegis.schemas.signal import (
     ConfidenceMetadata,
     EngagementMetrics,
+    Price,
     ProductSignal,
     ScrapeProvenance,
     compute_content_hash,
@@ -544,9 +546,23 @@ class AmazonINAdapter(SourceAdapter[dict[str, Any]]):
                 posted_at=None,
             )
 
+            # audit P10-1: promote parsed price_inr into the structured price
+            # field so price_amount persists (was NULL). Tier stays T3_search.
+            _pinr = raw_json.get("price_inr")
+            price_obj: Price | None = None
+            if _pinr is not None:
+                try:
+                    price_obj = Price(
+                        amount=Decimal(str(_pinr)),
+                        currency=str(raw_json.get("currency", "INR")),
+                    )
+                except (ArithmeticError, ValueError, TypeError):
+                    price_obj = None
+
             return ProductSignal(
                 platform=Platform.AMAZON_IN,
                 tier=SourceTier.TIER_3_SEARCH,
+                price=price_obj,
                 external_id=external_id,
                 url=url,  # type: ignore[arg-type]
                 title=title[:512] if title else None,

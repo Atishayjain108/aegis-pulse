@@ -846,3 +846,40 @@ def test_flipkart_parse_without_price_stays_search_tier():
     from aegis.schemas.signal import SourceTier
 
     assert sig.tier == SourceTier.TIER_3_SEARCH
+
+
+def test_amazon_in_parse_populates_structured_price():
+    """audit P10-1: amazon_in must promote price_inr into the structured price."""
+    adapter = AmazonINAdapter(AmazonINConfig())
+    ctx = ScrapeContext()
+    raw = {
+        "title": "USB-C Cable",
+        "url": "https://www.amazon.in/dp/B0TEST1234",
+        "asin": "B0TEST1234",
+        "raw_json": {"price_inr": 499.0, "currency": "INR"},
+    }
+    sig = adapter.parse(raw, ctx)
+    assert sig is not None
+    assert sig.price is not None and float(sig.price.amount) == 499.0
+    assert sig.price.currency == "INR"
+
+
+def test_myntra_parse_populates_structured_price():
+    from aegis.scrape.sources.myntra import MyntraConfig
+
+    adapter = MyntraAdapter(MyntraConfig())
+    ctx = ScrapeContext()
+    raw = {
+        "title": "Nike Running Shoes",
+        "url": "https://www.myntra.com/123",
+        "raw_json": {
+            "price_inr": 2499.0,
+            "orig_price_inr": 3999.0,
+            "currency": "INR",
+        },
+    }
+    sig = adapter.parse(raw, ctx)
+    assert sig is not None
+    assert sig.price is not None and float(sig.price.amount) == 2499.0
+    assert float(sig.price.original_amount) == 3999.0
+    assert sig.price.is_on_sale is True
