@@ -478,3 +478,12 @@ and verified — price data now flows, calibration reaches verdicts, the retrain
 loop constructs, failures are counted + alertable, and the intake path no longer
 drops verdicts. The verdict engine was already sound; this session reconnected
 the data supply and the failure-reporting around it.
+
+### Final verification (2026-07-03)
+
+- `ruff check .` → **0 violations** (whole tree).
+- `pytest tests/unit/` → **2898 passed, 0 failed, 3 skipped**; **coverage 78.19% ≥ 78% floor** (was red + 77.48% at audit start — P1-15/P1-16 both resolved).
+- `pytest aegis-phase4/tests/` → **226 passed**.
+- Live stack: Redis `noeviction` confirmed; Prometheus scraping 5 targets + 5 alert rules loaded; flipkart landing 5/5 priced signals; signals hypertable 91 chunks (was 1012).
+
+11 remediation commits on `audit/full-system-20260702`. The suite now passes its own quality gate — the audit and its fixes are self-verifying via the new CI lane going forward.
