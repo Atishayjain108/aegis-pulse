@@ -443,3 +443,38 @@ Fresh-volume boot (destructive); LLM-augmented-path hallucination rate (no live 
 
 ---
 *Audit complete: Phases 0–11. Branch `audit/full-system-20260702`, 10 commits. One trivial fix applied during audit (P1-5 killswitch logging + regression test); all other findings flagged for review, not applied, per directive.*
+
+---
+
+## REMEDIATION LOG (2026-07-02, same session)
+
+After the audit, the user directed "fix every problem." Fixes were applied in 8
+verified, committed groups (each: code + regression test + green run). This is a
+log of what was actually changed and verified — not a plan.
+
+| Group | Findings fixed | What changed | Verified by |
+|---|---|---|---|
+| A | P1-1, P6-1, P1-15, P1-3, P1-4 | retrain `pool=`→`db_pool=`; `run_trend` resolves `"default"`→tenant UUID so calibration applies; purged WAF-gated adapters from topic affinity → routed to registered ones; `await get_gateway()` in dedup; `S3StorageBackend` built with real kwargs | adapter-router 45 tests, dedup 14 tests, new tenant-norm test — all green |
+| B | P0-1 | new `.github/workflows/ci.yml` (ruff + unit + phase4 + security suites on push/PR) + `.pre-commit-config.yaml` | YAML validated |
+| C | P3-1, P3-2, P9-1 | intake worker ACKs only on success + XAUTOCLAIM reclaim of failed entries; Redis `allkeys-lru`→`noeviction`; DELCONSUMER on shutdown | new ack-on-success regression test; phase4 226 green |
+| D | P2-1, P2-2, P2-3, P2-4, P2-7 | execute-api + unified-API prod fail-fast on empty bearer; settlement RLS via parameterized `set_config($1)`; 6 adapters → `defusedxml`; aiohttp/cryptography/jinja2 CVE bumps + defusedxml dep | prod guards verified to raise; phase4 + 71 adapter tests green; pip-audit clears the 3 bumped pkgs |
+| E | P8-1, P8-2 | Prometheus scrapes predict/execute/dashboard by service name; new `alerts.yml` (5 rules) mounted; `init_sentry()` actually called at dashboard + predict startup | promtool-validated; imports smoke-tested |
+| F | P4-1, +root cause | dropped 921 empty pre-2026 chunks (1012→91, zero data lost); **root-cause fix**: `_clamp_event_time` stops old `posted_at` from anchoring the hypertable partition column (chunks were re-spawning to 2011 within minutes) | 5 clamp regression tests; live re-clean to 91 chunks; /api/stats 1.46s→0.89s |
+| G | P10-1, P5-2 | flipkart now populates the **structured** `price` field (was raw_json only → `price_amount` NULL → 0% price coverage) | **live-verified: 5/5 flipkart signals land priced**; 2 regression tests |
+| H | P1-6 | `aegis_execute_intake_handle_failed_total` counter incremented on failure; fixed alert expressions that referenced non-existent metric names | promtool-validated; counter smoke-tested; phase4 green |
+
+**Not fixed (deliberately deferred, documented):** P4-2 native compression is
+blocked by TimescaleDB on RLS tables (`columnstore cannot be used on table with
+row security`) — options recorded in `db/maintenance/0001_chunk_bloat_cleanup.sql`.
+P1-9 comply/compliance split-brain (a merge/kill decision, not a mechanical fix).
+Transitive CVEs in starlette/pillow/urllib3 (bumping risks fastapi compat — needs
+a dedicated test pass). Live commerce *volume* remains gated by datacenter-IP WAF
+blocks — the price *path* is now correct, but sustained marketplace coverage
+needs residential proxies or free-tier API keys (eBay/BestBuy/Etsy), not a code
+change.
+
+**Net:** the top-5 user-facing issues from the executive summary are all fixed
+and verified — price data now flows, calibration reaches verdicts, the retrain
+loop constructs, failures are counted + alertable, and the intake path no longer
+drops verdicts. The verdict engine was already sound; this session reconnected
+the data supply and the failure-reporting around it.
