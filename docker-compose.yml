@@ -324,7 +324,15 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.predict
-    image: aegis-predict:latest
+      args:
+        # The scheduler runs scrape adapters; the plain predict image installs
+        # only [predict] and shipped 20 unimportable scrape modules for 12 days
+        # (defusedxml ×6, feedparser ×14 — 2026-07-03 blackout). This arg
+        # installs the [scrape] extra AND gates the build on an import walk.
+        INSTALL_SCRAPE: "1"
+    # Own tag: this image is NOT interchangeable with aegis-predict (different
+    # runtime dependency set). Sharing the tag is what hid the divergence.
+    image: aegis-autonomous:latest
     container_name: aegis-autonomous
     restart: unless-stopped
     command: ["uv", "run", "aegis", "autonomous", "run"]

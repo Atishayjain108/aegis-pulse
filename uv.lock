@@ -389,7 +389,7 @@ requires-dist = [
     { name = "coverage", extras = ["toml"], marker = "extra == 'dev'", specifier = "==7.6.2" },
     { name = "cryptography", specifier = "==44.0.1" },
     { name = "curl-cffi", marker = "extra == 'scrape'", specifier = "==0.7.3" },
-    { name = "datasketch", specifier = ">=1.6.0" },
+    { name = "datasketch", specifier = ">=1.6.0,<2" },
     { name = "defusedxml", marker = "extra == 'scrape'", specifier = "==0.7.1" },
     { name = "detect-secrets", marker = "extra == 'dev'", specifier = "==1.5.0" },
     { name = "dowhy", marker = "extra == 'predict-causal'", specifier = ">=0.12,<0.14" },

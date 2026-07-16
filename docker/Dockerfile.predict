@@ -14,6 +14,13 @@
 
 ARG PYTHON_VERSION=3.12.7
 ARG INSTALL_OPTIONAL_ML=0   # set to 1 to bake in torch + onnxruntime
+ARG INSTALL_SCRAPE=0        # set to 1 for the autonomous scheduler image:
+                            # installs the [scrape] extra (defusedxml,
+                            # feedparser, bs4, ...) and gates the build on an
+                            # import walk of every aegis.scrape module.
+                            # 2026-07-03..15 blackout: the scheduler ran scrape
+                            # adapters on an image that only installed
+                            # [predict]; 20 source modules were unimportable.
 
 # ---------- stage 1: builder ----------
 FROM python:${PYTHON_VERSION}-slim-bookworm AS builder
@@ -51,6 +58,16 @@ COPY aegis-phase13 /app/aegis-phase13
 # rather than being hardcoded here — keeps Dockerfile in sync with the lockfile.
 RUN uv pip install --python /opt/venv/bin/python --no-cache-dir "/app[predict]"
 
+# Scrape runtime deps + image-level import smoke test (build fails on any
+# ImportError inside the image — host-venv state is irrelevant here).
+ARG INSTALL_SCRAPE
+COPY scripts/smoke_import_scrape.py /app/scripts/smoke_import_scrape.py
+RUN if [ "$INSTALL_SCRAPE" = "1" ] ; then \
+        uv pip install --python /opt/venv/bin/python --no-cache-dir "/app[scrape]" \
+        && PYTHONPATH=/app/src AEGIS_ENV=dev /opt/venv/bin/python \
+            /app/scripts/smoke_import_scrape.py ; \
+    fi
+
 ARG INSTALL_OPTIONAL_ML
 RUN if [ "$INSTALL_OPTIONAL_ML" = "1" ] ; then \
         uv pip install --python /opt/venv/bin/python --no-cache-dir \
@@ -79,6 +96,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY --from=builder /opt/venv /opt/venv
 COPY --from=builder /app/src /app/src
+COPY --from=builder /app/scripts/smoke_import_scrape.py /app/scripts/smoke_import_scrape.py
 
 WORKDIR /app
 ENV PYTHONPATH=/app/src

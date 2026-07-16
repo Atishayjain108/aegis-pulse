@@ -83,7 +83,7 @@ dependencies = [
   # --- Datetime / timezones ---
   # (zoneinfo is stdlib on 3.12; no extra dep)
   "langgraph>=0.2,<0.5",
-  "datasketch>=1.6.0",
+  "datasketch>=1.6.0,<2",            # rationale: db/dedup.py uses the 1.x MinHash(permutations=...) API; 2.0.0 requires scheme= and broke container ingestion (2026-07-16) — image builds resolve from pyproject, not uv.lock
 ]
 
 # ----------------------------------------------------------------------------

@@ -50,3 +50,29 @@ jobs:
       - name: Security fixtures (prompt injection)
         run: >-
           uv run python -m pytest tests/security/ -q -p no:hypothesis --no-cov
+
+  # Image-level import smoke test (2026-07-03..15 ingestion blackout).
+  # The autonomous scheduler ran scrape adapters on an image that installed
+  # only the [predict] extra: 20 scrape modules were unimportable INSIDE the
+  # container (defusedxml ×6, feedparser ×14) while every host-venv test was
+  # green. This job builds the real autonomous image; the Dockerfile runs
+  # scripts/smoke_import_scrape.py as a build step, so any ImportError inside
+  # the image fails this build. Host state is irrelevant here by design.
+  autonomous-image-imports:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build autonomous image (in-image import walk gates the build)
+        run: >-
+          docker build -f docker/Dockerfile.predict
+          --build-arg INSTALL_SCRAPE=1
+          -t aegis-autonomous:ci .
+
+      - name: Re-run import walk in the finished image (belt and braces)
+        run: >-
+          docker run --rm --entrypoint ""
+          -e AEGIS_ENV=test
+          aegis-autonomous:ci
+          python /app/scripts/smoke_import_scrape.py
