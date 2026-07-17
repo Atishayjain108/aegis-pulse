@@ -91,7 +91,8 @@ class TrustScorer:
                 f"""
                 SELECT prediction_confidence AS p, resolution_status AS s
                 FROM signal_outcomes
-                WHERE resolution_status IN ('correct', 'incorrect') {where}
+                WHERE resolution_status IN ('correct', 'incorrect')
+                  AND window_scraper_alive = TRUE {where}
                 """,  # noqa: S608 — `where` is a fixed literal, never user input
                 *args,
             )
@@ -127,6 +128,7 @@ class TrustScorer:
                     WHERE o.trend_key = ANY(tags)
                 ) s ON TRUE
                 WHERE o.resolution_status IN ('correct', 'incorrect')
+                  AND o.window_scraper_alive = TRUE
                 """
             )
         by_platform: dict[str, tuple[list[float], list[float]]] = {}

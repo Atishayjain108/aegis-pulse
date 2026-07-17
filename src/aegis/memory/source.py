@@ -67,6 +67,7 @@ class SourceMemory:
                         WHERE o.trend_key = ANY(tags)
                     ) s ON TRUE
                     WHERE o.resolution_status IN ('correct', 'incorrect')
+                      AND o.window_scraper_alive = TRUE
                     """
                 )
                 # Per-platform signal volume + recency (freshness).

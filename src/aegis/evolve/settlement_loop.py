@@ -50,6 +50,69 @@ _DEFAULT_TENANT = "00000000-0000-0000-0000-000000000001"
 # A relative change inside ±this band counts as "flat" rather than rise/fall.
 _FLAT_BAND = 0.10
 
+# STAGE 1.3 settlement precondition: a claim may only settle to a direction
+# if ingestion was continuously alive across its ENTIRE observation window.
+# "Alive" reuses the Block-D container-healthcheck definition — max gap
+# between consecutive signals.scraped_at values (including window edges)
+# must not exceed AEGIS_INGEST_HEALTH_MAX_AGE_H (default 2h). One notion of
+# alive, shared with scripts/healthcheck_ingestion.py — never two.
+# Rationale: 633 claims settled against the dead scraper of 2026-07-03..16
+# read fall=97.1%/rise=16.4% "accuracy" — measurements of an outage, not a
+# market. This precondition is the record whose absence made that possible.
+_INGEST_GAP_ENV = "AEGIS_INGEST_HEALTH_MAX_AGE_H"
+_INGEST_GAP_DEFAULT_H = 2.0
+
+
+def _max_ingest_gap_hours_env() -> float:
+    import os
+
+    return float(os.environ.get(_INGEST_GAP_ENV, _INGEST_GAP_DEFAULT_H))
+
+
+async def max_ingest_gap_hours(
+    pool: Pool | Any,
+    tenant_id: str,
+    lo: datetime,
+    hi: datetime,
+) -> float:
+    """Largest gap (hours) in signals.scraped_at coverage over [lo, hi],
+    counting the edges — an empty window returns the full window length.
+
+    Module-level so the claim emitter's backfill shares the exact same
+    definition instead of growing a second one.
+    """
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "SELECT set_config('app.current_tenant', $1, false)", tenant_id
+        )
+        row = await conn.fetchrow(
+            """
+            WITH ts AS (
+                SELECT scraped_at FROM signals
+                WHERE scraped_at >= $1 AND scraped_at <= $2
+                UNION ALL SELECT $1::timestamptz
+                UNION ALL SELECT $2::timestamptz
+            ),
+            gaps AS (
+                SELECT EXTRACT(EPOCH FROM
+                    scraped_at - lag(scraped_at) OVER (ORDER BY scraped_at)
+                ) / 3600.0 AS gap_h
+                FROM ts
+            )
+            SELECT COALESCE(MAX(gap_h), 0.0) AS max_gap_h FROM gaps
+            """,
+            lo,
+            hi,
+        )
+    return float(row["max_gap_h"]) if row else float("inf")
+
+
+async def window_scraper_alive(
+    pool: Pool | Any, tenant_id: str, lo: datetime, hi: datetime
+) -> bool:
+    """True when ingestion had no gap larger than the healthcheck window."""
+    return await max_ingest_gap_hours(pool, tenant_id, lo, hi) <= _max_ingest_gap_hours_env()
+
 
 def _classify(baseline: float, observed: float, *, flat_band: float = _FLAT_BAND) -> str:
     """Direction of change from baseline → observed, with a flat dead-band."""
@@ -72,6 +135,7 @@ class SettlementSummary:
     settled: int = 0
     correct: int = 0
     skipped: int = 0
+    voided: int = 0  # observation window had an ingestion gap — no direction
 
     @property
     def correct_rate(self) -> float:
@@ -117,7 +181,7 @@ class SignalOutcomeSettler:
     async def settle_pending(self, *, limit: int = 500) -> SettlementSummary:
         """Settle every pending claim whose ``settle_after`` has passed."""
         now = datetime.now(UTC)
-        examined = settled = correct = skipped = 0
+        examined = settled = correct = skipped = voided = 0
         try:
             async with self._pool.acquire() as conn:
                 await conn.execute(
@@ -142,6 +206,25 @@ class SignalOutcomeSettler:
 
             for row in rows:
                 examined += 1
+                # STAGE 1.3 PRECONDITION: settle to a direction ONLY if
+                # ingestion was continuously alive across the observation
+                # window. A gapped window settles to VOID — a count of zero
+                # from a dead scraper is not a market observation.
+                alive = await window_scraper_alive(
+                    self._pool, self._tenant_id, row["claim_ts"], row["settle_after"]
+                )
+                if not alive:
+                    if await self._void_row(str(row["outcome_id"])):
+                        voided += 1
+                        _log.warning(
+                            "evolve.signal_settle_voided",
+                            outcome_id=str(row["outcome_id"]),
+                            trend_key=row["trend_key"],
+                            reason="ingestion_gap_in_observation_window",
+                        )
+                    else:
+                        skipped += 1
+                    continue
                 # Observe what happened in the window (claim_ts, settle_after].
                 observed = float(
                     await self._signal_count(
@@ -167,12 +250,13 @@ class SignalOutcomeSettler:
                 else:
                     skipped += 1
 
-            summary = SettlementSummary(examined, settled, correct, skipped)
+            summary = SettlementSummary(examined, settled, correct, skipped, voided)
             _log.info(
                 "evolve.signal_settle_pass",
                 examined=examined,
                 settled=settled,
                 correct=correct,
+                voided=voided,
                 correct_rate=round(summary.correct_rate, 3),
             )
             return summary
@@ -182,7 +266,7 @@ class SignalOutcomeSettler:
                 error=str(exc),
                 error_code=ERR_SIGNAL_SETTLE_FAILED,
             )
-            return SettlementSummary(examined, settled, correct, skipped)
+            return SettlementSummary(examined, settled, correct, skipped, voided)
 
     async def _settle_row(
         self,
@@ -205,7 +289,8 @@ class SignalOutcomeSettler:
                     SET observed_value = $2,
                         observed_direction = $3,
                         resolution_status = $4,
-                        settled_at = NOW()
+                        settled_at = NOW(),
+                        window_scraper_alive = TRUE
                     WHERE outcome_id = $1 AND resolution_status = 'pending'
                     """,
                     outcome_id,
@@ -216,6 +301,30 @@ class SignalOutcomeSettler:
             return True
         except Exception as exc:
             _log.error("evolve.signal_settle_row_failed", error=str(exc))
+            return False
+
+    async def _void_row(self, outcome_id: str) -> bool:
+        """STAGE 1.3: settle a claim to VOID — its observation window had an
+        ingestion gap, so no directional label is derivable from it."""
+        try:
+            async with self._pool.acquire() as conn:
+                await conn.execute(
+                    "SELECT set_config('app.current_tenant', $1, false)",
+                    self._tenant_id,
+                )
+                await conn.execute(
+                    """
+                    UPDATE signal_outcomes
+                    SET resolution_status = 'void',
+                        window_scraper_alive = FALSE,
+                        settled_at = NOW()
+                    WHERE outcome_id = $1 AND resolution_status = 'pending'
+                    """,
+                    outcome_id,
+                )
+            return True
+        except Exception as exc:
+            _log.error("evolve.signal_void_row_failed", error=str(exc))
             return False
 
     async def _capture_settlement(
@@ -282,7 +391,7 @@ class SignalOutcomeSettler:
         # The latest a claim can sit and still have a complete, past observation
         # window is now - horizon. Baseline needs one horizon before that.
         earliest = now - timedelta(days=lookback_days)
-        examined = settled = correct = skipped = 0
+        examined = settled = correct = skipped = voided = 0
 
         try:
             # Candidate (trend_key, claim_ts) anchors: the median signal ts per
@@ -319,6 +428,15 @@ class SignalOutcomeSettler:
                     skipped += 1
                     continue
 
+                # STAGE 1.3 PRECONDITION: never reconstruct a claim whose
+                # observation window overlaps an ingestion gap — that is how
+                # 633 dead-scraper settlements got labeled as market outcomes.
+                if not await window_scraper_alive(
+                    self._pool, self._tenant_id, claim_ts, obs_end
+                ):
+                    voided += 1
+                    continue
+
                 baseline = float(
                     await self._signal_count(trend_key, claim_ts - horizon, claim_ts)
                 )
@@ -353,6 +471,7 @@ class SignalOutcomeSettler:
                     settlement_timestamp=obs_end,
                     resolution_status="correct" if is_correct else "incorrect",
                     metadata={"source": "backfill"},
+                    window_scraper_alive=True,
                 )
                 if await self._recorder.record_signal_outcome(outcome):
                     settled += 1
@@ -360,12 +479,13 @@ class SignalOutcomeSettler:
                 else:
                     skipped += 1
 
-            summary = SettlementSummary(examined, settled, correct, skipped)
+            summary = SettlementSummary(examined, settled, correct, skipped, voided)
             _log.info(
                 "evolve.signal_backfill",
                 examined=examined,
                 settled=settled,
                 correct=correct,
+                voided=voided,
                 correct_rate=round(summary.correct_rate, 3),
             )
             return summary
@@ -375,4 +495,4 @@ class SignalOutcomeSettler:
                 error=str(exc),
                 error_code=ERR_SIGNAL_SETTLE_FAILED,
             )
-            return SettlementSummary(examined, settled, correct, skipped)
+            return SettlementSummary(examined, settled, correct, skipped, voided)

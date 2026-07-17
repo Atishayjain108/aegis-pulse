@@ -87,7 +87,8 @@ def cmd_report(entity_id: str, persist: bool, json_out: bool) -> None:
             )
             rows = await conn.fetch(
                 "SELECT prediction_confidence p, resolution_status s "
-                "FROM signal_outcomes WHERE resolution_status IN ('correct','incorrect')"
+                "FROM signal_outcomes WHERE resolution_status IN ('correct','incorrect') "
+                "AND window_scraper_alive = TRUE"
             )
             await pool.release(conn)
             ps = [float(r["p"]) for r in rows]
@@ -144,6 +145,7 @@ def cmd_fit_calibration(json_out: bool) -> None:
                 "SELECT (metadata->>'raw_rise')::float AS raw, observed_direction AS d "
                 "FROM signal_outcomes "
                 "WHERE resolution_status IN ('correct','incorrect') "
+                "AND window_scraper_alive = TRUE "
                 "AND metadata ? 'raw_rise' AND observed_direction IS NOT NULL"
             )
             await pool.release(conn)

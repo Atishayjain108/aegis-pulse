@@ -80,7 +80,12 @@ class SignalOutcome(BaseModel, frozen=True):
     observed_direction: str | None = None
     settled_at: datetime | None = None
     settlement_timestamp: datetime = Field(default_factory=_utcnow)
-    resolution_status: str = Field(default="pending")  # pending|correct|incorrect
+    resolution_status: str = Field(default="pending")  # pending|correct|incorrect|void
+    # STAGE 1.3: TRUE = ingestion continuously alive across the observation
+    # window (shared Block-D freshness definition); FALSE = window overlaps an
+    # ingestion gap (label void of market meaning); None = pending, decided at
+    # settlement. Every calibration/accuracy consumer filters on TRUE.
+    window_scraper_alive: bool | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     @property

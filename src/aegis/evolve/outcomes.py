@@ -227,10 +227,11 @@ class OutcomeRecorder:
                         claimed_direction, prediction_score, prediction_confidence,
                         baseline_value, horizon_hours, claim_ts, settle_after,
                         observed_value, observed_direction, settled_at,
-                        settlement_timestamp, resolution_status, metadata
+                        settlement_timestamp, resolution_status, metadata,
+                        window_scraper_alive
                     ) VALUES (
                         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-                        $12, $13, $14, $15, $16, $17
+                        $12, $13, $14, $15, $16, $17, $18
                     )
                     ON CONFLICT DO NOTHING
                     """,
@@ -251,6 +252,7 @@ class OutcomeRecorder:
                     outcome.settlement_timestamp,
                     outcome.resolution_status,
                     json.dumps(outcome.metadata, default=str),
+                    outcome.window_scraper_alive,
                 )
             return True
         except Exception as exc:
@@ -270,7 +272,8 @@ class OutcomeRecorder:
     ) -> int:
         """Count signal outcomes in the last N days (settled by default)."""
         clause = (
-            "AND resolution_status IN ('correct', 'incorrect')"
+            "AND resolution_status IN ('correct', 'incorrect') "
+            "AND window_scraper_alive = TRUE"
             if settled_only
             else ""
         )

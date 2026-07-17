@@ -4,6 +4,19 @@
 -- ---------------------------------------------------------------------------
 -- Trade outcomes — ground truth labels for model retraining
 -- ---------------------------------------------------------------------------
+-- FRESH-REPLAY FIX (2026-07-17, integration CI): 0001_init.sql ships an
+-- OLDER, different-shaped prediction_outcomes ("feedback intelligence",
+-- hypertable on made_at, no trend_id). On a fresh database that table
+-- survives, the CREATE IF NOT EXISTS below silently skips, and the
+-- trend_id index at the bottom of this section fails —
+-- `UndefinedColumnError: column "trend_id" does not exist` (first caught by
+-- the integration workflow's from-zero replay; production never hit it
+-- because its 0001-shaped table was dropped out-of-band long ago, which is
+-- itself recorded drift — see RECOVERY_PROTOCOL.md DEBT-6).
+-- The 0001 scaffold is dead-on-arrival: nothing between 0002 and 0010
+-- writes to it. Dropping it here is a no-op on every database where 0011
+-- is already recorded as applied.
+DROP TABLE IF EXISTS prediction_outcomes;
 CREATE TABLE IF NOT EXISTS prediction_outcomes (
     outcome_id              UUID        NOT NULL DEFAULT gen_random_uuid(),
     tenant_id               UUID        NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001',

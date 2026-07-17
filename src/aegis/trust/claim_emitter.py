@@ -28,6 +28,7 @@ import structlog
 
 from aegis.evolve.outcomes import OutcomeRecorder
 from aegis.evolve.schemas import SignalOutcome
+from aegis.evolve.settlement_loop import window_scraper_alive
 from aegis.trust.calibrator import Calibrator, rise_probability
 
 if TYPE_CHECKING:
@@ -303,6 +304,15 @@ class ClaimEmitter:
                 if obs_end > now:
                     skipped += 1
                     continue
+                # STAGE 1.3 PRECONDITION (shared with SignalOutcomeSettler):
+                # never reconstruct-and-settle a claim whose observation window
+                # overlaps an ingestion gap — a dead scraper's counts are not
+                # market observations.
+                if not await window_scraper_alive(
+                    self._pool, self._tenant_id, claim_ts, obs_end
+                ):
+                    skipped += 1
+                    continue
                 baseline = await self._signal_count(
                     trend_key, claim_ts - horizon, claim_ts
                 )
@@ -365,6 +375,7 @@ class ClaimEmitter:
                     settlement_timestamp=obs_end,
                     resolution_status="correct" if is_correct else "incorrect",
                     metadata={"source": "heuristic_backfill", "raw_rise": raw_rise},
+                    window_scraper_alive=True,
                 )
                 if await self._recorder.record_signal_outcome(outcome):
                     emitted += 1

@@ -141,6 +141,7 @@ class MemoryBackfill:
                            resolution_status, metadata
                     FROM signal_outcomes
                     WHERE resolution_status IN ('correct', 'incorrect')
+                      AND window_scraper_alive = TRUE
                     ORDER BY settlement_timestamp DESC
                     LIMIT $1
                     """,

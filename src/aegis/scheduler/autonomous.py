@@ -409,6 +409,7 @@ async def job_refit_calibration() -> None:
                     "SELECT (metadata->>'raw_rise')::float AS raw, "
                     "observed_direction AS d FROM signal_outcomes "
                     "WHERE resolution_status IN ('correct','incorrect') "
+                    "AND window_scraper_alive = TRUE "
                     "AND metadata ? 'raw_rise' AND observed_direction IS NOT NULL"
                 )
                 # Self-measurement: how skilful is the DEPLOYED confidence the
@@ -420,7 +421,8 @@ async def job_refit_calibration() -> None:
                     "SELECT prediction_confidence::float AS p, "
                     "(claimed_direction = observed_direction)::int AS y "
                     "FROM signal_outcomes "
-                    "WHERE resolution_status IN ('correct','incorrect')"
+                    "WHERE resolution_status IN ('correct','incorrect') "
+                    "AND window_scraper_alive = TRUE"
                 )
             ps = [float(r["raw"]) for r in rows]
             ys = [1.0 if r["d"] == "rise" else 0.0 for r in rows]
@@ -535,11 +537,13 @@ async def job_health_report() -> None:
         # PROJECT OMEGA Phase A: capital-free self-supervised outcome growth.
         signal_outcomes = await pool.fetchval(
             "SELECT COUNT(*) FROM signal_outcomes "
-            "WHERE resolution_status IN ('correct', 'incorrect')"
+            "WHERE resolution_status IN ('correct', 'incorrect') "
+            "AND window_scraper_alive = TRUE"
         )
         signal_outcomes_24h = await pool.fetchval(
             "SELECT COUNT(*) FROM signal_outcomes "
             "WHERE resolution_status IN ('correct', 'incorrect') "
+            "AND window_scraper_alive = TRUE "
             "AND settled_at > NOW() - INTERVAL '24 hours'"
         )
         fresh = await pool.fetchval(
