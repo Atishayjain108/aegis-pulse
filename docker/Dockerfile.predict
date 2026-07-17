@@ -39,11 +39,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Pin uv for deterministic resolves (matches Phase 0 bootstrap).
-RUN pip install uv==0.5.7
+# uv is pinned and lives in the SYSTEM python, NOT /opt/venv: `uv sync`
+# makes /opt/venv match the lockfile exactly and would purge anything the
+# lock doesn't pin — including uv itself if it lived there.
+RUN /usr/local/bin/python -m pip install uv==0.5.7
 
 WORKDIR /app
-COPY pyproject.toml README.md /app/
+COPY pyproject.toml uv.lock README.md /app/
 COPY src /app/src
 # uv reads [tool.uv.workspace].members from pyproject.toml and must be able to
 # parse each member's pyproject — copy them all even though predict only needs
@@ -53,19 +55,25 @@ COPY aegis-harden /app/aegis-harden
 COPY aegis-phase12 /app/aegis-phase12
 COPY aegis-phase13 /app/aegis-phase13
 
-# Install runtime deps (heuristic-only by default).
-# Versions are driven by pyproject.toml [project.optional-dependencies.predict]
-# rather than being hardcoded here — keeps Dockerfile in sync with the lockfile.
-RUN uv pip install --python /opt/venv/bin/python --no-cache-dir "/app[predict]"
-
-# Scrape runtime deps + image-level import smoke test (build fails on any
-# ImportError inside the image — host-venv state is irrelevant here).
+# Lockfile-driven, drift-proof install. 2026-07-16 incident: the previous
+# `uv pip install "/app[predict]"` re-resolved from pyproject.toml and IGNORED
+# uv.lock — the image pulled datasketch 2.0.0 against a host lock of 1.10.0
+# and broke MinHash at db/dedup.py:232 on the first working scrape cycle.
+# `uv sync --locked` installs EXACTLY what uv.lock pins and FAILS the build
+# if uv.lock is stale w.r.t. pyproject.toml. It never silently re-resolves.
+# One sync per image flavor (sync prunes extras it wasn't asked for, so it
+# must not be split into sequential layering).
 ARG INSTALL_SCRAPE
+ENV UV_PROJECT_ENVIRONMENT=/opt/venv
 COPY scripts/smoke_import_scrape.py /app/scripts/smoke_import_scrape.py
 RUN if [ "$INSTALL_SCRAPE" = "1" ] ; then \
-        uv pip install --python /opt/venv/bin/python --no-cache-dir "/app[scrape]" \
+        /usr/local/bin/uv sync --locked --no-dev --no-editable \
+            --extra predict --extra scrape \
         && PYTHONPATH=/app/src AEGIS_ENV=dev /opt/venv/bin/python \
             /app/scripts/smoke_import_scrape.py ; \
+    else \
+        /usr/local/bin/uv sync --locked --no-dev --no-editable \
+            --extra predict ; \
     fi
 
 ARG INSTALL_OPTIONAL_ML
@@ -83,7 +91,7 @@ FROM python:${PYTHON_VERSION}-slim-bookworm AS runtime
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH="/opt/venv/bin:$PATH" \
-    AEGIS_ENV=production \
+    AEGIS_ENV=prod \
     AEGIS_PHASE=3
 
 RUN apt-get update && apt-get install -y --no-install-recommends \

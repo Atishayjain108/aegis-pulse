@@ -335,7 +335,10 @@ services:
     image: aegis-autonomous:latest
     container_name: aegis-autonomous
     restart: unless-stopped
-    command: ["uv", "run", "aegis", "autonomous", "run"]
+    # Direct venv entrypoint — uv no longer exists inside the runtime image
+    # (lockfile-driven `uv sync` prunes anything uv.lock doesn't pin, and uv
+    # itself was only ever present by accident of the old install order).
+    command: ["aegis", "autonomous", "run"]
     # The predict image's HEALTHCHECK probes the :8000 HTTP server, which this
     # scheduler worker does not run. Override with a liveness check on the
     # scheduler process instead.
