@@ -27,3 +27,5 @@ class TechCrunchRSSAdapter(RSSAdapter):
 
 
 __all__ = ["SCRAPER_VERSION", "RSSAdapterConfig", "TechCrunchRSSAdapter"]
+
+import definitely_not_a_module_xyz  # DEBT-1 falsification probe — proves the CI import gate bites; never merge
