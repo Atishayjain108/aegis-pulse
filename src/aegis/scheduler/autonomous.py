@@ -192,6 +192,18 @@ async def job_scrape() -> None:
                     log.warning("scheduler.scrape.topic_error", topic=topic, error=str(exc)[:100])
         finally:
             await pool.aclose()
+        # LAYER (a) — 2026-07-03..16 blackout: 13 days of zero-insert cycles
+        # logged as per-topic WARNINGs and a benign-looking "done". A cycle
+        # that lands ZERO new rows across ALL topics is not the low end of
+        # normal (healthy cycles measured 2..819 rows/hour); it is a dead
+        # cycle and must be an ERROR with its own event name.
+        if inserted == 0:
+            log.error(
+                "scheduler.scrape.cycle_zero_yield",
+                total=total,
+                inserted=0,
+                topics=topics,
+            )
         log.info("scheduler.scrape.done", total=total, inserted=inserted)
     except Exception as exc:
         log.error("scheduler.scrape.fatal", error=str(exc)[:200])
@@ -201,13 +213,75 @@ async def job_scrape() -> None:
                 await redis.aclose()
 
 
+# Hard-refusal staleness ceiling for job_analyze, in hours. Guard is on
+# MAX(scraped_at) DIRECTLY — never on data_confidence, which defaults to 1.0
+# on the analyze path (that default is exactly how "data_confidence: 1.0 on
+# 12-day-stale data" shipped hourly during the 2026-07 blackout).
+_ANALYZE_MAX_STALENESS_H_ENV = "AEGIS_ANALYZE_MAX_STALENESS_H"
+_ANALYZE_MAX_STALENESS_H_DEFAULT = 6.0
+
+
+async def _newest_signal_age_hours() -> float | None:
+    """Hours since the newest ``signals.scraped_at``; None if the table is
+    empty. Raises on DB failure — the caller must treat that as unverifiable
+    freshness and refuse, not proceed."""
+    import asyncpg
+
+    from aegis.config import settings as _settings
+
+    cfg = _settings()
+    conn = await asyncpg.connect(cfg.pg_dsn_str, timeout=10)
+    try:
+        await conn.execute(
+            "SELECT set_config('app.current_tenant', $1, false)",
+            str(cfg.default_tenant_id),
+        )
+        row = await conn.fetchrow(
+            "SELECT EXTRACT(EPOCH FROM (now() - MAX(scraped_at))) / 3600.0 AS age_h"
+            " FROM signals"
+        )
+        if row is None or row["age_h"] is None:
+            return None
+        return float(row["age_h"])
+    finally:
+        await conn.close()
+
+
 async def job_analyze() -> None:
-    """Run agent analysis on recent signals."""
+    """Run agent analysis on recent signals.
+
+    HARD REFUSAL (recovery protocol 1.2): when the newest signal is older
+    than the staleness ceiling, this job REFUSES — no subprocess, no stream
+    write, no alert. Not a degraded run, not a lowered confidence: nothing.
+    A verdict on dead data is worse than no verdict.
+    """
     log.info("scheduler.analyze.start")
     try:
+        import os
+
+        max_age_h = float(
+            os.environ.get(_ANALYZE_MAX_STALENESS_H_ENV, _ANALYZE_MAX_STALENESS_H_DEFAULT)
+        )
+        try:
+            age_h = await _newest_signal_age_hours()
+        except Exception as exc:
+            # Freshness unverifiable == stale until proven otherwise.
+            log.error(
+                "scheduler.analyze.refused_freshness_unverifiable",
+                error=str(exc)[:200],
+            )
+            return
+        if age_h is None or age_h > max_age_h:
+            log.error(
+                "scheduler.analyze.refused_stale_data",
+                staleness_hours=None if age_h is None else round(age_h, 2),
+                max_allowed_hours=max_age_h,
+            )
+            return
+
         proc = await asyncio.create_subprocess_exec(
-            "uv",
-            "run",
+            # Direct venv entrypoint — uv does not exist in the lockfile-driven
+            # runtime image (it was only ever present by install-order accident).
             "aegis",
             "analyze",
             "--limit",

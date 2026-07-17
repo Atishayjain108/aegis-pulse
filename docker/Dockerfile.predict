@@ -105,6 +105,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /opt/venv /opt/venv
 COPY --from=builder /app/src /app/src
 COPY --from=builder /app/scripts/smoke_import_scrape.py /app/scripts/smoke_import_scrape.py
+# LAYER (c): SQL-freshness healthcheck for the autonomous scheduler flavor.
+COPY scripts/healthcheck_ingestion.py /app/scripts/healthcheck_ingestion.py
 
 WORKDIR /app
 ENV PYTHONPATH=/app/src

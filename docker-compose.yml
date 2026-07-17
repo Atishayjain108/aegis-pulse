@@ -339,15 +339,18 @@ services:
     # (lockfile-driven `uv sync` prunes anything uv.lock doesn't pin, and uv
     # itself was only ever present by accident of the old install order).
     command: ["aegis", "autonomous", "run"]
-    # The predict image's HEALTHCHECK probes the :8000 HTTP server, which this
-    # scheduler worker does not run. Override with a liveness check on the
-    # scheduler process instead.
+    # LAYER (c): healthy == fresh data, not process existence. The previous
+    # check grepped /proc for "autonomous" and reported healthy through all
+    # 13 days of the 2026-07 ingestion blackout. This one fails when no
+    # signals row was scraped within AEGIS_INGEST_HEALTH_MAX_AGE_H (2h).
+    # start_period 15m: after a cold boot the data is legitimately stale
+    # until the first scrape cycle lands (~6 min observed).
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import glob,sys; sys.exit(0 if any(b'autonomous' in open(p,'rb').read() for p in glob.glob('/proc/[0-9]*/cmdline')) else 1)\""]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 20s
+      test: ["CMD-SHELL", "python /app/scripts/healthcheck_ingestion.py"]
+      interval: 60s
+      timeout: 15s
+      retries: 5
+      start_period: 900s
     deploy:
       resources:
         limits:
@@ -360,6 +363,14 @@ services:
       AEGIS_REDIS_URL: redis://redis:6379/0
       AEGIS_ENV: dev
       AEGIS_LOG_JSON: "true"
+      # LAYER (b): belt-and-braces — the image already sets this, but log
+      # visibility is a hard requirement of the alarm stack, so it is pinned
+      # here where the service is defined, not inherited by assumption.
+      PYTHONUNBUFFERED: "1"
+      # Staleness ceilings (hours). Healthcheck freshness window and the
+      # job_analyze hard-refusal ceiling. Production defaults 2h / 6h.
+      AEGIS_INGEST_HEALTH_MAX_AGE_H: "${AEGIS_INGEST_HEALTH_MAX_AGE_H:-2}"
+      AEGIS_ANALYZE_MAX_STALENESS_H: "${AEGIS_ANALYZE_MAX_STALENESS_H:-6}"
       # LLM chain enabled: local Ollama first, then Groq cloud fallback. Was
       # DISABLE_OLLAMA=1 with no cloud key → analysis ran heuristic-only.
       AEGIS_DISABLE_OLLAMA: "0"
