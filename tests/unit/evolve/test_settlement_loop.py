@@ -47,6 +47,17 @@ class _FakeConn:
                 1 for tk, ts in self._signals if tk == trend_key and lo <= ts < hi
             )
             return {"n": n}
+        if "max_gap_h" in sql:
+            # STAGE 1.3 window-continuity query: compute the REAL max gap from
+            # the in-memory store (edges included), same semantics as prod SQL.
+            lo, hi = args
+            pts = sorted(
+                [ts for _tk, ts in self._signals if lo <= ts <= hi] + [lo, hi]
+            )
+            from itertools import pairwise
+
+            gaps = [(b - a).total_seconds() / 3600.0 for a, b in pairwise(pts)]
+            return {"max_gap_h": max(gaps) if gaps else 0.0}
         return None
 
     async def fetch(self, sql: str, *args):
@@ -66,6 +77,13 @@ def _make_pool(signals=None, anchors=None, pending=None):
     pool = MagicMock()
     pool.acquire = MagicMock(return_value=ctx)
     return pool, conn
+
+
+@pytest.fixture(autouse=True)
+def _window_always_alive(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Legacy-test posture: sparse fixture windows count as alive (the
+    precondition is exercised explicitly in TestSettlementPrecondition)."""
+    monkeypatch.setenv("AEGIS_INGEST_HEALTH_MAX_AGE_H", "1000000")
 
 
 # ---------------------------------------------------------------------------
@@ -207,3 +225,60 @@ class TestSignalOutcomeSchema:
         assert o.resolution_status == "pending"
         assert o.is_correct is False
         assert o.metric == "signal_count"
+
+
+# ---------------------------------------------------------------------------
+# STAGE 1.3 — settlement precondition (window continuity)
+# ---------------------------------------------------------------------------
+
+class TestSettlementPrecondition:
+    @pytest.mark.asyncio
+    async def test_gapped_window_settles_to_void(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A pending claim whose observation window has an ingestion gap larger
+        than the threshold must settle to VOID, never to a direction."""
+        monkeypatch.setenv("AEGIS_INGEST_HEALTH_MAX_AGE_H", "2")
+        claim_ts = datetime(2026, 6, 1, tzinfo=UTC)
+        pending = [{
+            "outcome_id": "oid-void",
+            "trend_key": "ai",
+            "metric": "signal_count",
+            "claimed_direction": "rise",
+            "baseline_value": 2.0,
+            "claim_ts": claim_ts,
+            "settle_after": claim_ts + timedelta(hours=72),
+        }]
+        # 5 signals bunched in the first 5 hours -> 67h dead air afterwards.
+        signals = [("ai", claim_ts + timedelta(hours=h)) for h in (1, 2, 3, 4, 5)]
+        pool, conn = _make_pool(signals=signals, pending=pending)
+        summary = await SignalOutcomeSettler(pool).settle_pending()
+        assert summary.voided == 1
+        assert summary.settled == 0
+        # The UPDATE wrote status 'void' (void UPDATE has 1 positional arg).
+        assert any("void" in str(u) or len(u) == 1 for u in conn.updates)
+
+    @pytest.mark.asyncio
+    async def test_continuous_window_still_settles(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Same threshold, gapless window -> settles to a direction (the
+        precondition discriminates; it does not blanket-void)."""
+        monkeypatch.setenv("AEGIS_INGEST_HEALTH_MAX_AGE_H", "2")
+        claim_ts = datetime(2026, 6, 1, tzinfo=UTC)
+        pending = [{
+            "outcome_id": "oid-alive",
+            "trend_key": "ai",
+            "metric": "signal_count",
+            "claimed_direction": "rise",
+            "baseline_value": 2.0,
+            "claim_ts": claim_ts,
+            "settle_after": claim_ts + timedelta(hours=72),
+        }]
+        # A signal every hour across the whole window: max gap 1h < 2h.
+        signals = [("ai", claim_ts + timedelta(hours=h)) for h in range(73)]
+        pool, conn = _make_pool(signals=signals, pending=pending)
+        summary = await SignalOutcomeSettler(pool).settle_pending()
+        assert summary.voided == 0
+        assert summary.settled == 1
+        assert conn.updates[0][3] == "correct"  # 2 -> 73 = rise

@@ -29,6 +29,31 @@ skip_unless_integration = pytest.mark.skipif(
 )
 
 
+def _pgbackrest_usable() -> bool:
+    """pgBackRest tests need the binary AND a writable repo path.
+
+    AEGIS_INTEGRATION_TEST=1 alone is not enough: the CI integration lane
+    provisions PG+Redis but not pgBackRest, and on its first-ever execution
+    (2026-07-17) these tests failed with
+    ``Permission denied: '/var/lib/pgbackrest'`` instead of skipping.
+    """
+    import shutil as _shutil
+    from pathlib import Path
+
+    if _shutil.which("pgbackrest") is None:
+        return False
+    repo = Path(os.getenv("AEGIS_BACKUP_PGBACKREST_REPO_PATH", "/var/lib/pgbackrest"))
+    probe = repo if repo.exists() else repo.parent
+    return os.access(probe, os.W_OK)
+
+
+skip_unless_pgbackrest = pytest.mark.skipif(
+    not (_INTEGRATION and _pgbackrest_usable()),
+    reason="pgBackRest binary absent or repo path unwritable "
+    "(AEGIS_BACKUP_PGBACKREST_REPO_PATH) — environment not provisioned for DR tests",
+)
+
+
 # ---------------------------------------------------------------------------
 # Metadata integrity (no infra needed)
 # ---------------------------------------------------------------------------
@@ -91,7 +116,7 @@ class TestBackupMetadataIntegrity:
 # ---------------------------------------------------------------------------
 
 
-@skip_unless_integration
+@skip_unless_pgbackrest
 @pytest.mark.asyncio
 async def test_pgbackrest_list_backups_connects():
     """Verify BackupManager can connect to pgBackRest stanza."""
@@ -103,7 +128,7 @@ async def test_pgbackrest_list_backups_connects():
     assert isinstance(backups, list)
 
 
-@skip_unless_integration
+@skip_unless_pgbackrest
 @pytest.mark.asyncio
 async def test_pgbackrest_prune_idempotent():
     """Pruning with no expired backups should return 0 and not raise."""

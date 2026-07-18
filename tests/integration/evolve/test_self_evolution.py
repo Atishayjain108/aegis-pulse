@@ -74,8 +74,12 @@ async def test_outcome_idempotent_insert(db_pool) -> None:
 @pytest.mark.asyncio
 async def test_drift_detection(db_pool) -> None:
     """Detect data drift from a shifted feature distribution."""
+    from aegis.evolve.constants import EVOLVE_FEATURE_DIM
+
     detector = DriftDetector(db_pool=db_pool)
-    X_drifted = np.ones((100, 20)) + 1.0
+    # Canonical dim, not a literal: this test shipped hardcoding 20 and broke
+    # on its first-ever execution after the PASS2-2E 20->24 schema bump.
+    X_drifted = np.ones((100, EVOLVE_FEATURE_DIM)) + 1.0
     snap = await detector.detect_drift(X_drifted)
     assert snap.drift_score > 0.5
     ok = await detector.persist_snapshot(snap)

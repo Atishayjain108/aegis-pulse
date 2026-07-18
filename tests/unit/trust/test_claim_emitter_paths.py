@@ -39,6 +39,8 @@ class _Conn:
     async def fetchrow(self, query: str, *args: Any) -> dict[str, Any] | None:
         if "COUNT(*) AS n" in query:             # _signal_count
             return {"n": self._pool.signal_count}
+        if "max_gap_h" in query:                 # STAGE 1.3 continuity check
+            return {"max_gap_h": 0.0}            # canned: window alive
         return None
 
 
