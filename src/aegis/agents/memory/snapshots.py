@@ -30,7 +30,7 @@ _log = structlog.get_logger("aegis.agents.memory.snapshots")
 @dataclass(frozen=True, slots=True)
 class SnapshotConfig:
     bucket: str = "aegis-snapshots"
-    endpoint_url: str = "http://127.0.0.1:9002"
+    endpoint_url: str = "http://localhost:9002"
     region_name: str = "us-east-1"
     access_key: str = ""
     secret_key: str = ""
@@ -49,10 +49,10 @@ class SnapshotConfig:
     def from_env(cls) -> SnapshotConfig:
         return cls(
             bucket=os.environ.get("AEGIS_SNAPSHOT_BUCKET", "aegis-snapshots"),
-            endpoint_url=os.environ.get("AEGIS_S3_ENDPOINT", "http://127.0.0.1:9002"),
-            region_name=os.environ.get("AEGIS_S3_REGION", "us-east-1"),
-            access_key=os.environ.get("AEGIS_S3_ACCESS_KEY", ""),
-            secret_key=os.environ.get("AEGIS_S3_SECRET_KEY", ""),
+            endpoint_url="http://" + os.environ.get("AEGIS_MINIO_ENDPOINT", "localhost:9002"),
+            region_name=os.environ.get("AEGIS_MINIO_REGION", "us-east-1"),
+            access_key=os.environ.get("AEGIS_MINIO_ACCESS_KEY", ""),
+            secret_key=os.environ.get("AEGIS_MINIO_SECRET_KEY", ""),
         )
 
 

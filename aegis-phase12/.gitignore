@@ -1,0 +1,66 @@
+# AEGIS Phase 12 — .gitignore
+# NEVER commit secrets, keys, or unencrypted env files
+
+# ── Secrets (NEVER commit) ────────────────────────────────────────────────── #
+.env
+.env.local
+*.key
+*.pem
+!certs/.gitkeep
+certs/server.crt
+certs/server.key
+
+# age private keys
+keys.txt
+age*.txt
+
+# ── Encrypted secrets (SAFE to commit) ───────────────────────────────────── #
+# .env.sops.yaml    — intentionally NOT gitignored (safe — encrypted)
+# .sops.yaml        — intentionally NOT gitignored (safe — public key only)
+
+# ── Python ───────────────────────────────────────────────────────────────── #
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+.eggs/
+dist/
+build/
+*.whl
+.venv/
+venv/
+.uv/
+
+# ── Testing & coverage ────────────────────────────────────────────────────── #
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+*.lcov
+
+# ── Type checking ─────────────────────────────────────────────────────────── #
+.mypy_cache/
+.pyright/
+
+# ── Linting ───────────────────────────────────────────────────────────────── #
+.ruff_cache/
+
+# ── Logs ─────────────────────────────────────────────────────────────────── #
+*.log
+*.jsonl
+!tests/**/*.jsonl
+
+# ── OS ────────────────────────────────────────────────────────────────────── #
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# ── IDE ───────────────────────────────────────────────────────────────────── #
+.vscode/settings.json
+.idea/
+*.iml
+
+# ── Build artifacts ───────────────────────────────────────────────────────── #
+*.zip
+dist/

@@ -512,9 +512,9 @@ def test_pinterest_adapter_parse():
 
 @pytest.mark.unit
 def test_amazon_adapter_parse():
+    from aegis.schemas.enums import SourceTier
     from aegis.scrape.base import ScrapeContext
     from aegis.scrape.sources.amazon import AmazonAdapter, AmazonConfig
-    from aegis.schemas.enums import SourceTier
 
     adapter = AmazonAdapter(AmazonConfig())
     ctx = ScrapeContext()

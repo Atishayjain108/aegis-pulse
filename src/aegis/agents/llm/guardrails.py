@@ -14,6 +14,7 @@ agent can quietly fall back to its heuristic path.
 
 Author: AEGIS Pulse core team
 """
+
 from __future__ import annotations
 
 import json

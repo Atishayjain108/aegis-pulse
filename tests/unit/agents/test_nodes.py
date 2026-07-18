@@ -1,5 +1,8 @@
 """Tests for all 10 agents — heuristic-only path (no LLM)."""
+
 from __future__ import annotations
+
+import pytest
 
 from aegis.agents.nodes import (
     AuditorAgent,
@@ -13,7 +16,7 @@ from aegis.agents.nodes import (
     SentinelAgent,
     SourcerAgent,
 )
-from aegis.agents.schemas import AgentVerdict
+from aegis.agents.schemas import AgentDecision, AgentVerdict
 from aegis.agents.state import initial_state
 
 
@@ -83,9 +86,7 @@ class TestScoutAgent:
 class TestSourcerAgent:
     async def test_easy_category_proceeds(self, trend_factory) -> None:
         agent = SourcerAgent(use_llm=False)
-        candidate = trend_factory(
-            title="Funny enamel pin", summary="Cute enamel pins for jackets"
-        )
+        candidate = trend_factory(title="Funny enamel pin", summary="Cute enamel pins for jackets")
         state = initial_state(candidate)
         state["scout_score"] = 0.8  # type: ignore[typeddict-item]
         partial = await agent(state)
@@ -100,9 +101,7 @@ class TestSourcerAgent:
 
     async def test_blocked_category(self, trend_factory) -> None:
         agent = SourcerAgent(use_llm=False)
-        candidate = trend_factory(
-            title="CBD gummies for sleep", summary="full-spectrum cannabis"
-        )
+        candidate = trend_factory(title="CBD gummies for sleep", summary="full-spectrum cannabis")
         state = initial_state(candidate)
         state["scout_score"] = 0.8  # type: ignore[typeddict-item]
         partial = await agent(state)
@@ -212,9 +211,7 @@ class TestSentinelAgent:
 
     async def test_block_does_not_add_to_blocked_by(self, trend_factory) -> None:
         agent = SentinelAgent(use_llm=False)
-        candidate = trend_factory(
-            velocity_1h=50.0, velocity_6h=120.0, velocity_24h=180.0
-        )
+        candidate = trend_factory(velocity_1h=50.0, velocity_6h=120.0, velocity_24h=180.0)
         partial = await agent(initial_state(candidate))
         # SENTINEL.BLOCK ≠ pipeline halt — never adds to blocked_by.
         assert "blocked_by" not in partial
@@ -223,46 +220,47 @@ class TestSentinelAgent:
 class TestComplianceAgent:
     async def test_clean_proceeds(self, trend_factory) -> None:
         agent = ComplianceAgent(use_llm=False)
-        candidate = trend_factory(
-            title="Bamboo travel mug", summary="Reusable bamboo travel mug"
-        )
+        candidate = trend_factory(title="Bamboo travel mug", summary="Reusable bamboo travel mug")
         partial = await agent(initial_state(candidate))
         d = partial["decisions"][0]
         assert d.verdict is AgentVerdict.PROCEED
         assert partial["compliance_passed"] is True
 
-    async def test_trademark_blocks_and_records(self, trend_factory) -> None:
+    async def test_trademark_flags_for_review(self, trend_factory) -> None:
+        # Phase 8 (multi-jurisdiction engine): trademark match alone → FLAG→HOLD for
+        # human review. Only regulatory violations (FDA/FTC disease/cure claims) → BLOCK.
         agent = ComplianceAgent(use_llm=False)
         candidate = trend_factory(title="Custom Disney mug")
         partial = await agent(initial_state(candidate))
         d = partial["decisions"][0]
-        assert d.verdict is AgentVerdict.BLOCK
+        assert d.verdict is AgentVerdict.HOLD
         assert partial["compliance_passed"] is False
-        assert "compliance" in partial.get("blocked_by", [])
-        assert any(f.startswith("tm:") for f in partial["compliance_flags"])
+        # Phase 8 stores trademark names in details["trademarks"]
+        assert any(
+            "disney" in str(t).lower()
+            for t in d.details.get("trademarks", [])
+        ), f"expected disney in trademarks, got: {d.details}"
 
-    async def test_due_diligence_holds(self, trend_factory) -> None:
+    async def test_ftc_income_claim_holds(self, trend_factory) -> None:
+        # FTC "guaranteed income" rule fires at FLAG severity → HOLD in Phase 2.
         agent = ComplianceAgent(use_llm=False)
-        candidate = trend_factory(title="Soft baby teething ring")
+        candidate = trend_factory(title="Guaranteed income from home business opportunity")
         partial = await agent(initial_state(candidate))
         d = partial["decisions"][0]
         assert d.verdict is AgentVerdict.HOLD
         assert partial["compliance_passed"] is False  # hold ≠ pass
 
-    async def test_counterfeit_forces_block(self, trend_factory) -> None:
+    async def test_fda_disease_claim_blocks(self, trend_factory) -> None:
+        # FDA supplement disease-claim rule fires at BLOCK severity → BLOCK in Phase 2.
         agent = ComplianceAgent(use_llm=False)
-        candidate = trend_factory(title="Genuine Rolex Submariner")
-        state = initial_state(candidate)
-        # Cheap supplier → low detected price → counterfeit risk.
-        state["sourcer_supplier"] = {  # type: ignore[typeddict-item]
-            "unit_cost": 3.0,
-            "category": "general",
-            "feasibility": "standard",
-            "synthetic": True,
-        }
-        partial = await agent(state)
+        candidate = trend_factory(
+            title="Dietary supplement cures cancer and prevents diabetes",
+            summary="vitamin supplement",
+        )
+        partial = await agent(initial_state(candidate))
         d = partial["decisions"][0]
         assert d.verdict is AgentVerdict.BLOCK
+        assert partial["compliance_passed"] is False
 
 
 class TestGeoArbitrageAgent:
@@ -393,6 +391,156 @@ class TestHedgeAgent:
         assert d.verdict is AgentVerdict.PROCEED
         assert partial["hedge_passed"] is True
 
+    async def test_no_shared_memory_low_confidence(self, trend_factory) -> None:
+        agent = HedgeAgent(shared_memory=None, use_llm=False)
+        candidate = trend_factory()
+        partial = await agent(initial_state(candidate))
+        d = partial["decisions"][0]
+        assert d.confidence < 0.3  # no-data flag → 0.2
+
+    async def test_shared_memory_empty_pool_proceeds(self, trend_factory) -> None:
+        from unittest.mock import AsyncMock
+
+        sm = AsyncMock()
+        sm.active_trends = AsyncMock(return_value=[])
+        agent = HedgeAgent(shared_memory=sm, use_llm=False)
+        candidate = trend_factory()
+        partial = await agent(initial_state(candidate))
+        d = partial["decisions"][0]
+        assert d.verdict is AgentVerdict.PROCEED
+        assert d.details["active_pool_size"] == 0
+        assert d.details["shared_memory_used"] is True
+
+    async def test_within_concentration_cap_proceeds(self, trend_factory) -> None:
+        from unittest.mock import AsyncMock
+
+        sm = AsyncMock()
+        tenant_id = "default"
+        trend_id = "trend-1"
+        # 2 same-category out of 10 → prospective=(3/11)≈0.27 < 0.40 cap
+        same_cat = [(tenant_id, f"other-{i}") for i in range(2)]
+        diff_cat = [(tenant_id, f"diff-{i}") for i in range(8)]
+        sm.active_trends = AsyncMock(return_value=same_cat + diff_cat)
+
+        async def get_all(ten, tid):
+            if "other" in tid:
+                return {"category": "fitness"}
+            return {"category": "tech"}
+
+        sm.get_all = get_all
+        agent = HedgeAgent(shared_memory=sm, use_llm=False)
+        candidate = trend_factory()
+        state = initial_state(candidate)
+        state["trend_id"] = trend_id
+        state["tenant_id"] = tenant_id
+        state["sourcer_supplier"] = {"category": "fitness"}
+        partial = await agent(state)
+        d = partial["decisions"][0]
+        assert d.verdict is AgentVerdict.PROCEED
+
+    async def test_hold_on_moderate_concentration(self, trend_factory) -> None:
+        from unittest.mock import AsyncMock
+
+        sm = AsyncMock()
+        tenant_id = "default"
+        trend_id = "trend-x"
+        # 4 same-category out of 8 → prospective = 5/9 ≈ 0.56; excess = 0.16 (≥0.05 HOLD)
+        same_cat = [(tenant_id, f"same-{i}") for i in range(4)]
+        diff_cat = [(tenant_id, f"diff-{i}") for i in range(4)]
+        sm.active_trends = AsyncMock(return_value=same_cat + diff_cat)
+
+        async def get_all(ten, tid):
+            if "same" in tid:
+                return {"category": "fitness"}
+            return {"category": "tech"}
+
+        sm.get_all = get_all
+        agent = HedgeAgent(shared_memory=sm, use_llm=False)
+        candidate = trend_factory()
+        state = initial_state(candidate)
+        state["trend_id"] = trend_id
+        state["tenant_id"] = tenant_id
+        state["sourcer_supplier"] = {"category": "fitness"}
+        partial = await agent(state)
+        d = partial["decisions"][0]
+        assert d.verdict in (AgentVerdict.HOLD, AgentVerdict.BLOCK)
+        assert d.details["hedge_passed"] is False
+
+    async def test_block_on_severe_concentration(self, trend_factory) -> None:
+        from unittest.mock import AsyncMock
+
+        sm = AsyncMock()
+        tenant_id = "default"
+        trend_id = "trend-y"
+        # 8 same-category out of 9 → prospective = 9/10 = 0.9; excess ≥ 0.20 → BLOCK
+        same_cat = [(tenant_id, f"same-{i}") for i in range(8)]
+        other_cat = [(tenant_id, "diff-0")]
+        sm.active_trends = AsyncMock(return_value=same_cat + other_cat)
+
+        async def get_all(ten, tid):
+            if "same" in tid:
+                return {"category": "fitness"}
+            return {"category": "tech"}
+
+        sm.get_all = get_all
+        agent = HedgeAgent(shared_memory=sm, use_llm=False)
+        candidate = trend_factory()
+        state = initial_state(candidate)
+        state["trend_id"] = trend_id
+        state["tenant_id"] = tenant_id
+        state["sourcer_supplier"] = {"category": "fitness"}
+        partial = await agent(state)
+        d = partial["decisions"][0]
+        assert d.verdict is AgentVerdict.BLOCK
+        assert partial["hedge_passed"] is False
+
+    async def test_augment_with_llm_noop_for_proceed(self, trend_factory) -> None:
+        agent = HedgeAgent(shared_memory=None, use_llm=False)
+        candidate = trend_factory()
+        heuristic = AgentDecision(
+            agent="hedge",
+            trend_id=candidate.trend_id,
+            correlation_id=candidate.correlation_id,
+            verdict=AgentVerdict.PROCEED,
+            score=0.9,
+            confidence=0.5,
+            reasoning="ok",
+        )
+        result = await agent._augment_with_llm(candidate, initial_state(candidate), heuristic)
+        assert result is None
+
+    async def test_augment_with_llm_noop_for_block(self, trend_factory) -> None:
+        agent = HedgeAgent(shared_memory=None, use_llm=False)
+        candidate = trend_factory()
+        heuristic = AgentDecision(
+            agent="hedge",
+            trend_id=candidate.trend_id,
+            correlation_id=candidate.correlation_id,
+            verdict=AgentVerdict.BLOCK,
+            score=0.1,
+            confidence=0.8,
+            reasoning="blocked",
+        )
+        result = await agent._augment_with_llm(candidate, initial_state(candidate), heuristic)
+        assert result is None
+
+    async def test_extra_state_reflects_decision_details(self, trend_factory) -> None:
+        agent = HedgeAgent(shared_memory=None, use_llm=False)
+        candidate = trend_factory()
+        decision = AgentDecision(
+            agent="hedge",
+            trend_id=candidate.trend_id,
+            correlation_id=candidate.correlation_id,
+            verdict=AgentVerdict.PROCEED,
+            score=0.9,
+            confidence=0.5,
+            reasoning="ok",
+            details={"hedge_passed": True, "hedge_correlation_excess": 0.02},
+        )
+        extra = agent._extra_state(decision)
+        assert extra["hedge_passed"] is True
+        assert extra["hedge_correlation_excess"] == pytest.approx(0.02)
+
 
 class TestHistorianAgent:
     async def test_no_store_proceeds_with_low_confidence(self, trend_factory) -> None:
@@ -416,7 +564,6 @@ class TestErrorHandling:
 
     async def test_exception_in_heuristic_caught(self, trend_factory) -> None:
         from aegis.agents.nodes.base import AgentNode
-        from aegis.agents.schemas import AgentDecision
 
         class ExplodeAgent(AgentNode):
             name = "explode"

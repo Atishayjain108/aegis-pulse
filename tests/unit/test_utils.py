@@ -165,13 +165,15 @@ def test_pg_config_from_env_with_dsn():
 def test_pg_config_from_env_parts():
     from aegis.db.pool import PgConfig
 
-    cfg = PgConfig.from_env({
-        "POSTGRES_HOST": "pg.example.com",
-        "POSTGRES_PORT": "5433",
-        "POSTGRES_USER": "admin",
-        "POSTGRES_PASSWORD": "secret",
-        "POSTGRES_DB": "prod",
-    })
+    cfg = PgConfig.from_env(
+        {
+            "POSTGRES_HOST": "pg.example.com",
+            "POSTGRES_PORT": "5433",
+            "POSTGRES_USER": "admin",
+            "POSTGRES_PASSWORD": "secret",
+            "POSTGRES_DB": "prod",
+        }
+    )
     assert "pg.example.com" in cfg.dsn
     assert "5433" in cfg.dsn
     assert "admin" in cfg.dsn
@@ -262,7 +264,9 @@ def test_stealth_profile_canvas_seeds_differ():
     p1 = StealthProfile.random()
     p2 = StealthProfile.random()
     # Very unlikely to be equal (32-bit random)
-    assert p1.canvas_noise_seed != p2.canvas_noise_seed or p1.audio_noise_seed != p2.audio_noise_seed
+    assert (
+        p1.canvas_noise_seed != p2.canvas_noise_seed or p1.audio_noise_seed != p2.audio_noise_seed
+    )
 
 
 @pytest.mark.unit

@@ -25,6 +25,7 @@ Heuristic verdicts:
 
 Author: AEGIS Pulse core team
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -32,12 +33,16 @@ import math
 import re
 from typing import TYPE_CHECKING, Any
 
+import structlog
+
 from ..llm import prompts
 from ..schemas import AgentDecision, AgentVerdict, TrendCandidate
 from .base import AgentNode
 
 if TYPE_CHECKING:
     from ..state import GraphState
+
+_log = structlog.get_logger("aegis.agents.nodes.sourcer")
 
 # ----------------------------------------------------------------------
 # Category detection table.
@@ -48,7 +53,11 @@ if TYPE_CHECKING:
 _CATEGORY_RULES: tuple[tuple[str, str, str], ...] = (
     # (regex, category, feasibility)
     # Hard / blocked
-    (r"\b(?:medical\s+device|defibrillator|thermometer|blood\s+pressure)\b", "medical_device", "blocked"),
+    (
+        r"\b(?:medical\s+device|defibrillator|thermometer|blood\s+pressure)\b",
+        "medical_device",
+        "blocked",
+    ),
     (r"\b(?:firearm|ammunition|silencer|gun\s+part|holster)\b", "firearms", "blocked"),
     (r"\b(?:cbd|thc|delta[-\s]?[89]|cannabis|marijuana)\b", "cannabis", "blocked"),
     (r"\b(?:prescription|rx)\b", "rx_pharma", "blocked"),
@@ -60,7 +69,11 @@ _CATEGORY_RULES: tuple[tuple[str, str, str], ...] = (
     (r"\b(?:drone|quadcopter)\b", "drone", "hard"),
     (r"\b(?:children'?s?\s+toy|baby|infant|toddler)\b", "children", "hard"),
     # Standard
-    (r"\b(?:earbud|headphone|speaker|bluetooth\s+(?:speaker|earbud))\b", "consumer_electronics", "standard"),
+    (
+        r"\b(?:earbud|headphone|speaker|bluetooth\s+(?:speaker|earbud))\b",
+        "consumer_electronics",
+        "standard",
+    ),
     (r"\b(?:phone\s+case|phone\s+stand|tablet\s+stand)\b", "phone_accessory", "standard"),
     (r"\b(?:bag|backpack|tote|duffel|luggage)\b", "bags", "standard"),
     (r"\b(?:shoe|sneaker|sandal|boot|slipper)\b", "footwear", "standard"),
@@ -298,7 +311,8 @@ class SourcerAgent(AgentNode):
                 feasibility=heuristic.details.get("feasibility", "standard"),
                 heuristic_score=round(heuristic.score, 3),
             )
-        except Exception:
+        except Exception as exc:
+            _log.debug("sourcer.llm_input_build_failed", error=str(exc))
             return None
 
         system_text = (

@@ -1,0 +1,315 @@
+#!/usr/bin/env bash
+# bootstrap/aegis-security-doctor — Security-focused health checker
+#
+# Usage:
+#   ./bootstrap/aegis-security-doctor           # full check
+#   ./bootstrap/aegis-security-doctor --secrets # check secrets config only
+#   ./bootstrap/aegis-security-doctor --ci      # CI mode (exit 1 on any failure)
+#
+# Outputs a colour-coded table of checks.
+# Exits 0 if all REQUIRED checks pass, 1 otherwise.
+
+set -euo pipefail
+
+CI_MODE=false
+SECRETS_ONLY=false
+VAULT_ADDR="${AEGIS_SEC_VAULT_ADDR:-http://127.0.0.1:8200}"
+VAULT_TOKEN="${AEGIS_SEC_VAULT_TOKEN:-dev-root-token}"
+
+for arg in "$@"; do
+    case "${arg}" in
+        --ci) CI_MODE=true ;;
+        --secrets) SECRETS_ONLY=true ;;
+    esac
+done
+
+# ── Colour helpers ─────────────────────────────────────────────────────────── #
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
+CYAN='\033[0;36m'; BOLD='\033[1m'; RESET='\033[0m'
+
+pass() { echo -e "  ${GREEN}✔${RESET}  $1"; }
+fail() { echo -e "  ${RED}✘${RESET}  $1"; FAILURES=$((FAILURES + 1)); }
+warn() { echo -e "  ${YELLOW}⚠${RESET}  $1"; }
+info() { echo -e "  ${CYAN}ℹ${RESET}  $1"; }
+
+FAILURES=0
+
+header() {
+    echo ""
+    echo -e "${BOLD}${CYAN}── $1 ──${RESET}"
+}
+
+# ── Tool availability ──────────────────────────────────────────────────────── #
+check_tools() {
+    header "Required Security Tools"
+    local tools=(vault sops age age-keygen mkcert openssl curl jq)
+    for tool in "${tools[@]}"; do
+        if command -v "${tool}" &>/dev/null; then
+            pass "${tool} installed: $(${tool} --version 2>/dev/null | head -1 || echo 'ok')"
+        else
+            case "${tool}" in
+                vault)   fail "${tool} not found — run: bootstrap/security/01_vault_dev.sh" ;;
+                sops)    fail "${tool} not found — run: bootstrap/security/02_sops_age.sh" ;;
+                age*)    fail "${tool} not found — run: bootstrap/security/02_sops_age.sh" ;;
+                mkcert)  warn "${tool} not found (optional for dev TLS) — run: bootstrap/security/03_mkcert_tls.sh" ;;
+                *)       fail "${tool} not found" ;;
+            esac
+        fi
+    done
+}
+
+# ── Vault health ───────────────────────────────────────────────────────────── #
+check_vault() {
+    header "Vault Health"
+    if ! command -v vault &>/dev/null; then
+        warn "Vault not installed, skipping"
+        return
+    fi
+
+    local status_out
+    if status_out="$(VAULT_ADDR="${VAULT_ADDR}" VAULT_TOKEN="${VAULT_TOKEN}" vault status -format=json 2>/dev/null)"; then
+        local initialized sealed
+        initialized="$(echo "${status_out}" | jq -r '.initialized')"
+        sealed="$(echo "${status_out}" | jq -r '.sealed')"
+
+        if [[ "${initialized}" == "true" ]]; then
+            pass "Vault initialized"
+        else
+            fail "Vault not initialized (run bootstrap/security/01_vault_dev.sh)"
+        fi
+
+        if [[ "${sealed}" == "false" ]]; then
+            pass "Vault unsealed"
+        else
+            fail "Vault is sealed — dev mode should be auto-unsealed"
+        fi
+
+        # Check KV engine
+        if VAULT_ADDR="${VAULT_ADDR}" VAULT_TOKEN="${VAULT_TOKEN}" vault secrets list 2>/dev/null | grep -q "^secret/"; then
+            pass "KV v2 mount 'secret/' enabled"
+        else
+            warn "KV v2 not mounted (run: vault secrets enable -version=2 kv)"
+        fi
+
+        # Check Transit engine
+        if VAULT_ADDR="${VAULT_ADDR}" VAULT_TOKEN="${VAULT_TOKEN}" vault secrets list 2>/dev/null | grep -q "^transit/"; then
+            pass "Transit engine enabled"
+        else
+            warn "Transit engine not mounted (optional)"
+        fi
+    else
+        fail "Vault unreachable at ${VAULT_ADDR} — run: bootstrap/security/01_vault_dev.sh"
+    fi
+}
+
+# ── SOPS / age keys ────────────────────────────────────────────────────────── #
+check_sops() {
+    header "SOPS + age Key Configuration"
+    local age_key_file="${HOME}/.config/sops/age/keys.txt"
+
+    if [[ -f "${age_key_file}" ]]; then
+        local perms
+        perms="$(stat -c '%a' "${age_key_file}")"
+        pass "age key file exists: ${age_key_file}"
+        if [[ "${perms}" == "600" ]]; then
+            pass "age key file permissions: 600 (correct)"
+        else
+            fail "age key file permissions: ${perms} (must be 600)"
+        fi
+    else
+        fail "age key not found — run: bootstrap/security/02_sops_age.sh"
+    fi
+
+    if [[ -f ".sops.yaml" ]]; then
+        pass ".sops.yaml present"
+        if grep -q "age:" ".sops.yaml" 2>/dev/null; then
+            pass ".sops.yaml references age key"
+        else
+            warn ".sops.yaml does not reference an age key"
+        fi
+    else
+        warn ".sops.yaml not found in current directory (run from project root)"
+    fi
+
+    if [[ -f ".env.sops.yaml" ]]; then
+        pass ".env.sops.yaml exists (encrypted secrets present)"
+    else
+        warn ".env.sops.yaml not found — secrets not yet encrypted"
+    fi
+}
+
+# ── TLS Certificates ───────────────────────────────────────────────────────── #
+check_tls() {
+    header "TLS Certificates"
+    local cert_dir="${HOME}/code/aegis-pulse/certs"
+
+    if [[ -f "${cert_dir}/server.crt" ]]; then
+        pass "TLS cert found: ${cert_dir}/server.crt"
+        # Check expiry
+        local expiry
+        expiry="$(openssl x509 -in "${cert_dir}/server.crt" -noout -enddate 2>/dev/null | cut -d= -f2)"
+        pass "TLS cert expiry: ${expiry}"
+
+        if openssl x509 -in "${cert_dir}/server.crt" -noout -checkend $((30 * 86400)) &>/dev/null; then
+            pass "TLS cert valid for >30 days"
+        else
+            warn "TLS cert expires in <30 days — regenerate with: bootstrap/security/03_mkcert_tls.sh"
+        fi
+    else
+        warn "TLS cert not found (optional for dev HTTP) — run: bootstrap/security/03_mkcert_tls.sh"
+    fi
+
+    if [[ -f "${cert_dir}/server.key" ]]; then
+        local key_perms
+        key_perms="$(stat -c '%a' "${cert_dir}/server.key")"
+        if [[ "${key_perms}" == "600" ]]; then
+            pass "TLS key permissions: 600 (correct)"
+        else
+            fail "TLS key permissions: ${key_perms} (must be 600, run: chmod 600 ${cert_dir}/server.key)"
+        fi
+    fi
+}
+
+# ── Required environment variables ─────────────────────────────────────────── #
+check_env_vars() {
+    header "Required Environment Variables"
+    local required_vars=(
+        "AEGIS_SEC_JWT_SECRET"
+        "AEGIS_SEC_HMAC_KEY"
+    )
+    local optional_vars=(
+        "AEGIS_SEC_VAULT_ADDR"
+        "AEGIS_SEC_VAULT_TOKEN"
+        "AEGIS_SEC_REDIS_URL"
+        "AEGIS_PG_DSN"
+    )
+
+    for var in "${required_vars[@]}"; do
+        if [[ -n "${!var:-}" ]]; then
+            local val="${!var}"
+            if [[ ${#val} -ge 32 ]]; then
+                pass "${var} set (length: ${#val})"
+            else
+                fail "${var} set but too short (must be ≥32 chars)"
+            fi
+        else
+            fail "${var} not set — add to .env or export"
+        fi
+    done
+
+    for var in "${optional_vars[@]}"; do
+        if [[ -n "${!var:-}" ]]; then
+            pass "${var} set"
+        else
+            warn "${var} not set (using default)"
+        fi
+    done
+}
+
+# ── Secret scanning ────────────────────────────────────────────────────────── #
+check_no_plaintext_secrets() {
+    header "Plaintext Secret Scan"
+
+    # Check for common plaintext secret patterns in tracked files
+    local suspicious_patterns=(
+        "password\s*=\s*['\"][^'\"]{8,}"
+        "secret\s*=\s*['\"][^'\"]{8,}"
+        "AKIA[0-9A-Z]{16}"
+    )
+
+    local found_issues=false
+    if command -v git &>/dev/null && git rev-parse --git-dir &>/dev/null; then
+        for pattern in "${suspicious_patterns[@]}"; do
+            if git grep -qiE "${pattern}" -- ':!*.sops.yaml' ':!*.example' ':!bootstrap/' 2>/dev/null; then
+                fail "Possible plaintext secret found matching: ${pattern}"
+                found_issues=true
+            fi
+        done
+        if [[ "${found_issues}" == "false" ]]; then
+            pass "No obvious plaintext secrets in git-tracked files"
+        fi
+    else
+        warn "Not in a git repo; skipping plaintext secret scan"
+    fi
+
+    # Check detect-secrets baseline if available
+    if command -v detect-secrets &>/dev/null; then
+        if [[ -f ".secrets.baseline" ]]; then
+            if detect-secrets audit .secrets.baseline --only-allowlisted &>/dev/null; then
+                pass "detect-secrets baseline audit passed"
+            else
+                warn "detect-secrets found unaudited secrets — run: detect-secrets audit .secrets.baseline"
+            fi
+        else
+            warn "No .secrets.baseline — run: detect-secrets scan > .secrets.baseline"
+        fi
+    else
+        warn "detect-secrets not installed — run: pip install detect-secrets"
+    fi
+}
+
+# ── File permissions audit ─────────────────────────────────────────────────── #
+check_permissions() {
+    header "Sensitive File Permissions"
+    local sensitive_files=(
+        "${HOME}/.config/sops/age/keys.txt:600"
+        "${HOME}/code/aegis-pulse/certs/server.key:600"
+        "${HOME}/.aegis/vault.env:600"
+    )
+
+    for entry in "${sensitive_files[@]}"; do
+        local file="${entry%%:*}"
+        local expected="${entry##*:}"
+        if [[ -f "${file}" ]]; then
+            local actual
+            actual="$(stat -c '%a' "${file}")"
+            if [[ "${actual}" == "${expected}" ]]; then
+                pass "${file}: ${actual} ✓"
+            else
+                fail "${file}: ${actual} (expected ${expected}, fix: chmod ${expected} ${file})"
+            fi
+        fi
+    done
+}
+
+# ── Summary ────────────────────────────────────────────────────────────────── #
+print_summary() {
+    echo ""
+    echo -e "${BOLD}════════════════════════════════════════${RESET}"
+    if [[ ${FAILURES} -eq 0 ]]; then
+        echo -e "${GREEN}${BOLD}  ✔ All security checks passed${RESET}"
+    else
+        echo -e "${RED}${BOLD}  ✘ ${FAILURES} security check(s) failed${RESET}"
+        echo -e "${YELLOW}  Review failures above and run relevant bootstrap scripts${RESET}"
+    fi
+    echo -e "${BOLD}════════════════════════════════════════${RESET}"
+    echo ""
+}
+
+# ── Main ──────────────────────────────────────────────────────────────────── #
+main() {
+    echo ""
+    echo -e "${BOLD}${CYAN}AEGIS Pulse — Phase 12 Security Doctor${RESET}"
+    echo -e "${CYAN}$(date -u '+%Y-%m-%dT%H:%M:%SZ')${RESET}"
+
+    if [[ "${SECRETS_ONLY}" == "true" ]]; then
+        check_env_vars
+        check_no_plaintext_secrets
+    else
+        check_tools
+        check_vault
+        check_sops
+        check_tls
+        check_env_vars
+        check_no_plaintext_secrets
+        check_permissions
+    fi
+
+    print_summary
+
+    if [[ "${CI_MODE}" == "true" && ${FAILURES} -gt 0 ]]; then
+        exit 1
+    fi
+}
+
+main "$@"

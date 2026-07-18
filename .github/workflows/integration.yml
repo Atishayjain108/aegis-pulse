@@ -1,0 +1,83 @@
+name: integration
+
+# Real-infrastructure integration lane (PROJECT OMEGA / Phase-E prerequisite G).
+# Spins up an ephemeral TimescaleDB + Redis, applies the real schema, and runs
+# the AEGIS_INTEGRATION_TEST=1 suite against actual services — NOT fake pools.
+# This is the lane that catches tautological-mock regressions the unit suite
+# cannot. Unit tests + ruff still run in the default `ci` workflow.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: integration-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        # Same engine as docker-compose.yml (TimescaleDB + pgvector available).
+        # POSTGRES_USER is created as a LOGIN superuser, so CREATE EXTENSION in
+        # 0001_init.sql works; the guarded `CREATE ROLE aegis_app NOLOGIN` is
+        # then skipped (role already exists) — matching the dev stack.
+        image: timescale/timescaledb-ha:pg16
+        env:
+          POSTGRES_USER: aegis_app
+          POSTGRES_PASSWORD: aegis_app_dev_pw
+          POSTGRES_DB: aegis
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U aegis_app -d aegis"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+      redis:
+        image: redis:7.4-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      AEGIS_ENV: test
+      AEGIS_DISABLE_OLLAMA: "1"
+      AEGIS_AGENT_HMAC_KEY: test-key-do-not-use-in-prod
+      AEGIS_PG_DSN: postgresql://aegis_app:aegis_app_dev_pw@localhost:5432/aegis
+      AEGIS_REDIS_URL: redis://localhost:6379/15
+      AEGIS_INTEGRATION_TEST: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Sync dependencies (all workspace members + extras)
+        run: uv sync --all-packages --all-extras
+
+      - name: Apply database schema (raw SQL migrations via alembic)
+        run: uv run aegis migrate
+
+      - name: Run integration suite against real PG + Redis
+        run: >-
+          uv run python -m pytest tests/integration/ -v -p no:hypothesis
+          --no-cov
+
+      - name: Run falsifiable reality invariants (no infra, but cheap guard)
+        run: >-
+          uv run python -m pytest tests/unit/test_omega_reality_invariants.py
+          tests/unit/test_invariants.py -q -p no:hypothesis --no-cov

@@ -1,0 +1,32 @@
+# Phase 5 entry to be merged into the main `docker-compose.yml`.
+#
+# Phase 5 has no long-running server; this entry exists so CI and operators
+# can run `docker compose run --rm aegis-harden doctor` and similar utility
+# commands inside the standard stack.
+#
+# When merging into the main stack, prefix volumes/networks with the stack
+# name and align AEGIS_HARDEN_* env vars with your secrets management.
+
+services:
+  aegis-harden:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: aegis-harden:0.5.0
+    container_name: aegis-harden
+    # No exposed port — this is a CLI-driven sidecar.
+    environment:
+      AEGIS_HARDEN_DEFAULT_PROFILE: "standard"
+      AEGIS_HARDEN_PLAYBOOKS_DIR: "/app/playbooks"
+      AEGIS_HARDEN_PUBLISH_TO_REDIS: "false"
+      AEGIS_HARDEN_REDIS_URL: "redis://aegis-redis:6379/0"
+    volumes:
+      - ./playbooks:/app/playbooks:ro
+    # Disable always-restart; this is a one-shot.
+    restart: "no"
+    command: ["aegis-harden", "doctor"]
+    # When you want Phase 5 to publish verdicts to the Phase 4 stream,
+    # uncomment the dependency and flip AEGIS_HARDEN_PUBLISH_TO_REDIS=true.
+    # depends_on:
+    #   aegis-redis:
+    #     condition: service_healthy

@@ -195,7 +195,6 @@ async def test_adapter_blocking_parse():
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_adapter_setup_failure_propagates():
-
     from aegis.scrape.base import AdapterConfig, ScrapeContext, SourceAdapter
 
     class _FailSetupAdapter(SourceAdapter[str]):
@@ -220,7 +219,6 @@ async def test_adapter_setup_failure_propagates():
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_adapter_teardown_failure_does_not_mask():
-
     from aegis.scrape.base import AdapterConfig, ScrapeContext, SourceAdapter
 
     class _FailTeardownAdapter(SourceAdapter[str]):
@@ -360,8 +358,6 @@ def test_youtube_int_or_none():
     assert _int_or_none("abc") is None
 
 
-
-
 @pytest.mark.unit
 def test_pinterest_int_or_none():
     from aegis.scrape.sources.pinterest import _int_or_none
@@ -446,3 +442,240 @@ def test_pinterest_parse_missing_pin_id_returns_none():
     ctx = ScrapeContext()
     assert adapter.parse({}, ctx) is None
     assert adapter.parse({"id": ""}, ctx) is None
+
+
+# ---------------------------------------------------------------------------
+# Phase 6: runner.py — swarm_context injection success path
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_runner_swarm_context_injected_on_valid_redis_response() -> None:
+    """runner.run_trend() parses SwarmResult when Redis.get() returns JSON."""
+    from datetime import UTC
+    from unittest.mock import AsyncMock
+
+    from aegis.agents.runner import run_trend
+    from aegis.agents.schemas import TrendCandidate
+    from aegis.scrape.swarm_result import SwarmResult
+
+    now = __import__("datetime").datetime.now(UTC)
+    swarm = SwarmResult(
+        started_at=now,
+        finished_at=now,
+        total_signals=15,
+        unique_signals=12,
+        dedup_removed=3,
+        by_platform={"hacker_news": 15},
+        by_tier={"T3_search": 15},
+        wave_stats=[],
+        market_pulse="bullish",
+        batch_confidence=0.90,
+    )
+
+    mock_redis = AsyncMock()
+    mock_redis.get = AsyncMock(return_value=swarm.model_dump_json())
+    mock_redis.xadd = AsyncMock()
+
+    candidate = TrendCandidate(
+        trend_id="t-swarm-ok",
+        title="Swarm context success test",
+        signal_count=5,
+        unique_authors=2,
+        platforms=["hacker_news"],
+        velocity_1h=0.1,
+        velocity_6h=0.2,
+        velocity_24h=0.3,
+        sentiment=0.5,
+        commercial_intent=0.6,
+        novelty=0.7,
+        coordination_risk=0.0,
+    )
+
+    result = await run_trend(
+        candidate,
+        use_llm=False,
+        timeout_s=30.0,
+        stream_client=mock_redis,
+    )
+    assert result is not None
+    mock_redis.get.assert_called_once_with("aegis:swarm:latest")
+
+
+# ---------------------------------------------------------------------------
+# Phase 6: dashboard/app.py — swarm & platform endpoint coverage
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_dashboard_swarm_latest_no_data() -> None:
+    from unittest.mock import AsyncMock, patch
+
+    from httpx import ASGITransport, AsyncClient
+
+    from aegis.dashboard.app import app
+
+    mock_r = AsyncMock()
+    mock_r.get = AsyncMock(return_value=None)
+    mock_r.aclose = AsyncMock()
+
+    with patch("aegis.dashboard.app._get_redis", return_value=mock_r):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get("/api/swarm/latest")
+
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "no_data"
+
+
+@pytest.mark.asyncio
+async def test_dashboard_swarm_latest_with_data() -> None:
+    from datetime import UTC
+    from unittest.mock import AsyncMock, patch
+
+    from httpx import ASGITransport, AsyncClient
+
+    from aegis.dashboard.app import app
+    from aegis.scrape.swarm_result import SwarmResult
+
+    now = __import__("datetime").datetime.now(UTC)
+    swarm = SwarmResult(
+        started_at=now,
+        finished_at=now,
+        total_signals=20,
+        unique_signals=18,
+        dedup_removed=2,
+        by_platform={"reddit": 20},
+        by_tier={},
+        wave_stats=[],
+        market_pulse="bullish",
+    )
+
+    mock_r = AsyncMock()
+    mock_r.get = AsyncMock(return_value=swarm.model_dump_json())
+    mock_r.aclose = AsyncMock()
+
+    with patch("aegis.dashboard.app._get_redis", return_value=mock_r):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get("/api/swarm/latest")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "ok"
+    assert data["data"]["total_signals"] == 20
+
+
+@pytest.mark.asyncio
+async def test_dashboard_swarm_latest_redis_error() -> None:
+    from unittest.mock import AsyncMock, patch
+
+    from httpx import ASGITransport, AsyncClient
+
+    from aegis.dashboard.app import app
+
+    mock_r = AsyncMock()
+    mock_r.get = AsyncMock(side_effect=RuntimeError("redis down"))
+    mock_r.aclose = AsyncMock()
+
+    with patch("aegis.dashboard.app._get_redis", return_value=mock_r):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get("/api/swarm/latest")
+
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "error"
+
+
+@pytest.mark.asyncio
+async def test_dashboard_swarm_agents_no_data() -> None:
+    from unittest.mock import AsyncMock, patch
+
+    from httpx import ASGITransport, AsyncClient
+
+    from aegis.dashboard.app import app
+
+    mock_r = AsyncMock()
+    mock_r.hgetall = AsyncMock(return_value={})
+    mock_r.aclose = AsyncMock()
+
+    with patch("aegis.dashboard.app._get_redis", return_value=mock_r):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get("/api/swarm/agents")
+
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "no_data"
+
+
+@pytest.mark.asyncio
+async def test_dashboard_swarm_agents_with_data() -> None:
+    import json as _json
+    from unittest.mock import AsyncMock, patch
+
+    from httpx import ASGITransport, AsyncClient
+
+    from aegis.dashboard.app import app
+
+    agent_data = {
+        "flipkart": _json.dumps({"health": "UP", "consecutive_failures": 0, "avg_latency_ms": 150.0}),
+    }
+    mock_r = AsyncMock()
+    mock_r.hgetall = AsyncMock(return_value=agent_data)
+    mock_r.aclose = AsyncMock()
+
+    with patch("aegis.dashboard.app._get_redis", return_value=mock_r):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get("/api/swarm/agents")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "ok"
+    assert "flipkart" in data["agents"]
+
+
+@pytest.mark.asyncio
+async def test_dashboard_swarm_history_db_error() -> None:
+    from unittest.mock import patch
+
+    from httpx import ASGITransport, AsyncClient
+
+    from aegis.dashboard.app import app
+
+    with patch(
+        "aegis.dashboard.app.asyncpg.connect",
+        side_effect=ConnectionRefusedError("no db"),
+    ):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get("/api/swarm/history")
+
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "error"
+    assert resp.json()["runs"] == []
+
+
+# DASH-3 [2026-06-11]: test_dashboard_platform_stats_db_error and
+# test_dashboard_platform_trends_db_error removed with their endpoints
+# (/api/platforms/stats superseded by /api/signals/platforms;
+#  /api/platforms/trends superseded by /api/signals/velocity).
+# The tombstone below guards against accidental route resurrection.
+@pytest.mark.asyncio
+async def test_dash3_deleted_routes_stay_deleted() -> None:
+    from httpx import ASGITransport, AsyncClient
+
+    from aegis.dashboard.app import app
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        for path in ("/api/platforms/stats", "/api/platforms/trends", "/api/execute/alerts"):
+            resp = await client.get(path)
+            assert resp.status_code == 404, f"{path} was deleted in DASH-3 and must stay deleted"

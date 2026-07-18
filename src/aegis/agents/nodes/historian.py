@@ -19,9 +19,12 @@ The pipeline continues without it.
 
 Author: AEGIS Pulse core team
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
+
+import structlog
 
 from ..llm import prompts
 from ..schemas import AgentDecision, AgentVerdict, TrendCandidate
@@ -33,6 +36,8 @@ if TYPE_CHECKING:  # pragma: no cover
     from ..memory.chroma_store import ChromaMemoryStore
     from ..state import GraphState
 
+
+_log = structlog.get_logger("aegis.agents.nodes.historian")
 
 _DEFAULT_K = 5
 _DEFAULT_MIN_SCORE = 0.55
@@ -76,9 +81,10 @@ class HistorianAgent(AgentNode):
         store_ok = self._store is not None
 
         if store_ok:
-            query_text = " | ".join(
-                t for t in (candidate.title, candidate.summary[:300]) if t
-            ) or candidate.trend_id
+            query_text = (
+                " | ".join(t for t in (candidate.title, candidate.summary[:300]) if t)
+                or candidate.trend_id
+            )
 
             try:
                 result = await find_analogues(
@@ -90,7 +96,8 @@ class HistorianAgent(AgentNode):
                 if result.ok and isinstance(result.data, list):
                     analogues = list(result.data)
                     considered = int(result.metadata.get("considered", len(analogues)))
-            except Exception:  # pragma: no cover
+            except Exception as exc:  # pragma: no cover
+                _log.debug("historian.chroma_query_failed", error=str(exc))
                 analogues = []
 
         if analogues:
@@ -107,8 +114,7 @@ class HistorianAgent(AgentNode):
             confidence = 0.2  # operating blind without the store
 
         reasoning = (
-            f"analogues={len(analogues)}/{considered or 0} "
-            f"mean_similarity={mean_sim:.2f}"
+            f"analogues={len(analogues)}/{considered or 0} " f"mean_similarity={mean_sim:.2f}"
         )
 
         details: dict[str, Any] = {
@@ -152,7 +158,8 @@ class HistorianAgent(AgentNode):
                 summary=(candidate.summary or "")[:400],
                 analogues=sample,
             )
-        except Exception:
+        except Exception as exc:
+            _log.debug("historian.llm_input_build_failed", error=str(exc))
             return None
         system_text = (
             "You are HISTORIAN. Connect the current candidate to past analogues. "

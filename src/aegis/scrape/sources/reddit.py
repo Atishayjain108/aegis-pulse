@@ -149,10 +149,13 @@ class RedditAdapter(SourceAdapter[Any]):
 
     Run with::
 
-        adapter = RedditAdapter(RedditConfig(
-            client_id="...", client_secret="...",
-            user_agent="linux:aegis-pulse:0.1.0 (by /u/yourhandle)",
-        ))
+        adapter = RedditAdapter(
+            RedditConfig(
+                client_id="...",
+                client_secret="...",
+                user_agent="linux:aegis-pulse:0.1.0 (by /u/yourhandle)",
+            )
+        )
         async for signal in adapter.run(subreddit="BuyItForLife", limit=20):
             ...
     """
@@ -212,6 +215,7 @@ class RedditAdapter(SourceAdapter[Any]):
         # praw.Reddit() does network IO (fetches /api/v1/me to detect mode).
         # Bridge through to_thread to keep the loop responsive.
         import asyncio
+
         self._reddit = await asyncio.to_thread(_build_client)
 
         # Verify auth actually works.
@@ -346,8 +350,8 @@ class RedditAdapter(SourceAdapter[Any]):
             external_id = f"t3_{sub.id}"
             subreddit_name = (
                 str(sub.subreddit.display_name)
-                if hasattr(sub, "subreddit") else
-                getattr(ctx, "subreddit_name", "")
+                if hasattr(sub, "subreddit")
+                else getattr(ctx, "subreddit_name", "")
             )
             is_self = bool(getattr(sub, "is_self", True))
             over_18 = bool(getattr(sub, "over_18", False))
@@ -388,8 +392,8 @@ class RedditAdapter(SourceAdapter[Any]):
             intent=IntentType.ENGAGE,
             author=author,
             engagement=EngagementMetrics(
-                views=None,            # Reddit hides views in API
-                likes=max(0, score),   # score = ups - downs; can be negative
+                views=None,  # Reddit hides views in API
+                likes=max(0, score),  # score = ups - downs; can be negative
                 comments=num_comments,
             ),
             posted_at=posted_at,
@@ -425,8 +429,8 @@ class RedditAdapter(SourceAdapter[Any]):
             url = f"https://reddit.com{permalink}" if permalink else None
             subreddit_name = (
                 str(comment.subreddit.display_name)
-                if hasattr(comment, "subreddit") else
-                getattr(ctx, "subreddit_name", "")
+                if hasattr(comment, "subreddit")
+                else getattr(ctx, "subreddit_name", "")
             )
         except Exception as e:
             log.warning("reddit.parse.comment.bad_attr", error=str(e))
@@ -520,15 +524,29 @@ class RedditAdapter(SourceAdapter[Any]):
         this. We keep it cheap and conservative — false positives only.
         """
         low = body.lower()
-        if any(p in low for p in (
-            "where can i buy", "where to buy", "link to buy", "any link",
-            "drop the link", "buying one", "ordered one", "just bought",
-        )):
+        if any(
+            p in low
+            for p in (
+                "where can i buy",
+                "where to buy",
+                "link to buy",
+                "any link",
+                "drop the link",
+                "buying one",
+                "ordered one",
+                "just bought",
+            )
+        ):
             return IntentType.PURCHASE
-        if any(p in low for p in (
-            "looking for", "trying to find", "anyone know where",
-            "recommendations for",
-        )):
+        if any(
+            p in low
+            for p in (
+                "looking for",
+                "trying to find",
+                "anyone know where",
+                "recommendations for",
+            )
+        ):
             return IntentType.SEARCH
         return IntentType.ENGAGE
 
@@ -538,8 +556,8 @@ _SENTINEL_DONE = object()
 
 
 __all__ = [
+    "SCRAPER_VERSION",
     "RedditAdapter",
     "RedditConfig",
     "RedditScrapeContext",
-    "SCRAPER_VERSION",
 ]

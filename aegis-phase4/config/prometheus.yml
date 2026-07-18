@@ -1,0 +1,50 @@
+# AEGIS Pulse — Phase 4 Prometheus scrape config.
+#
+# Both the API and the drainer expose Prometheus metrics on /metrics
+# (or 204 if the prometheus_client package is not installed in that
+# build — disable the relevant job in that case).
+
+global:
+  scrape_interval:     15s
+  scrape_timeout:      10s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: dev
+    service: aegis-execute
+
+# Alert rules can be wired in here later.
+rule_files: []
+
+scrape_configs:
+  # Self-scrape so the Prometheus instance is always visible.
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # The FastAPI surface. The /metrics endpoint is mounted by
+  # aegis.execute.api.routes.health.
+  - job_name: aegis-execute-api
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["api:8200"]
+        labels:
+          component: api
+
+  # The drainer worker. If the worker is built without the
+  # [prometheus] extra, this scrape will simply fail open — Prometheus
+  # logs a warning, the rest of the stack is fine.
+  - job_name: aegis-execute-drain
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["drain:9000"]
+        labels:
+          component: drain
+
+  # Optional: scrape Postgres exporter and Redis exporter when those
+  # containers are added to the stack. Left commented as a hook.
+  # - job_name: aegis-postgres
+  #   static_configs:
+  #     - targets: ["postgres-exporter:9187"]
+  # - job_name: aegis-redis
+  #   static_configs:
+  #     - targets: ["redis-exporter:9121"]

@@ -22,6 +22,7 @@ Design notes
 
 Author: AEGIS Pulse core team
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -134,7 +135,9 @@ class LLMRouter:
                 await self._record_failure(provider.name, str(exc))
                 _log.warning("llm.provider_error", provider=provider.name, error=str(exc))
                 continue
-            except Exception as exc:  # pragma: no cover — safety net for unknown provider exceptions
+            except (
+                Exception
+            ) as exc:  # pragma: no cover — safety net for unknown provider exceptions
                 await self._record_failure(provider.name, f"unexpected: {exc!r}")
                 _log.exception("llm.unexpected", provider=provider.name)
                 continue
@@ -159,9 +162,7 @@ class LLMRouter:
         out: dict[str, bool] = {}
         # Skip dead providers entirely.
         live = [p for p in self._providers if not self._breakers[p.name].dead]
-        results = await asyncio.gather(
-            *(p.health() for p in live), return_exceptions=True
-        )
+        results = await asyncio.gather(*(p.health() for p in live), return_exceptions=True)
         for p, r in zip(live, results, strict=True):
             out[p.name] = bool(r) if not isinstance(r, BaseException) else False
         for p in self._providers:

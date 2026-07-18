@@ -52,11 +52,29 @@ services:
       - "shared_preload_libraries=timescaledb"
       - "-c"
       - "listen_addresses=*"
+      - "-c"
+      - "shared_buffers=512MB"
+      - "-c"
+      - "effective_cache_size=2GB"
+      - "-c"
+      - "work_mem=16MB"
+      - "-c"
+      - "maintenance_work_mem=128MB"
+      - "-c"
+      - "max_connections=100"
     ports:
       - "127.0.0.1:5433:5432"
     volumes:
       - aegis_postgres_data:/home/postgres/pgdata/data
       - ./db/migrations:/docker-entrypoint-initdb.d/migrations:ro
+      - ./docker/postgres-init:/docker-entrypoint-initdb.d/init:ro
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 4G
+        reservations:
+          memory: 512M
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aegis_app} -d ${POSTGRES_DB:-aegis}"]
       interval: 5s
@@ -79,12 +97,23 @@ services:
       - "yes"
       - "--maxmemory"
       - "1gb"
+      # audit P3-2: Redis is a message BUS here (phase2/phase3/outbox streams).
+      # allkeys-lru would silently evict un-consumed stream entries under memory
+      # pressure = in-flight verdict loss. noeviction rejects writes instead of
+      # dropping data, surfacing pressure as a loud error we can act on.
       - "--maxmemory-policy"
-      - "allkeys-lru"
+      - "noeviction"
     ports:
       - "127.0.0.1:6380:6379"
     volumes:
       - aegis_redis_data:/data
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 1536M
+        reservations:
+          memory: 256M
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -99,6 +128,13 @@ services:
   # -----------------------------------------------------------------
   minio:
     image: minio/minio:latest
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          memory: 256M
     container_name: aegis-minio
     restart: unless-stopped
     environment:
@@ -124,6 +160,13 @@ services:
   # -----------------------------------------------------------------
   flaresolverr:
     image: ghcr.io/flaresolverr/flaresolverr:latest
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          memory: 256M
     container_name: aegis-flaresolverr
     restart: unless-stopped
     environment:
@@ -143,10 +186,308 @@ services:
       - aegis
 
   # -----------------------------------------------------------------
+  # Phase 3 — Predict service (FastAPI inference surface)
+  # Build: docker build -f docker/Dockerfile.predict -t aegis-predict .
+  # Serve: POST /predict  POST /predict/batch  GET /healthz  GET /metrics
+  # -----------------------------------------------------------------
+  predict:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.predict
+    image: aegis-predict:latest
+    container_name: aegis-predict
+    restart: unless-stopped
+    environment:
+      AEGIS_PG_DSN: postgresql://${POSTGRES_USER:-aegis_app}:${POSTGRES_PASSWORD:-aegis_app_dev_pw}@postgres:5432/${POSTGRES_DB:-aegis}
+      AEGIS_REDIS_URL: redis://redis:6379/0
+      AEGIS_ENV: dev
+      AEGIS_LOG_JSON: "true"
+      AEGIS_FLARESOLVERR_URL: "http://aegis-flaresolverr:8191/v1"
+      # Disable Ollama in the predict container — inference is heuristic-first
+      AEGIS_DISABLE_OLLAMA: "1"
+      # Hard timeout (seconds) per inference request
+      PREDICT_HARD_TIMEOUT_S: "30"
+    ports:
+      - "127.0.0.1:8100:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 2G
+        reservations:
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - aegis
+
+  # -----------------------------------------------------------------
+  # Phase 4 — Execute API (alert engine, killswitch, SSE dashboard)
+  # Build: docker build -f aegis-phase4/docker/Dockerfile.api -t aegis-execute-api aegis-phase4/
+  # Serve: GET /healthz  GET /readyz  GET /dashboard/  POST /alerts  GET /stream
+  # -----------------------------------------------------------------
+  execute-api:
+    build:
+      context: aegis-phase4
+      dockerfile: docker/Dockerfile.api
+    image: aegis-execute-api:latest
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          memory: 256M
+    container_name: aegis-execute-api
+    restart: unless-stopped
+    environment:
+      AEGIS_EXECUTE_MODE: advisory
+      AEGIS_EXECUTE_API_HOST: "0.0.0.0"
+      AEGIS_EXECUTE_API_PORT: "8200"
+      AEGIS_EXECUTE_HMAC_KEY: "${AEGIS_EXECUTE_HMAC_KEY:-dev-hmac-key-not-for-prod}"
+      # Recovery protocol 1.7: one operator var (AEGIS_NTFY_TOPIC) powers both
+      # the scheduler ops alerts and this Phase 4 channel. The ntfy notifier
+      # itself filters to P0/ENTER only.
+      AEGIS_EXECUTE_NTFY_TOPIC: "${AEGIS_NTFY_TOPIC:-}"
+      AEGIS_EXECUTE_KILLSWITCH_KEY: "aegis:execute:killswitch"
+      AEGIS_PG_DSN: postgresql://${POSTGRES_USER:-aegis_app}:${POSTGRES_PASSWORD:-aegis_app_dev_pw}@postgres:5432/${POSTGRES_DB:-aegis}
+      AEGIS_REDIS_URL: redis://redis:6379/0
+      AEGIS_FLARESOLVERR_URL: "http://aegis-flaresolverr:8191/v1"
+    ports:
+      - "127.0.0.1:8200:8200"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; urllib.request.urlopen('http://127.0.0.1:8200/healthz', timeout=2); sys.exit(0)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - aegis
+
+  # -----------------------------------------------------------------
+  # Phase 4 — Execute Drain worker (outbox → notification channels)
+  # -----------------------------------------------------------------
+  execute-drain:
+    build:
+      context: aegis-phase4
+      dockerfile: docker/Dockerfile.drain
+    image: aegis-execute-drain:latest
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+        reservations:
+          memory: 128M
+    container_name: aegis-execute-drain
+    restart: unless-stopped
+    environment:
+      # Tenant UUID for this drain worker. Use the same default_tenant_id
+      # as the main aegis stack (from AEGIS_DEFAULT_TENANT_ID in .env).
+      AEGIS_EXECUTE_TENANT_ID: ${AEGIS_DEFAULT_TENANT_ID:-00000000-0000-0000-0000-000000000001}
+      AEGIS_EXECUTE_HMAC_KEY: "${AEGIS_EXECUTE_HMAC_KEY:-dev-hmac-key-not-for-prod}"
+      # Recovery protocol 1.7: one operator var (AEGIS_NTFY_TOPIC) powers both
+      # the scheduler ops alerts and this Phase 4 channel. The ntfy notifier
+      # itself filters to P0/ENTER only.
+      AEGIS_EXECUTE_NTFY_TOPIC: "${AEGIS_NTFY_TOPIC:-}"
+      AEGIS_EXECUTE_KILLSWITCH_KEY: "aegis:execute:killswitch"
+      AEGIS_PG_DSN: postgresql://${POSTGRES_USER:-aegis_app}:${POSTGRES_PASSWORD:-aegis_app_dev_pw}@postgres:5432/${POSTGRES_DB:-aegis}
+      AEGIS_REDIS_URL: redis://redis:6379/0
+      AEGIS_FLARESOLVERR_URL: "http://aegis-flaresolverr:8191/v1"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - aegis
+
+  # -----------------------------------------------------------------
+  # AEGIS Autonomous Scheduler (PROJECT OMEGA — runs the live loops)
+  # Fires the 14-job APScheduler loop: scrape → analyze → drift → settle
+  # claims → emit calibrated claims → refit calibration → retrain → health.
+  # Without this service the scheduler is ORPHANED (nothing fires the jobs).
+  #
+  #   docker compose --profile autonomous up -d autonomous
+  #
+  # NOTE: the image must include `apscheduler`; the scheduler exits 1 and logs
+  # an install hint if it is absent.
+  # -----------------------------------------------------------------
+  autonomous:
+    profiles: ["autonomous"]
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.predict
+      args:
+        # The scheduler runs scrape adapters; the plain predict image installs
+        # only [predict] and shipped 20 unimportable scrape modules for 12 days
+        # (defusedxml ×6, feedparser ×14 — 2026-07-03 blackout). This arg
+        # installs the [scrape] extra AND gates the build on an import walk.
+        INSTALL_SCRAPE: "1"
+    # Own tag: this image is NOT interchangeable with aegis-predict (different
+    # runtime dependency set). Sharing the tag is what hid the divergence.
+    image: aegis-autonomous:latest
+    container_name: aegis-autonomous
+    restart: unless-stopped
+    # Direct venv entrypoint — uv no longer exists inside the runtime image
+    # (lockfile-driven `uv sync` prunes anything uv.lock doesn't pin, and uv
+    # itself was only ever present by accident of the old install order).
+    command: ["aegis", "autonomous", "run"]
+    # LAYER (c): healthy == fresh data, not process existence. The previous
+    # check grepped /proc for "autonomous" and reported healthy through all
+    # 13 days of the 2026-07 ingestion blackout. This one fails when no
+    # signals row was scraped within AEGIS_INGEST_HEALTH_MAX_AGE_H (2h).
+    # start_period 15m: after a cold boot the data is legitimately stale
+    # until the first scrape cycle lands (~6 min observed).
+    healthcheck:
+      test: ["CMD-SHELL", "python /app/scripts/healthcheck_ingestion.py"]
+      interval: 60s
+      timeout: 15s
+      retries: 5
+      start_period: 900s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          memory: 256M
+    environment:
+      AEGIS_PG_DSN: postgresql://${POSTGRES_USER:-aegis_app}:${POSTGRES_PASSWORD:-aegis_app_dev_pw}@postgres:5432/${POSTGRES_DB:-aegis}
+      AEGIS_REDIS_URL: redis://redis:6379/0
+      AEGIS_ENV: dev
+      AEGIS_LOG_JSON: "true"
+      # LAYER (b): belt-and-braces — the image already sets this, but log
+      # visibility is a hard requirement of the alarm stack, so it is pinned
+      # here where the service is defined, not inherited by assumption.
+      PYTHONUNBUFFERED: "1"
+      # Staleness ceilings (hours). Healthcheck freshness window and the
+      # job_analyze hard-refusal ceiling. Production defaults 2h / 6h.
+      AEGIS_INGEST_HEALTH_MAX_AGE_H: "${AEGIS_INGEST_HEALTH_MAX_AGE_H:-2}"
+      AEGIS_ANALYZE_MAX_STALENESS_H: "${AEGIS_ANALYZE_MAX_STALENESS_H:-6}"
+      # Settlement label-validity gap ceiling (DEBT-5 disposition (c): tiered
+      # vs the 2h alarm — 12h tolerates nightly laptop sleep, still voids
+      # blackout-class gaps).
+      AEGIS_SETTLE_MAX_GAP_H: "${AEGIS_SETTLE_MAX_GAP_H:-12}"
+      # Recovery protocol 1.7: ops alerts to the operator phone (ntfy, no key).
+      AEGIS_NTFY_TOPIC: "${AEGIS_NTFY_TOPIC:-}"
+      AEGIS_NTFY_BASE_URL: "${AEGIS_NTFY_BASE_URL:-https://ntfy.sh}"
+      # LLM chain enabled: local Ollama first, then Groq cloud fallback. Was
+      # DISABLE_OLLAMA=1 with no cloud key → analysis ran heuristic-only.
+      AEGIS_DISABLE_OLLAMA: "0"
+      AEGIS_OLLAMA_BASE_URL: "http://ollama:11434"
+      AEGIS_GROQ_API_KEY: ${GROQ_API_KEY:-}
+      AEGIS_GROQ_MODEL: ${AEGIS_GROQ_MODEL:-llama-3.3-70b-versatile}
+      AEGIS_GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      AEGIS_OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      AEGIS_FLARESOLVERR_URL: "http://aegis-flaresolverr:8191/v1"
+      # Override default scrape topics (comma-separated) without a rebuild.
+      AEGIS_AUTONOMOUS_TOPICS: "${AEGIS_AUTONOMOUS_TOPICS:-}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - aegis
+
+  # -----------------------------------------------------------------
+  # AEGIS Command Center Dashboard (unified web UI on :8300)
+  # Reads from Postgres + Redis; proxies Phase 3 :8100 + Phase 4 :8200.
+  #
+  # RECOMMENDED (host mode — live reload, no Docker rebuild):
+  #   uv run aegis dashboard serve
+  #
+  # Docker mode (optional, requires --profile dashboard):
+  #   docker compose --profile dashboard up -d dashboard
+  # -----------------------------------------------------------------
+  dashboard:
+    profiles: ["dashboard"]
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.dashboard
+    image: aegis-dashboard:latest
+    container_name: aegis-dashboard
+    restart: unless-stopped
+    environment:
+      AEGIS_PG_DSN: postgresql://${POSTGRES_USER:-aegis_app}:${POSTGRES_PASSWORD:-aegis_app_dev_pw}@postgres:5432/${POSTGRES_DB:-aegis}
+      AEGIS_REDIS_URL: redis://redis:6379/0
+      AEGIS_ENV: dev
+      AEGIS_PREDICT_API_URL: http://predict:8000
+      AEGIS_EXECUTE_API_URL: http://execute-api:8200
+      AEGIS_FLARESOLVERR_URL: "http://aegis-flaresolverr:8191/v1"
+      AEGIS_SCRAPE_FLARESOLVERR_URL: "http://aegis-flaresolverr:8191/v1"
+      AEGIS_OLLAMA_BASE_URL: "http://ollama:11434"
+      # LLM provider keys so /api/llm/health reflects groq/gemini/openrouter
+      # (compose auto-substitutes from the project .env). Was missing → only
+      # ollama ever registered, so groq always showed "down" on the dashboard.
+      AEGIS_GROQ_API_KEY: ${GROQ_API_KEY:-}
+      AEGIS_GROQ_MODEL: ${AEGIS_GROQ_MODEL:-llama-3.3-70b-versatile}
+      AEGIS_GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      AEGIS_OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      AEGIS_MINIO_ENDPOINT: "minio:9000"
+      AEGIS_DASHBOARD_OPS_TOKEN: ${AEGIS_DASHBOARD_OPS_TOKEN:-}
+    # INFRA-2: docker.sock is intentionally NOT mounted. This service runs the
+    # shell-executing ops console, so granting it the Docker API (even :ro) is a
+    # container-escape surface. The container-status panel degrades gracefully
+    # without it; for live Docker status run the dashboard in host mode
+    # (`uv run aegis dashboard serve`), which is the recommended path anyway.
+    volumes:
+      - ./src:/app/src:ro
+      - ./src/aegis/dashboard/static:/app/src/aegis/dashboard/static:ro
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          memory: 128M
+    ports:
+      - "127.0.0.1:8300:8300"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      predict:
+        condition: service_healthy
+      execute-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; urllib.request.urlopen('http://127.0.0.1:8300/healthz', timeout=2); sys.exit(0)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - aegis
+
+  # -----------------------------------------------------------------
   # Prometheus
   # -----------------------------------------------------------------
   prometheus:
     image: prom/prometheus:v2.54.1
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          memory: 256M
     container_name: aegis-prometheus
     restart: unless-stopped
     command:
@@ -158,6 +499,7 @@ services:
       - "127.0.0.1:9091:9090"
     volumes:
       - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./config/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
       - aegis_prometheus_data:/prometheus
     healthcheck:
       test: ["CMD", "wget", "-q", "-O-", "http://localhost:9090/-/healthy"]
@@ -173,6 +515,13 @@ services:
   # -----------------------------------------------------------------
   grafana:
     image: grafana/grafana:11.2.2
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          memory: 256M
     container_name: aegis-grafana
     restart: unless-stopped
     environment:
@@ -203,6 +552,13 @@ services:
   # -----------------------------------------------------------------
   jaeger:
     image: jaegertracing/all-in-one:1.62.0
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          memory: 256M
     container_name: aegis-jaeger
     restart: unless-stopped
     environment:
@@ -220,6 +576,251 @@ services:
     networks:
       - aegis
 
+  # -----------------------------------------------------------------
+  # Phase 14 — Loki log aggregation
+  # Receives structured logs from Promtail. Queried by Grafana.
+  # UI: Grafana → Explore → select "Loki" datasource
+  # Start: docker compose --profile logging up -d loki promtail
+  # -----------------------------------------------------------------
+  loki:
+    image: grafana/loki:3.1.0
+    container_name: aegis-loki
+    restart: unless-stopped
+    profiles: ["logging"]
+    command: -config.file=/etc/loki/loki.yaml
+    ports:
+      - "127.0.0.1:3100:3100"
+    volumes:
+      - ./config/loki/loki.yaml:/etc/loki/loki.yaml:ro
+      - aegis_loki_data:/loki
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:3100/ready || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: "512M"
+    networks:
+      - aegis
+
+  # -----------------------------------------------------------------
+  # Phase 14 — Promtail log collector
+  # Ships Docker container log files to Loki with compose labels.
+  # Needs docker.sock to enumerate running containers.
+  # Start: docker compose --profile logging up -d loki promtail
+  # -----------------------------------------------------------------
+  promtail:
+    image: grafana/promtail:3.1.0
+    container_name: aegis-promtail
+    restart: unless-stopped
+    profiles: ["logging"]
+    command: -config.file=/etc/promtail/config.yaml
+    volumes:
+      - ./config/promtail/config.yaml:/etc/promtail/config.yaml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    depends_on:
+      loki:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: "128M"
+    networks:
+      - aegis
+
+  # -----------------------------------------------------------------
+  # Phase 10 — Prefect 3 orchestration server (optional UI)
+  # The lake itself runs as a library inside the main Python process.
+  # Prefect is only needed if you want the flow-run UI at :4200.
+  # Start: docker compose --profile orchestration up -d prefect
+  # -----------------------------------------------------------------
+  prefect:
+    image: prefecthq/prefect:3-latest
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          memory: 256M
+    container_name: aegis-prefect
+    restart: unless-stopped
+    profiles: ["orchestration"]
+    command: prefect server start --host 0.0.0.0
+    environment:
+      PREFECT_HOME: /opt/prefect
+      PREFECT_API_URL: http://localhost:4200/api
+      PREFECT_SERVER_API_HOST: 0.0.0.0
+      PREFECT_LOGGING_LEVEL: INFO
+    ports:
+      - "127.0.0.1:4200:4200"
+    volumes:
+      - aegis_prefect_data:/opt/prefect
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:4200/api/health').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - aegis
+
+  # -----------------------------------------------------------------
+  # Phase 11 — Ollama local inference server (primary LLM path)
+  # Zero cost, fully private, no internet required.
+  # Models are pulled on first boot by aegis-ollama-init.
+  # GPU passthrough commented out — uncomment if NVIDIA GPU is present.
+  # -----------------------------------------------------------------
+  ollama:
+    image: ollama/ollama:0.4.7
+    container_name: aegis-ollama
+    profiles: ["local-llm"]
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - aegis_ollama_models:/root/.ollama
+    environment:
+      OLLAMA_HOST: "0.0.0.0:11434"
+      OLLAMA_ORIGINS: "*"
+      OLLAMA_NUM_CTX: "8192"
+      OLLAMA_MAX_LOADED_MODELS: "1"
+    deploy:
+      resources:
+        limits:
+          cpus: "4.0"
+          memory: 8G
+        reservations:
+          memory: 2G
+        # Uncomment to pass through an NVIDIA GPU:
+        # reservations:
+        #   devices:
+        #     - driver: nvidia
+        #       count: 1
+        #       capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - aegis
+
+  # -----------------------------------------------------------------
+  # Phase 11 — Ollama model bootstrap (one-shot init container)
+  # Pulls the embedding model (bge-m3) and fast chat model (llama3.2:3b)
+  # on first start. Exits cleanly once done; safe to re-run.
+  # Heavy models (qwen2.5:14b) are pulled manually: aegis llm pull qwen2.5:14b
+  # -----------------------------------------------------------------
+  ollama-init:
+    image: curlimages/curl:8.10.1
+    container_name: aegis-ollama-init
+    profiles: ["local-llm"]
+    restart: "no"
+    depends_on:
+      ollama:
+        condition: service_healthy
+    entrypoint:
+      - sh
+      - -c
+      - |
+        echo '[ollama-init] Pulling bge-m3 embedding model...' &&
+        curl -sf -X POST http://aegis-ollama:11434/api/pull -H 'Content-Type: application/json' -d '{"name":"bge-m3"}' &&
+        echo '[ollama-init] Pulling llama3.2:3b fast chat model...' &&
+        curl -sf -X POST http://aegis-ollama:11434/api/pull -H 'Content-Type: application/json' -d '{"name":"llama3.2:3b"}' &&
+        echo '[ollama-init] Bootstrap complete.'
+    networks:
+      - aegis
+
+  # -----------------------------------------------------------------
+  # Phase 11 — LiteLLM proxy (optional OpenAI-compatible gateway)
+  # Exposes all providers behind a single OpenAI-format endpoint.
+  # Useful when external tools (LangChain, Flowise) need AEGIS providers.
+  # Start separately: docker compose --profile llm-proxy up aegis-litellm
+  # -----------------------------------------------------------------
+  litellm:
+    image: ghcr.io/berriai/litellm:main-v1.52.9
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          memory: 256M
+    container_name: aegis-litellm
+    restart: unless-stopped
+    profiles: ["llm-proxy"]
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./config/litellm_config.yaml:/app/config.yaml:ro
+    command: ["--config", "/app/config.yaml", "--port", "8080"]
+    environment:
+      AEGIS_OLLAMA_BASE_URL: "http://host.docker.internal:11434"
+      AEGIS_GROQ_API_KEY: "${AEGIS_GROQ_API_KEY:-}"
+      AEGIS_OPENROUTER_API_KEY: "${AEGIS_OPENROUTER_API_KEY:-}"
+      AEGIS_GEMINI_API_KEY: "${AEGIS_GEMINI_API_KEY:-}"
+      AEGIS_LITELLM_MASTER_KEY: "${AEGIS_LITELLM_MASTER_KEY:-sk-litellm-dev-key-not-for-prod}"
+      AEGIS_PG_DSN: "${AEGIS_PG_DSN:-}"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    networks:
+      - aegis
+
+  # -----------------------------------------------------------------
+  # Langfuse — LLM observability and tracing (Phase: agent quality)
+  # Requires a 'langfuse' database in Postgres (created separately):
+  #   psql postgresql://aegis_app:aegis_app_dev_pw@localhost:5433/postgres \
+  #     -c "CREATE DATABASE langfuse OWNER aegis_app;"
+  # Start: docker compose --profile tracing up -d langfuse
+  # -----------------------------------------------------------------
+  langfuse:
+    image: langfuse/langfuse:2
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          memory: 256M
+    container_name: aegis-langfuse
+    profiles: ["tracing"]
+    ports:
+      - "127.0.0.1:3002:3000"
+    environment:
+      DATABASE_URL: postgresql://aegis_app:aegis_app_dev_pw@postgres:5432/langfuse
+      NEXTAUTH_SECRET: aegis-langfuse-dev-secret-CHANGE-IN-PROD
+      SALT: aegis-salt-CHANGE-IN-PROD
+      NEXTAUTH_URL: http://localhost:3002
+      TELEMETRY_ENABLED: "false"
+      LANGFUSE_INIT_ORG_NAME: aegis
+      LANGFUSE_INIT_PROJECT_NAME: aegis-pulse
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: pk-lf-aegis-dev
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: sk-lf-aegis-dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"const a=Object.values(require('os').networkInterfaces()).flat().find(i=>i.family==='IPv4'&&!i.internal).address;require('http').get('http://'+a+':3000/api/public/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))\""]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+    networks:
+      - aegis
+
 # ---------------------------------------------------------------------
 # Volumes
 # ---------------------------------------------------------------------
@@ -234,6 +835,12 @@ volumes:
     name: aegis_prometheus_data
   aegis_grafana_data:
     name: aegis_grafana_data
+  aegis_prefect_data:
+    name: aegis_prefect_data
+  aegis_ollama_models:
+    name: aegis_ollama_models
+  aegis_loki_data:
+    name: aegis_loki_data
 
 # ---------------------------------------------------------------------
 # Networks

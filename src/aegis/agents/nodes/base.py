@@ -19,6 +19,7 @@ state-shape conversion to LangGraph, and emitting Prometheus metrics.
 
 Author: AEGIS Pulse core team
 """
+
 from __future__ import annotations
 
 import abc
@@ -72,16 +73,26 @@ class AgentNode(abc.ABC):
             decision = self._error_decision(candidate, str(exc), start)
             return self._merge_partial(decision, state)
 
+        # Phase 3 augmentation — between heuristic and LLM.
+        # May refine score/confidence using temporal + relational ML, but
+        # CANNOT flip the verdict (doctrine: heuristic is the floor).
+        decision = heuristic
+        try:
+            p3 = await self._augment_with_phase3(candidate, state, heuristic)
+            if p3 is not None:
+                decision = p3
+        except Exception:
+            _log.exception("agent.phase3_augmentation_failed", agent=self.name)
+
         # LLM augmentation is optional; on failure or skip we keep the
         # heuristic as-is. The augmentation can ONLY:
         #   * Append to `reasoning` (concatenated, capped).
         #   * Multiply `confidence` by a factor in [0.5, 1.0].
         #   * Add details under `details["llm"]`.
         # It cannot flip the verdict — that's the doctrine.
-        decision = heuristic
         if self.use_llm:
             try:
-                augmented = await self._augment_with_llm(candidate, state, heuristic)
+                augmented = await self._augment_with_llm(candidate, state, decision)
                 if augmented is not None:
                     decision = augmented
             except Exception:
@@ -103,6 +114,20 @@ class AgentNode(abc.ABC):
     ) -> AgentDecision:
         """Compute a verdict from numeric features ONLY. Must not perform
         I/O or call an LLM."""
+
+    async def _augment_with_phase3(
+        self,
+        candidate: TrendCandidate,
+        state: GraphState,
+        heuristic: AgentDecision,
+    ) -> AgentDecision | None:
+        """Optional: refine score/confidence using Phase 3 inference.
+
+        Default: no-op. SCOUT and SENTINEL override this to call the
+        `aegis.agents_phase3_glue.bridge`. Augmentation CANNOT flip the
+        verdict — it can only shift score/confidence within bounds.
+        """
+        return None
 
     async def _augment_with_llm(
         self,

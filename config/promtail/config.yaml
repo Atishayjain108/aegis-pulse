@@ -1,0 +1,69 @@
+---
+# Promtail configuration for AEGIS Pulse (Phase 14).
+# Ships Docker container logs to Loki with structured labels.
+
+server:
+  http_listen_port: 3101
+  log_level: warn
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  # ── Docker container logs ─────────────────────────────────────────────────
+  - job_name: docker
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 15s
+        filters:
+          - name: label
+            values: ["com.docker.compose.project=aegis-pulse"]
+    relabel_configs:
+      # Service name from compose label
+      - source_labels: [__meta_docker_container_label_com_docker_compose_service]
+        target_label: service
+      # Container name (shorter)
+      - source_labels: [__meta_docker_container_name]
+        regex: /(.*)
+        target_label: container
+      # Compose project name
+      - source_labels: [__meta_docker_container_label_com_docker_compose_project]
+        target_label: project
+      # Keep only logs from our stack
+      - source_labels: [__meta_docker_container_label_com_docker_compose_project]
+        regex: aegis-pulse
+        action: keep
+
+    pipeline_stages:
+      # Try to parse JSON logs from structlog (aegis services emit JSON on non-TTY)
+      - json:
+          expressions:
+            level: level
+            event: event
+            logger: logger
+            timestamp: timestamp
+      # Map structlog level to standard label
+      - labels:
+          level:
+          logger:
+      # Drop noisy healthcheck noise at debug level
+      - drop:
+          expression: ".*GET /healthz.*"
+
+  # ── Static job for host-side aegis CLI logs (dev mode, no Docker) ─────────
+  - job_name: aegis-host
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: aegis-host
+          service: aegis-cli
+          __path__: /var/log/aegis/*.log
+    pipeline_stages:
+      - json:
+          expressions:
+            level: level
+            event: event

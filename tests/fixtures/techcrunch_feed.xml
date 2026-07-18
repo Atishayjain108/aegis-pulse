@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>TechCrunch</title>
+    <link>https://techcrunch.com</link>
+    <description>Startup and Technology News</description>
+    <item>
+      <title>OpenAI raises $6.6 billion in latest funding round</title>
+      <link>https://techcrunch.com/2024/10/02/openai-raises-funding/?utm_source=rss&amp;utm_medium=feed</link>
+      <description>OpenAI has closed a $6.6 billion funding round at a $157 billion valuation.</description>
+      <pubDate>Wed, 02 Oct 2024 12:00:00 +0000</pubDate>
+      <author>Kyle Wiggers</author>
+    </item>
+    <item>
+      <title>Anthropic launches Claude 3.5 Haiku model</title>
+      <link>https://techcrunch.com/2024/10/15/anthropic-claude-haiku/?utm_source=rss</link>
+      <description>Anthropic today launched Claude 3.5 Haiku, its fastest and most affordable model.</description>
+      <pubDate>Tue, 15 Oct 2024 09:00:00 +0000</pubDate>
+      <author>Kyle Wiggers</author>
+    </item>
+    <item>
+      <title>Nvidia stock hits record high on AI chip demand surge</title>
+      <link>https://techcrunch.com/2024/10/20/nvidia-stock-record/?ref=homepage</link>
+      <description>Nvidia shares surged to a record high driven by explosive demand for AI accelerators.</description>
+      <pubDate>Sun, 20 Oct 2024 15:30:00 +0000</pubDate>
+      <author>Rebecca Bellan</author>
+    </item>
+  </channel>
+</rss>

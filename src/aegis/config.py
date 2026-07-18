@@ -69,7 +69,7 @@ class _MinIOSettings(BaseSettings):
         frozen=True,
     )
 
-    endpoint: str = Field(default="localhost:9000")
+    endpoint: str = Field(default="localhost:9002")
     access_key: SecretStr = Field(default=SecretStr("aegis-dev-key"))
     secret_key: SecretStr = Field(default=SecretStr("aegis-dev-secret-please-change"))
     secure: bool = Field(default=False)
@@ -105,6 +105,49 @@ class _ScrapeSettings(BaseSettings):
     user_agent_pool_path: Path | None = Field(default=None)
     default_concurrency: int = Field(default=4, ge=1, le=64)
     respect_robots_txt: bool = Field(default=True)
+
+    # ── Phase 5: data quality + trend velocity ────────────────────────
+    confidence_threshold: float = Field(
+        default=0.85,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Minimum batch confidence score [0, 1] before the self-healing "
+            "warning is triggered. Set AEGIS_SCRAPE_CONFIDENCE_THRESHOLD=0.0 "
+            "to disable the gate entirely."
+        ),
+    )
+    velocity_high_priority_slope: float = Field(
+        default=2.0,
+        ge=0.0,
+        description=(
+            "OLS slope threshold (signals/hour) above which a pattern cluster "
+            "is flagged 'High Priority' for the Executive Agent. "
+            "Set AEGIS_SCRAPE_VELOCITY_HIGH_PRIORITY_SLOPE to tune."
+        ),
+    )
+
+    # ── Swarm orchestrator ────────────────────────────────────────────
+    swarm_wave_timeout_s: float = Field(default=60.0)
+    swarm_max_signals_per_adapter: int = Field(default=100)
+    swarm_max_concurrent: int = Field(default=5, description="ConcurrencyGovernor global semaphore")
+    swarm_flaresolverr_max_concurrent: int = Field(default=2)
+    swarm_jitter_max_ms: int = Field(default=500)
+    swarm_adaptive_budget: bool = Field(
+        default=True,
+        description="ADP-4: allocate per-adapter scrape budget via UCB1 bandit "
+        "(productive adapters get more, quiet ones stay alive at min_limit). "
+        "Set False for a uniform per-adapter limit.",
+    )
+    swarm_enabled_tiers: list[str] = Field(
+        default=["T1_intent", "T2_commerce", "T3_search"],
+    )
+    swarm_publish_redis: bool = Field(default=True)
+    swarm_cache_ttl_s: int = Field(default=300, description="Per-adapter result cache TTL")
+
+    # ── Scrape timeouts ───────────────────────────────────────────────
+    scrape_timeout_s: float = Field(default=30.0)
+    scrape_delay_s: float = Field(default=1.0)
 
 
 class _RedditSettings(BaseSettings):
@@ -183,8 +226,21 @@ class Settings(BaseSettings):
     # Runtime context
     # ------------------------------------------------------------------
     env: Environment = Field(default="dev")
+
+    @field_validator("env", mode="before")
+    @classmethod
+    def _normalise_env(cls, v: object) -> object:
+        _aliases = {
+            "development": "dev",
+            "production": "prod",
+            "testing": "test",
+        }
+        if isinstance(v, str):
+            return _aliases.get(v.lower(), v.lower())
+        return v
+
     service_name: str = Field(default="aegis-pulse")
-    service_version: str = Field(default="0.1.0")
+    service_version: str = Field(default="0.3.0")
     instance_id: str = Field(
         default_factory=lambda: __import__("socket").gethostname(),
         description="Unique identifier for this process instance, used in "
@@ -198,6 +254,9 @@ class Settings(BaseSettings):
     log_format: LogFormat = Field(default="console")
     log_json: bool = Field(default=False)
     sentry_dsn: SecretStr | None = Field(default=None)
+
+    # Phase C — Knowledge Expansion. When false, memory hooks no-op (graceful).
+    memory_enabled: bool = Field(default=True)
     otel_exporter_otlp_endpoint: str | None = Field(default=None)
     prometheus_port: int = Field(default=9464, ge=1024, le=65535)
 
@@ -205,9 +264,7 @@ class Settings(BaseSettings):
     # Postgres
     # ------------------------------------------------------------------
     pg_dsn: SecretStr = Field(
-        default=SecretStr(
-            "postgresql://aegis_app:aegis_app@localhost:5432/aegis"
-        ),
+        default=SecretStr("postgresql://aegis_app:aegis_app_dev_pw@localhost:5433/aegis"),
         description="Application DSN. Overridden via AEGIS_PG_DSN.",
     )
     pg_pool_min_size: int = Field(default=DB_POOL_MIN_SIZE, ge=0, le=128)
@@ -219,7 +276,7 @@ class Settings(BaseSettings):
     # Redis
     # ------------------------------------------------------------------
     redis_url: SecretStr = Field(
-        default=SecretStr("redis://localhost:6379/0"),
+        default=SecretStr("redis://localhost:6380/0"),
     )
     redis_namespace: str = Field(default="aegis")
 
@@ -243,6 +300,68 @@ class Settings(BaseSettings):
     alerts: _AlertSettings = Field(default_factory=_AlertSettings)
 
     # ------------------------------------------------------------------
+    # Swarm data-source seed lists (override via env JSON strings)
+    # ------------------------------------------------------------------
+    youtube_channel_ids: list[str] = Field(
+        default=[
+            "UCBcRF18a7Qf58cCRy5xuWwQ",  # MKBHD
+            "UCXuqSBlHAE6Xw-yeJA0Tunw",  # Linus Tech Tips
+            "UCnUYZLuoy1rq1aVMwx4aTzw",  # Pranjal Kamra (Finance India)
+            "UCAL3JXZSzSm8AlZyD3nQdBA",  # CA Rachana Phadke Ranade
+            "UCVhQ2NnY5Rskt6UjCUkJ_DA",  # Y Combinator
+            "UCddiUEpeqJcYeBxX1IVBKvQ",  # Akshat Shrivastava
+        ],
+    )
+    medium_tags: list[str] = Field(
+        default=["artificial-intelligence", "startup", "ecommerce", "india", "fintech"],
+    )
+    github_topics: list[str] = Field(
+        default=["ecommerce", "fintech", "llm", "india", "saas"],
+    )
+    npm_seed_keywords: list[str] = Field(
+        default=["ai", "llm", "ecommerce", "fintech", "payments"],
+    )
+    finance_tickers_global: list[str] = Field(
+        default=[
+            "AAPL", "GOOGL", "MSFT", "AMZN", "NVDA", "META", "TSLA",
+            "RELIANCE.NS", "TCS.NS", "INFY.NS", "HDFCBANK.NS", "ICICIBANK.NS",
+        ],
+    )
+
+    # ------------------------------------------------------------------
+    # Dashboard security
+    # ------------------------------------------------------------------
+    dashboard_ops_token: SecretStr | None = Field(
+        default=None,
+        description=(
+            "When set, POST /api/ops/run requires header X-Ops-Token matching "
+            "this value. Required in prod (AEGIS_ENV=prod); optional in dev."
+        ),
+    )
+    dashboard_allowed_origins: list[str] = Field(
+        default=["http://localhost:8300", "http://127.0.0.1:8300"],
+        description=(
+            "CORS allowed origins for the dashboard. Defaults to localhost-only. "
+            "Set AEGIS_DASHBOARD_ALLOWED_ORIGINS='[\"https://yourhost\"]' to expose "
+            "to other origins. Never use [\"*\"] with the ops endpoint."
+        ),
+    )
+
+    # ------------------------------------------------------------------
+    # Internal service URLs (override in Docker via env vars)
+    # ------------------------------------------------------------------
+    predict_api_url: str = Field(
+        default="http://localhost:8100",
+        description="Base URL for the Phase 3 predict service. "
+        "Set AEGIS_PREDICT_API_URL=http://predict:8000 inside Docker.",
+    )
+    execute_api_url: str = Field(
+        default="http://localhost:8200",
+        description="Base URL for the Phase 4 execute service. "
+        "Set AEGIS_EXECUTE_API_URL=http://execute-api:8200 inside Docker.",
+    )
+
+    # ------------------------------------------------------------------
     # Validators
     # ------------------------------------------------------------------
     @field_validator("log_level")
@@ -251,9 +370,7 @@ class Settings(BaseSettings):
         canonical = v.upper().strip()
         allowed = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
         if canonical not in allowed:
-            raise ValueError(
-                f"log_level must be one of {sorted(allowed)}; got {v!r}"
-            )
+            raise ValueError(f"log_level must be one of {sorted(allowed)}; got {v!r}")
         return canonical
 
     @field_validator("pg_pool_max_size")
@@ -311,6 +428,6 @@ __all__ = [
     "Environment",
     "LogFormat",
     "Settings",
-    "settings",
     "reload_settings",
+    "settings",
 ]

@@ -1,4 +1,5 @@
 """Tests for the LLM router and its circuit-breaker semantics."""
+
 from __future__ import annotations
 
 import asyncio
@@ -108,9 +109,7 @@ class TestCircuitBreaker:
     async def test_breaker_trips_after_threshold(self) -> None:
         a = _MockProvider("a", raise_class=LLMProviderError)
         b = _MockProvider("b")
-        router = LLMRouter(
-            [a, b], config=RouterConfig(failure_threshold=3, cooldown_s=60.0)
-        )
+        router = LLMRouter([a, b], config=RouterConfig(failure_threshold=3, cooldown_s=60.0))
 
         # 3 calls — all should hit a (failing) before falling to b.
         for _ in range(3):
@@ -140,9 +139,7 @@ class TestCircuitBreaker:
         # Use a tiny cooldown for this test.
         a = _MockProvider("a", raise_class=LLMProviderError)
         b = _MockProvider("b")
-        router = LLMRouter(
-            [a, b], config=RouterConfig(failure_threshold=2, cooldown_s=0.05)
-        )
+        router = LLMRouter([a, b], config=RouterConfig(failure_threshold=2, cooldown_s=0.05))
 
         # Trip the breaker.
         for _ in range(2):
@@ -162,9 +159,7 @@ class TestCircuitBreaker:
         # tripped on the success run, and subsequent failures should
         # restart counting from zero.
         provider = _MockProvider("a")
-        router = LLMRouter(
-            [provider], config=RouterConfig(failure_threshold=3, cooldown_s=60)
-        )
+        router = LLMRouter([provider], config=RouterConfig(failure_threshold=3, cooldown_s=60))
 
         # First, induce failures.
         provider.raise_class = LLMProviderError
@@ -195,9 +190,7 @@ class TestRouterTimeout:
         slow = _MockProvider("slow", delay_s=2.0)
         fast = _MockProvider("fast")
         router = LLMRouter([slow, fast])
-        resp = await router.complete(
-            system="s", user="u", timeout_s=0.05
-        )
+        resp = await router.complete(system="s", user="u", timeout_s=0.05)
         # Slow times out → fall to fast.
         assert resp is not None
         assert resp.provider == "fast"

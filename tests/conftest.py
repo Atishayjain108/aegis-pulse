@@ -67,6 +67,9 @@ _TEST_ENV: dict[str, str] = {
     "AEGIS_DISABLE_OLLAMA": "1",
     # Phase 2 — deterministic HMAC key for messaging tests
     "AEGIS_AGENT_HMAC_KEY": "test-key-do-not-use-in-prod",
+    # PASS4 — keep scrape_topic hermetic: routed extra adapters would hit the
+    # live network beyond the explicitly mocked core adapter classes.
+    "AEGIS_SCRAPE_TOPIC_ROUTING_EXTRAS": "false",
 }
 
 
@@ -306,3 +309,87 @@ def minio_container() -> Iterator[Any]:
         yield container
     finally:
         container.stop()
+
+
+# ---------------------------------------------------------------------
+# Phase 3 predict fixtures — no Docker / network / API keys required
+# ---------------------------------------------------------------------
+
+import random  # noqa: E402
+from datetime import UTC, datetime, timedelta  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def seed_rng() -> None:
+    """Autouse fixture to seed the random number generator for deterministic tests."""
+    random.seed(1234)
+
+
+@pytest.fixture
+def utc_now() -> datetime:
+    return datetime(2026, 5, 9, 12, 0, 0, tzinfo=UTC)
+
+
+@pytest.fixture
+def synthetic_signals(utc_now: datetime) -> list[dict[str, Any]]:
+    """72-row synthetic signal stream usable by the Phase 3 feature builder."""
+    base = utc_now - timedelta(hours=72)
+    rows: list[dict[str, Any]] = []
+    for i in range(72):
+        rows.append(
+            {
+                "id": f"sig-{i}",
+                "platform": "twitter" if i < 36 else "tiktok",
+                "captured_at": base + timedelta(hours=i),
+                "title": None,
+                "body": f"msg {i}",
+                "url": None,
+                "content_hash": f"h{i:08d}",
+                "author_id": f"a{i % 5}",
+                "views": i * 10,
+                "likes": i,
+                "comments": i // 2,
+                "shares": 0,
+                "saves": 0,
+                "sentiment": 0.0,
+                "commercial_intent": 0.0,
+                "novelty": 0.5,
+            }
+        )
+    return rows
+
+
+@pytest.fixture
+def feature_window(synthetic_signals: list[dict[str, Any]], utc_now: datetime) -> Any:
+    """A built FeatureWindow over the synthetic signal stream."""
+    try:
+        from aegis.predict.features.builder import build_window_from_rows
+
+        return build_window_from_rows(
+            tenant_id="t1",
+            trend_id="trend-1",
+            rows=synthetic_signals,
+            window_end=utc_now,
+            window_size=168,
+        )
+    except ImportError:
+        pytest.skip("aegis.predict not available")
+
+
+@pytest.fixture
+def empty_window(utc_now: datetime) -> Any:
+    """A zero-filled FeatureWindow useful for boundary tests."""
+    try:
+        from aegis.predict import FEATURE_DIM
+        from aegis.predict.schemas import FeatureWindow
+
+        return FeatureWindow(
+            tenant_id="t1",
+            trend_id="empty",
+            captured_at=utc_now,
+            window_size=168,
+            feature_dim=FEATURE_DIM,
+            values=[0.0] * (168 * FEATURE_DIM),
+        )
+    except ImportError:
+        pytest.skip("aegis.predict not available")

@@ -124,7 +124,11 @@ def _histogram(
             raise TypeError(f"metric {name!r} already exists with different type")
         return m
     h = Histogram(
-        name, description, labelnames=labelnames, buckets=buckets, registry=_registry,
+        name,
+        description,
+        labelnames=labelnames,
+        buckets=buckets,
+        registry=_registry,
     )
     _metrics[name] = h
     return h
@@ -291,7 +295,7 @@ def resilient_call_observe(
     *,
     policy: str,
     outcome: str,
-    attempt: int,   # kept for signature parity; counter increments per call anyway
+    attempt: int,  # kept for signature parity; counter increments per call anyway
     duration: float | None = None,
 ) -> None:
     """Emit metrics for one ``resilient_call`` attempt.
@@ -310,7 +314,8 @@ def resilient_call_observe(
     globals()["resilient_attempts_total"].labels(policy=policy, outcome=outcome).inc()
     if duration is not None:
         globals()["resilient_attempt_duration_seconds"].labels(
-            policy=policy, outcome=outcome,
+            policy=policy,
+            outcome=outcome,
         ).observe(duration)
 
 

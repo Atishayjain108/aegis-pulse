@@ -25,6 +25,7 @@ htmlcov/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.hypothesis/
 
 # Local environment (contains secrets)
 .env
@@ -41,6 +42,8 @@ aegis-support-*.zip
 # OS
 .DS_Store
 Thumbs.db
+# Windows Zone.Identifier alternate data streams (WSL downloads)
+*:Zone.Identifier
 
 # ChromaDB local data
 chroma/
@@ -48,3 +51,21 @@ chroma/
 
 # Claude Code local state (machine-specific settings and memory)
 .claude/
+
+# Node (dashboard tooling)
+node_modules/
+package-lock.json
+
+# Duplicate standalone phase scratch folders (STRUCT-1/2) — the canonical code
+# lives under src/aegis/ (these are untracked copies, NOT workspace members).
+# Workspace members aegis-phase4 / aegis-harden / aegis-phase12 / aegis-phase13
+# are tracked real code and intentionally NOT listed here.
+/aegis-phase6/
+/aegis-phase7/
+/aegis-phase 14/
+/aegis-pulse-phase8/
+/aegis-pulse-phase9-0.9.0/
+
+# Archived dead duplicate phase folders (STRUCT-1; integrated into src/aegis/)
+/archive/
+backup_pre_phaseCD_20260618_0129.dump

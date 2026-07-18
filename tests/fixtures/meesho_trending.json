@@ -1,0 +1,36 @@
+{
+  "status": "success",
+  "data": {
+    "catalogues": [
+      {
+        "id": "1001",
+        "product_name": "Floral Print Kurti Set",
+        "supplier_name": "Jaipur Fashion House",
+        "price": 349,
+        "order_count": 2450,
+        "category": "Women Ethnic",
+        "images": ["https://img.meesho.com/images/products/1001/image1.jpg"]
+      },
+      {
+        "id": "1002",
+        "product_name": "Men Slim Fit Casual Shirt",
+        "supplier_name": "Delhi Shirts Co.",
+        "price": 299,
+        "order_count": 1820,
+        "category": "Men Clothing",
+        "images": ["https://img.meesho.com/images/products/1002/image1.jpg"]
+      },
+      {
+        "id": "1003",
+        "product_name": "Stainless Steel Water Bottle 1L",
+        "supplier_name": "Kitchenware Traders",
+        "price": 199,
+        "order_count": 3100,
+        "category": "Kitchen",
+        "images": ["https://img.meesho.com/images/products/1003/image1.jpg"]
+      }
+    ],
+    "total": 3,
+    "page": 1
+  }
+}

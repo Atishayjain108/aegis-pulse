@@ -8,6 +8,7 @@ on `gemini-2.0-flash` — generous for our P0/P1 alert volume.
 
 Author: AEGIS Pulse core team
 """
+
 from __future__ import annotations
 
 import os

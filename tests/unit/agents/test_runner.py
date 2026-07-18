@@ -15,7 +15,12 @@ Key paths covered:
   * Asyncio timeout                → halt_reason == "timeout"
   * Heuristic-only path (no LLM)   produces a complete decision trail
 """
+
 from __future__ import annotations
+
+import json
+from datetime import UTC, datetime
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -93,11 +98,13 @@ class TestRunnerHappyPath:
 
 
 class TestRunnerComplianceVeto:
-    async def test_trademark_blocks(self, trend_factory) -> None:
+    async def test_regulatory_block_halts_pipeline(self, trend_factory) -> None:
+        # Phase 8 engine: FDA supplement disease claim → BLOCK → "blocked_by_compliance"
+        # Trademark alone no longer auto-blocks (→ FLAG/HOLD for human review).
         candidate = trend_factory(
-            trend_id="trademark-fail",
-            title="Custom Nike sneakers limited edition",
-            summary="Knockoff Nike sneakers from overseas",
+            trend_id="fda-block-fail",
+            title="Dietary supplement cures cancer prevents diabetes",
+            summary="vitamin supplement that treats and reverses disease",
             velocity_1h=300.0,
             velocity_6h=1500.0,
             velocity_24h=4000.0,
@@ -110,16 +117,17 @@ class TestRunnerComplianceVeto:
         result = await runner.run_trend(candidate, use_llm=False)
         assert result.final_verdict is AgentVerdict.BLOCK
         assert result.halt_reason == "blocked_by_compliance"
-        # Decision trail should include compliance with BLOCK.
         compliance_decisions = [d for d in result.decisions if d.agent == "compliance"]
         assert len(compliance_decisions) >= 1
         assert compliance_decisions[-1].verdict is AgentVerdict.BLOCK
 
     async def test_compliance_short_circuits_red_team(self, trend_factory) -> None:
-        # If compliance fails, red_team and hedge should not even run.
+        # When compliance BLOCKs, red_team and hedge must NOT run.
+        # Use an FDA disease claim (→ BLOCK); trademark alone now gives HOLD (→ continues).
         candidate = trend_factory(
             trend_id="compliance-shortcircuit",
-            title="Genuine Disney mug",
+            title="Vitamin supplement prevents and cures diabetes",
+            summary="dietary supplement reverses disease",
             velocity_1h=200.0,
             velocity_6h=1000.0,
             velocity_24h=3000.0,
@@ -130,7 +138,6 @@ class TestRunnerComplianceVeto:
         result = await runner.run_trend(candidate, use_llm=False)
         assert result.halt_reason == "blocked_by_compliance"
         agent_names = [d.agent for d in result.decisions]
-        # Red team and hedge should NOT appear.
         assert "red_team" not in agent_names
         assert "hedge" not in agent_names
 
@@ -194,18 +201,14 @@ class TestRunnerErrorHandling:
     async def test_timeout_returns_safe_result(self, trend_factory) -> None:
         # 0-second timeout → guaranteed timeout regardless of speed.
         candidate = trend_factory(trend_id="timeout-1")
-        result = await runner.run_trend(
-            candidate, use_llm=False, timeout_s=0.0001
-        )
+        result = await runner.run_trend(candidate, use_llm=False, timeout_s=0.0001)
         assert isinstance(result, GraphResult)
         assert result.halt_reason == "timeout"
         # Even on timeout, we get a valid result object.
         assert result.final_verdict is AgentVerdict.HOLD
         assert result.final_priority is Priority.P3_HOUSEKEEPING
 
-    async def test_exception_during_compile_caught(
-        self, trend_factory, monkeypatch
-    ) -> None:
+    async def test_exception_during_compile_caught(self, trend_factory, monkeypatch) -> None:
         # Force `_get_graph` to raise to exercise the compile-failure
         # branch. This proves the runner never bubbles up exceptions
         # from graph construction.
@@ -264,6 +267,153 @@ class TestRunnerNoLLMPath:
             assert d.confidence >= 0.0
             assert d.score >= 0.0
             # Without LLM, no decision should carry a `llm` key in details.
-            assert "llm" not in d.details, (
-                f"agent {d.agent} appears to have called LLM despite use_llm=False"
-            )
+            assert (
+                "llm" not in d.details
+            ), f"agent {d.agent} appears to have called LLM despite use_llm=False"
+
+
+class TestRunnerEdgePaths:
+    async def test_ainvoke_exception_returns_exception_halt(self, trend_factory, monkeypatch) -> None:
+        mock_graph = AsyncMock()
+        mock_graph.ainvoke.side_effect = RuntimeError("ainvoke boom")
+
+        async def _fake_get_graph(**_kwargs: object) -> object:
+            return mock_graph
+
+        await runner.reset_graph_cache()
+        monkeypatch.setattr(runner, "_get_graph", _fake_get_graph)
+
+        candidate = trend_factory(trend_id="ainvoke-fail-001")
+        result = await runner.run_trend(candidate, use_llm=False)
+        assert result.halt_reason == "exception"
+        assert result.final_verdict is AgentVerdict.HOLD
+
+    async def test_non_dict_final_state_returns_exception_halt(self, trend_factory, monkeypatch) -> None:
+        mock_graph = AsyncMock()
+        mock_graph.ainvoke.return_value = "not_a_dict_at_all"
+
+        async def _fake_get_graph(**_kwargs: object) -> object:
+            return mock_graph
+
+        await runner.reset_graph_cache()
+        monkeypatch.setattr(runner, "_get_graph", _fake_get_graph)
+
+        candidate = trend_factory(trend_id="bad-state-001")
+        result = await runner.run_trend(candidate, use_llm=False)
+        assert result.halt_reason == "exception"
+        assert result.final_verdict is AgentVerdict.HOLD
+
+    async def test_stream_client_publish_called_on_success(self, trend_factory, monkeypatch) -> None:
+        mock_publish = AsyncMock()
+        monkeypatch.setattr(runner, "_publish_phase2_result", mock_publish)
+
+        candidate = trend_factory(
+            trend_id="stream-success-001",
+            velocity_1h=300.0,
+            velocity_6h=1500.0,
+            velocity_24h=4000.0,
+            sentiment=0.75,
+            commercial_intent=0.85,
+            novelty=0.75,
+            coordination_risk=0.05,
+            signal_count=180,
+            unique_authors=120,
+        )
+        stream_client = AsyncMock()
+        result = await runner.run_trend(candidate, use_llm=False, stream_client=stream_client)
+        mock_publish.assert_called_once()
+        assert result.halt_reason == "completed"
+
+    async def test_stream_client_publish_exception_swallowed(self, trend_factory, monkeypatch) -> None:
+        mock_publish = AsyncMock(side_effect=RuntimeError("redis down"))
+        monkeypatch.setattr(runner, "_publish_phase2_result", mock_publish)
+
+        candidate = trend_factory(
+            trend_id="stream-exc-001",
+            velocity_1h=300.0,
+            velocity_6h=1500.0,
+            velocity_24h=4000.0,
+            sentiment=0.75,
+            commercial_intent=0.85,
+            novelty=0.75,
+            coordination_risk=0.05,
+            signal_count=180,
+            unique_authors=120,
+        )
+        result = await runner.run_trend(candidate, use_llm=False, stream_client=AsyncMock())
+        mock_publish.assert_called_once()
+        assert result.halt_reason == "completed"
+
+
+class TestPublishPhase2Result:
+    async def test_xadd_called_with_body_field(self) -> None:
+        from aegis.agents.runner import _publish_phase2_result
+        from aegis.agents.schemas import (
+            AgentDecision,
+            AgentVerdict,
+            GraphResult,
+            Priority,
+        )
+
+        now = datetime.now(tz=UTC)
+        decision = AgentDecision(
+            agent="scout",
+            trend_id="pub-001",
+            correlation_id="corr-001",
+            verdict=AgentVerdict.PROCEED,
+            score=0.8,
+            confidence=0.9,
+            reasoning="strong signal",
+        )
+        result = GraphResult(
+            trend_id="pub-001",
+            correlation_id="corr-001",
+            final_verdict=AgentVerdict.PROCEED,
+            final_priority=Priority.P2_OPPORTUNITY,
+            final_score=0.8,
+            final_confidence=0.9,
+            decisions=[decision],
+            blocked_by=[],
+            started_at=now,
+            finished_at=now,
+            duration_ms=42.0,
+            halt_reason="completed",
+        )
+        mock_redis = AsyncMock()
+        await _publish_phase2_result(mock_redis, result, "00000000-0000-0000-0000-000000000001")
+
+        mock_redis.xadd.assert_called_once()
+        call_args = mock_redis.xadd.call_args
+        assert call_args[0][0] == "aegis:phase2:graph_results"
+        payload = json.loads(call_args[0][1]["body"])
+        assert payload["trend_id"] == "pub-001"
+        assert payload["final_verdict"] == "ENTER"
+        assert payload["raw_verdict"] == "proceed"
+        assert payload["decisions"][0]["agent"] == "scout"
+
+    async def test_escalate_verdict_maps_to_hold(self) -> None:
+        from aegis.agents.runner import _publish_phase2_result
+        from aegis.agents.schemas import AgentVerdict, GraphResult, Priority
+
+        now = datetime.now(tz=UTC)
+        result = GraphResult(
+            trend_id="pub-002",
+            correlation_id="corr-002",
+            final_verdict=AgentVerdict.ESCALATE,
+            final_priority=Priority.P2_OPPORTUNITY,
+            final_score=0.5,
+            final_confidence=0.6,
+            decisions=[],
+            blocked_by=[],
+            started_at=now,
+            finished_at=now,
+            duration_ms=10.0,
+            halt_reason="completed",
+        )
+        mock_redis = AsyncMock()
+        await _publish_phase2_result(mock_redis, result, "tenant-x")
+
+        call_args = mock_redis.xadd.call_args
+        payload = json.loads(call_args[0][1]["body"])
+        assert payload["final_verdict"] == "HOLD"
+        assert payload["data_confidence"] == 1.0

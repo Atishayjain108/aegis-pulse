@@ -79,9 +79,7 @@ class InstagramAdapter(SourceAdapter[Any]):
 
     def __init__(self, config: InstagramConfig | AdapterConfig, **kwargs: Any) -> None:
         super().__init__(config, **kwargs)
-        self._ig_config = (
-            config if isinstance(config, InstagramConfig) else InstagramConfig()
-        )
+        self._ig_config = config if isinstance(config, InstagramConfig) else InstagramConfig()
         self._loader: Any = None
 
     @property
@@ -92,18 +90,16 @@ class InstagramAdapter(SourceAdapter[Any]):
         cfg = self._ig_config
         if not cfg.allow_red_tos:
             raise RuntimeError(
-                "InstagramAdapter is gated behind allow_red_tos=True.\n"
-                "Instagram actively defends against scraping (ToS RED).\n"
-                "If you accept the legal risk, set allow_red_tos=True in\n"
-                "InstagramConfig when constructing the adapter."
+                "InstagramAdapter is gated behind allow_red_tos=True. "
+                "Instagram scraping violates their ToS — only enable with explicit consent."
             )
+        self._tos_blocked = False
 
         try:
             import instaloader  # type: ignore[import-untyped]
         except ImportError as e:
             raise RuntimeError(
-                "InstagramAdapter requires instaloader. "
-                "Run: uv sync --extra scrape"
+                "InstagramAdapter requires instaloader. " "Run: uv sync --extra scrape"
             ) from e
 
         def _build() -> Any:
@@ -136,6 +132,8 @@ class InstagramAdapter(SourceAdapter[Any]):
         limit: int = 30,
         **_: Any,
     ) -> AsyncIterator[Any]:
+        if getattr(self, "_tos_blocked", False):
+            return
         if self._loader is None:
             raise RuntimeError("InstagramAdapter.setup() must run before fetch_raw()")
 
@@ -183,7 +181,7 @@ class InstagramAdapter(SourceAdapter[Any]):
             owner = getattr(raw, "owner_profile", None)
             author: Author | None = None
             if owner is not None:
-                try:
+                with contextlib.suppress(Exception):
                     uid = str(getattr(owner, "userid", "") or "")
                     handle = str(getattr(owner, "username", "") or "")
                     followers = getattr(owner, "followers", None)
@@ -193,8 +191,6 @@ class InstagramAdapter(SourceAdapter[Any]):
                         follower_count=int(followers) if followers is not None else None,
                         profile_url=f"{_IG_USER_BASE}{handle}/",  # type: ignore[arg-type]
                     )
-                except Exception:
-                    pass
 
             url = f"{_IG_POST_BASE}{shortcode}/"
             tagged: list[str] = []
@@ -250,4 +246,4 @@ class InstagramAdapter(SourceAdapter[Any]):
             return None
 
 
-__all__ = ["InstagramAdapter", "InstagramConfig", "SCRAPER_VERSION"]
+__all__ = ["SCRAPER_VERSION", "InstagramAdapter", "InstagramConfig"]

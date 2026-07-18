@@ -72,22 +72,29 @@ LongText = Annotated[str, StringConstraints(max_length=20_000)]
 """Captions, comment bodies, descriptions. 20k is a safety cap — signals above
 this are split or truncated upstream."""
 
-TagString = Annotated[str, StringConstraints(
-    strip_whitespace=True,
-    to_lower=True,
-    min_length=1,
-    max_length=128,
-    pattern=r"^[a-z0-9_\-\.]+$",
-)]
-"""Hashtag / keyword. Lowercased, limited charset for cross-platform dedup."""
+TagString = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True,
+        to_lower=True,
+        min_length=1,
+        max_length=128,
+        pattern=r"^[a-z0-9_\-\.\+#@]+$",
+    ),
+]
+"""Hashtag / keyword. Lowercased, limited charset for cross-platform dedup.
+Allows + and # so that language tags like c++, c#, f# are preserved."""
 
-Currency = Annotated[str, StringConstraints(
-    strip_whitespace=True,
-    to_upper=True,
-    min_length=3,
-    max_length=3,
-    pattern=r"^[A-Z]{3}$",
-)]
+Currency = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True,
+        to_upper=True,
+        min_length=3,
+        max_length=3,
+        pattern=r"^[A-Z]{3}$",
+    ),
+]
 """ISO 4217 currency code (USD, EUR, INR, ...). Upper-cased, exactly 3 chars."""
 
 
@@ -95,8 +102,8 @@ class _FrozenBase(BaseModel):
     """Common model config. Immutable, strict, aliases-allowed."""
 
     model_config = ConfigDict(
-        extra="forbid",          # unknown fields → error (prevents silent schema drift)
-        frozen=True,             # instances are immutable (safer for async + hashing)
+        extra="forbid",  # unknown fields → error (prevents silent schema drift)
+        frozen=True,  # instances are immutable (safer for async + hashing)
         str_strip_whitespace=True,
         validate_assignment=True,
         validate_default=True,
@@ -161,7 +168,10 @@ class EngagementMetrics(_FrozenBase):
     def total_engagements(self) -> int:
         """Sum of all quantifiable engagements. Used in bot/ratio features."""
         fields: tuple[int | None, ...] = (
-            self.likes, self.comments, self.shares, self.saves,
+            self.likes,
+            self.comments,
+            self.shares,
+            self.saves,
         )
         return sum(v for v in fields if v is not None)
 
@@ -220,9 +230,17 @@ class MediaRef(_FrozenBase):
 class Location(_FrozenBase):
     """Geographic attribution. Used by geo-arbitrage + compliance tiers."""
 
-    country_code: Annotated[str, StringConstraints(
-        pattern=r"^[A-Z]{2}$", min_length=2, max_length=2,
-    )] | None = None
+    country_code: (
+        Annotated[
+            str,
+            StringConstraints(
+                pattern=r"^[A-Z]{2}$",
+                min_length=2,
+                max_length=2,
+            ),
+        ]
+        | None
+    ) = None
     """ISO 3166-1 alpha-2 (e.g. ``US``, ``IN``, ``DE``)."""
 
     region: ShortText | None = None
@@ -284,7 +302,9 @@ class CrossModalCoherence(_FrozenBase):
     Populated later in the pipeline; initial scrape sets this ``None``."""
 
     text_image_similarity: float = Field(
-        ..., ge=CROSS_MODAL_COHERENCE_MIN, le=CROSS_MODAL_COHERENCE_MAX,
+        ...,
+        ge=CROSS_MODAL_COHERENCE_MIN,
+        le=CROSS_MODAL_COHERENCE_MAX,
     )
     """Cosine similarity between BGE-M3 text embedding and CLIP image embedding,
     projected into a shared 512-d space. Sharp drops (< -0.2) flag astroturfed
@@ -341,9 +361,15 @@ class ProductSignal(_FrozenBase):
     pii_scrubbed_text: LongText | None = None
     """``raw_text`` after the PII pipeline. This is what gets persisted + indexed."""
 
-    language: Annotated[str, StringConstraints(
-        pattern=r"^[a-z]{2}(-[A-Z]{2})?$",
-    )] | None = None
+    language: (
+        Annotated[
+            str,
+            StringConstraints(
+                pattern=r"^[a-z]{2}(-[A-Z]{2})?$",
+            ),
+        ]
+        | None
+    ) = None
     """BCP-47 tag like ``en``, ``en-US``, ``pt-BR``."""
 
     modality: ContentModality
@@ -382,9 +408,12 @@ class ProductSignal(_FrozenBase):
     Downstream code MUST not rely on keys being present; treat as observations."""
 
     # --- Content hash (deterministic) -------------------------------------
-    content_hash: Annotated[str, StringConstraints(
-        pattern=r"^[0-9a-f]{32,64}$",
-    )]
+    content_hash: Annotated[
+        str,
+        StringConstraints(
+            pattern=r"^[0-9a-f]{32,64}$",
+        ),
+    ]
     """BLAKE2b digest (hex). Deterministic given the content fields below.
     Computed by ``compute_content_hash()``; validated in ``_check_hash_is_real``."""
 
@@ -438,8 +467,7 @@ class ProductSignal(_FrozenBase):
         if self.cross_modal is not None:
             has_text = self.raw_text is not None or self.pii_scrubbed_text is not None
             has_media = any(
-                m.modality in (ContentModality.IMAGE, ContentModality.VIDEO)
-                for m in self.media
+                m.modality in (ContentModality.IMAGE, ContentModality.VIDEO) for m in self.media
             )
             if not (has_text and has_media):
                 raise ValueError(
@@ -464,32 +492,26 @@ class ProductSignal(_FrozenBase):
     # ---------------------------------------------------------------------
 
     _HASH_INPUT_FIELDS: tuple[str, ...] = (
-        "platform", "external_id", "url", "title", "raw_text", "posted_at",
+        "platform",
+        "external_id",
+        "url",
+        "title",
+        "raw_text",
+        "posted_at",
     )
     """Fields that participate in the content hash. Adding a field here is a
     BREAKING change (all existing hashes invalidate) — bump SCHEMA_VERSION."""
 
     def _derive_hash(self) -> str:
-        """Recompute the hash from the current field values.
-
-        Uses BLAKE2b with a fixed digest size (see ``constants``). Inputs are
-        concatenated with a null byte separator so that ``("a", "bc")`` and
-        ``("ab", "c")`` hash differently — preventing collisions across
-        variable-length fields.
-        """
-        h = _new_content_hasher()
-        for name in self._HASH_INPUT_FIELDS:
-            value = getattr(self, name)
-            # Convert to a stable string form.
-            if value is None:
-                chunk = b"\x00NULL"
-            elif isinstance(value, datetime):
-                chunk = value.astimezone(UTC).isoformat().encode("utf-8")
-            else:
-                chunk = str(value).encode("utf-8")
-            h.update(b"\x00")
-            h.update(chunk)
-        return h.hexdigest()
+        # Delegate to compute_content_hash so the two code paths can never diverge.
+        return compute_content_hash(
+            platform=self.platform,
+            external_id=self.external_id,
+            url=str(self.url) if self.url is not None else None,
+            title=self.title,
+            raw_text=self.raw_text,
+            posted_at=self.posted_at,
+        )
 
     # ---------------------------------------------------------------------
     # Helpers
@@ -537,6 +559,11 @@ def compute_content_hash(
     if url is not None:
         with contextlib.suppress(Exception):
             url = str(HttpUrl(url))
+    # ShortText fields have strip_whitespace=True — normalise here so that
+    # compute_content_hash() and ProductSignal._derive_hash() always agree.
+    if title is not None:
+        title = title.strip() or None
+    external_id = external_id.strip()
 
     h = _new_content_hasher()
     for value in (platform.value, external_id, url, title, raw_text, posted_at):

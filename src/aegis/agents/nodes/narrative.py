@@ -34,10 +34,13 @@ adds itself to `blocked_by`.
 
 Author: AEGIS Pulse core team
 """
+
 from __future__ import annotations
 
 import re
 from typing import TYPE_CHECKING, Any
+
+import structlog
 
 from ..llm import prompts
 from ..schemas import AgentDecision, AgentVerdict, TrendCandidate
@@ -45,6 +48,8 @@ from .base import AgentNode
 
 if TYPE_CHECKING:
     from ..state import GraphState
+
+_log = structlog.get_logger("aegis.agents.nodes.narrative")
 
 # Lightweight narrative-cue lexicon. These are intentionally generic;
 # domain-specific tuning happens via the LLM augmentation layer.
@@ -135,7 +140,9 @@ class NarrativeAgent(AgentNode):
         else:
             verdict = AgentVerdict.BLOCK
 
-        confidence = 0.4 + 0.5 * min(1.0, candidate.signal_count / 30.0) + 0.1 * cross_platform_bonus
+        confidence = (
+            0.4 + 0.5 * min(1.0, candidate.signal_count / 30.0) + 0.1 * cross_platform_bonus
+        )
         confidence = max(0.0, min(1.0, confidence))
 
         reasoning = (
@@ -185,7 +192,8 @@ class NarrativeAgent(AgentNode):
                 representative_text=(candidate.representative_text or "")[:800],
                 narrative_score=round(heuristic.details.get("narrative_score", 0.0), 3),
             )
-        except Exception:
+        except Exception as exc:
+            _log.debug("narrative.llm_input_build_failed", error=str(exc))
             return None
         system_text = (
             "You are NARRATIVE. Reply JSON only: "

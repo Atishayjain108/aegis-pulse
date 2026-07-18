@@ -41,6 +41,7 @@ from aegis.schemas.signal import (
     compute_content_hash,
 )
 from aegis.scrape.base import AdapterConfig, ScrapeContext, SourceAdapter
+from aegis.scrape.http_client import get_or_create_client
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -99,9 +100,7 @@ class AmazonAdapter(SourceAdapter[dict[str, Any]]):
 
     def __init__(self, config: AmazonConfig | AdapterConfig, **kwargs: Any) -> None:
         super().__init__(config, **kwargs)
-        self._amzn_config = (
-            config if isinstance(config, AmazonConfig) else AmazonConfig()
-        )
+        self._amzn_config = config if isinstance(config, AmazonConfig) else AmazonConfig()
         self._client: httpx.AsyncClient | None = None
 
     @property
@@ -109,8 +108,10 @@ class AmazonAdapter(SourceAdapter[dict[str, Any]]):
         return "amazon"
 
     async def setup(self, ctx: ScrapeContext) -> None:
-        self._client = httpx.AsyncClient(
-            timeout=httpx.Timeout(self._amzn_config.timeout_seconds),
+        self._client = await get_or_create_client(
+            f"www.amazon.{self._amzn_config.marketplace}",
+            http2=False,
+            timeout=self._amzn_config.timeout_seconds,
             headers={
                 "User-Agent": (
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -122,13 +123,11 @@ class AmazonAdapter(SourceAdapter[dict[str, Any]]):
                 "Accept-Encoding": "gzip",
             },
             follow_redirects=True,
-            http2=False,
         )
 
     async def teardown(self, ctx: ScrapeContext) -> None:
-        if self._client is not None:
-            await self._client.aclose()
-            self._client = None
+        # Shared pooled client (PASS5-5B) — release the reference, never close.
+        self._client = None
 
     async def fetch_raw(  # type: ignore[override]
         self,
@@ -241,9 +240,7 @@ class AmazonAdapter(SourceAdapter[dict[str, Any]]):
             return None
 
 
-def _parse_bestsellers_page(
-    html: str, *, category: str, base_url: str
-) -> list[dict[str, Any]]:
+def _parse_bestsellers_page(html: str, *, category: str, base_url: str) -> list[dict[str, Any]]:
     """Extract bestseller items from an Amazon category page."""
     items: list[dict[str, Any]] = []
     try:
@@ -256,13 +253,15 @@ def _parse_bestsellers_page(
             slug_match = re.match(r"/(.+?)/dp/", url_path)
             title = slug_match.group(1).replace("-", " ").strip() if slug_match else ""
 
-            items.append({
-                "asin": asin,
-                "rank": rank,
-                "title": title,
-                "url": clean_url,
-                "category": category,
-            })
+            items.append(
+                {
+                    "asin": asin,
+                    "rank": rank,
+                    "title": title,
+                    "url": clean_url,
+                    "category": category,
+                }
+            )
     except Exception as e:
         log.warning("amazon.parse_page.failed", category=category, error=str(e))
     return items
@@ -277,4 +276,4 @@ def _int_or_none(v: Any) -> int | None:
         return None
 
 
-__all__ = ["AmazonAdapter", "AmazonConfig", "SCRAPER_VERSION"]
+__all__ = ["SCRAPER_VERSION", "AmazonAdapter", "AmazonConfig"]

@@ -30,6 +30,7 @@ never gate the pipeline.
 Author: AEGIS Pulse core team
 Phase:  2 (Multi-Agent Intelligence)
 """
+
 from __future__ import annotations
 
 __all__ = [

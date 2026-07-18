@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -314,7 +314,9 @@ async def test_youtube_fetch_raw_yields_items():
     with patch("aegis.scrape.sources.youtube.build") as mock_build:
         mock_youtube = MagicMock()
         mock_build.return_value = mock_youtube
-        mock_youtube.search.return_value.list.return_value.execute.return_value = mock_search_response
+        mock_youtube.search.return_value.list.return_value.execute.return_value = (
+            mock_search_response
+        )
         await adapter.setup(c)
 
         items = [item async for item in adapter.fetch_raw(c, query="cool video", limit=5)]
@@ -351,7 +353,7 @@ def test_amazon_parse_bestsellers_page():
     html = (
         'data-asin="1234567890" class="foo">'
         '<span class="zg-bdg-text">#1</span>'
-        'something'
+        "something"
         'href="/Great-Book-Title/dp/1234567890/ref=zg_bs"'
     )
     items = _parse_bestsellers_page(html, category="books", base_url="https://www.amazon.com")

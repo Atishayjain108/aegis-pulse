@@ -1,0 +1,56 @@
+ruleset: fda
+version: "2026.05"
+jurisdiction: US
+# US Food and Drug Administration heuristics for supplements, cosmetics, and
+# medical devices. Operator orientation only; not legal advice.
+rules:
+  - id: FDA-SUPPLEMENT-DISEASE-001
+    name: Dietary supplement with disease claim
+    description: A supplement/cosmetic making a disease diagnosis/treatment claim becomes an unapproved drug.
+    severity: block
+    category: advertising
+    citation: "21 U.S.C. 343(r); 21 CFR 101.93 (structure/function vs disease claims)"
+    remediation: "Restrict to permitted structure/function claims with the required DSHEA disclaimer; remove disease claims."
+    match:
+      all_of:
+        - field: category
+          op: contains_any
+          value: ["supplement", "vitamin", "nutraceutical", "cosmetic", "skincare"]
+        - field: text
+          op: contains_any
+          value:
+            - "treats"
+            - "cures"
+            - "prevents"
+            - "diagnoses"
+            - "reverses diabetes"
+            - "shrinks tumors"
+
+  - id: FDA-DEVICE-001
+    name: Unverified medical-device claim
+    description: A device claiming to diagnose/cure/mitigate disease without clearance/approval.
+    severity: block
+    category: product_safety
+    citation: "21 U.S.C. 360 (device classification); FD&C Act 201(h)"
+    remediation: "Confirm 510(k)/PMA status before making medical claims; remove diagnostic/therapeutic claims otherwise."
+    match:
+      all_of:
+        - field: category
+          op: contains_any
+          value: ["device", "wearable", "monitor", "therapy"]
+        - field: text
+          op: contains_any
+          value: ["diagnose", "mitigate disease", "treat condition", "cure"]
+
+  - id: FDA-IMPORT-001
+    name: Category subject to FDA import scrutiny
+    description: Product family commonly appearing on FDA Import Alerts; verify before sourcing internationally.
+    severity: warn
+    category: product_safety
+    citation: "FDA Import Alerts (DWPE) program"
+    remediation: "Check the latest FDA Import Alert list for the product/manufacturer before importing."
+    match:
+      any_of:
+        - field: category
+          op: contains_any
+          value: ["supplement", "cosmetic", "color additive", "seafood", "drug"]

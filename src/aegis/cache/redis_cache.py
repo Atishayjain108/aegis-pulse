@@ -68,9 +68,9 @@ log = get_logger(__name__)
 class CacheTier(StrEnum):
     """Logical TTL tier. Resolves to a concrete seconds value via ``ttl_of()``."""
 
-    HOT = "hot"      # seconds — live counts, "is this hashtag currently trending"
-    WARM = "warm"    # minutes — hourly derived features
-    COLD = "cold"    # day — author profiles, product descriptors
+    HOT = "hot"  # seconds — live counts, "is this hashtag currently trending"
+    WARM = "warm"  # minutes — hourly derived features
+    COLD = "cold"  # day — author profiles, product descriptors
 
 
 def ttl_of(tier: CacheTier) -> int:
@@ -93,10 +93,10 @@ def ttl_of(tier: CacheTier) -> int:
 class Priority(StrEnum):
     """Priority tier. Lower numeric value (via ``band_of()``) = HIGHER priority."""
 
-    P0 = "P0"   # breakout, pre-RED_TEAM-pass alerts
-    P1 = "P1"   # saturation exits
-    P2 = "P2"   # standard opportunities
-    P3 = "P3"   # housekeeping
+    P0 = "P0"  # breakout, pre-RED_TEAM-pass alerts
+    P1 = "P1"  # saturation exits
+    P2 = "P2"  # standard opportunities
+    P3 = "P3"  # housekeeping
 
 
 def band_of(priority: Priority) -> tuple[float, float]:
@@ -368,10 +368,7 @@ class RedisCache:
         """Delete one or more keys. Returns the number of keys actually removed."""
         if not keys:
             return 0
-        full_keys = [
-            self._build_key(namespace=namespace, key=k, tenant_id=tenant_id)
-            for k in keys
-        ]
+        full_keys = [self._build_key(namespace=namespace, key=k, tenant_id=tenant_id) for k in keys]
         try:
             n = await self.client.delete(*full_keys)
         except RedisError as e:
@@ -420,8 +417,11 @@ class RedisCache:
             return cached
         value = await factory()
         await self.set(
-            namespace=namespace, key=key, value=value,
-            tier=tier, tenant_id=tenant_id,
+            namespace=namespace,
+            key=key,
+            value=value,
+            tier=tier,
+            tenant_id=tenant_id,
         )
         return value
 
@@ -439,7 +439,8 @@ class RedisCache:
                 pong = await cast("Awaitable[bool]", self._client.ping())
             if pong is not True:
                 return CacheHealth(
-                    ok=False, latency_ms=None,
+                    ok=False,
+                    latency_ms=None,
                     error=f"unexpected PING response: {pong!r}",
                 )
             return CacheHealth(
@@ -448,11 +449,9 @@ class RedisCache:
                 error=None,
             )
         except TimeoutError:
-            return CacheHealth(ok=False, latency_ms=None,
-                               error=f"health timeout after {timeout}s")
+            return CacheHealth(ok=False, latency_ms=None, error=f"health timeout after {timeout}s")
         except Exception as e:
-            return CacheHealth(ok=False, latency_ms=None,
-                               error=f"{type(e).__name__}: {e}")
+            return CacheHealth(ok=False, latency_ms=None, error=f"{type(e).__name__}: {e}")
 
 
 # =============================================================================
@@ -485,7 +484,9 @@ class PriorityQueue:
         # NOTE: priority queues live in a distinct "pq" namespace so that a
         # wild `DEL aegis:*:cache:*` never accidentally wipes queue state.
         return self._cache._build_key(
-            namespace="pq", key=self._name, tenant_id=self._tenant_id,
+            namespace="pq",
+            key=self._name,
+            tenant_id=self._tenant_id,
         )
 
     # ---- enqueue ------------------------------------------------------
@@ -535,8 +536,7 @@ class PriorityQueue:
         try:
             return cast("int", await self._cache.client.zadd(self.full_key, mapping))
         except RedisError as e:
-            log.warning("pq.push_many.error", queue=self._name,
-                        count=len(items), error=str(e))
+            log.warning("pq.push_many.error", queue=self._name, count=len(items), error=str(e))
             raise
 
     # ---- dequeue ------------------------------------------------------
@@ -556,7 +556,8 @@ class PriorityQueue:
         if max_priority is None:
             try:
                 res: list[tuple[bytes, float]] = await self._cache.client.zpopmin(
-                    self.full_key, count=1,
+                    self.full_key,
+                    count=1,
                 )
             except RedisError as e:
                 log.warning("pq.pop.error", queue=self._name, error=str(e))
@@ -572,7 +573,10 @@ class PriorityQueue:
         # for the v1.1 refactor.)
         try:
             candidates: list[tuple[bytes, float]] = await self._cache.client.zrange(
-                self.full_key, 0, 0, withscores=True,
+                self.full_key,
+                0,
+                0,
+                withscores=True,
             )
         except RedisError as e:
             log.warning("pq.peek.error", queue=self._name, error=str(e))
@@ -590,7 +594,10 @@ class PriorityQueue:
         return member, score
 
     async def pop_batch(
-        self, *, max_items: int = 10, max_priority: Priority | None = None,
+        self,
+        *,
+        max_items: int = 10,
+        max_priority: Priority | None = None,
     ) -> list[tuple[bytes, float]]:
         """Pop up to ``max_items`` highest-priority members.
 

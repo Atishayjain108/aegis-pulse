@@ -1,0 +1,111 @@
+# docker-compose.security.yml — Phase 12 security service overlay
+#
+# Extend the main docker-compose.yml:
+#   docker compose -f docker-compose.yml -f docker-compose.security.yml up -d
+#
+# Adds:
+#   - aegis-vault        : HashiCorp Vault OSS (dev mode)
+#   - Traefik labels for TLS on all existing services (optional)
+#   - Loki log driver for audit log shipping (optional)
+#
+# FREE-TIER PATH: Vault OSS, no enterprise licence needed.
+
+version: "3.9"
+
+services:
+
+  # ── HashiCorp Vault (dev mode) ────────────────────────────────────────── #
+  aegis-vault:
+    image: hashicorp/vault:1.17.2
+    container_name: aegis-vault
+    restart: unless-stopped
+    ports:
+      - "8200:8200"
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: "dev-root-token"
+      VAULT_DEV_LISTEN_ADDRESS: "0.0.0.0:8200"
+      VAULT_LOG_LEVEL: "warn"
+    cap_add:
+      - IPC_LOCK  # Vault requires this to prevent memory from being swapped
+    volumes:
+      - vault-data:/vault/data
+      - ./config/security/vault-init.sh:/vault/init.sh:ro
+    command: >
+      sh -c "vault server -dev
+        -dev-root-token-id=$$VAULT_DEV_ROOT_TOKEN_ID
+        -dev-listen-address=$$VAULT_DEV_LISTEN_ADDRESS"
+    healthcheck:
+      test: ["CMD", "vault", "status", "-address=http://127.0.0.1:8200"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - aegis-net
+    labels:
+      com.aegis.service: "vault"
+      com.aegis.phase: "12"
+
+  # ── Vault init sidecar (runs once to configure KV + Transit) ─────────── #
+  aegis-vault-init:
+    image: hashicorp/vault:1.17.2
+    container_name: aegis-vault-init
+    restart: "no"
+    depends_on:
+      aegis-vault:
+        condition: service_healthy
+    environment:
+      VAULT_ADDR: "http://aegis-vault:8200"
+      VAULT_TOKEN: "dev-root-token"
+    entrypoint: >
+      sh -c "
+        vault secrets enable -version=2 kv 2>/dev/null || true &&
+        vault secrets enable transit 2>/dev/null || true &&
+        vault write -f transit/keys/aegis-key type=aes256-gcm96 2>/dev/null || true &&
+        vault kv put secret/aegis/db
+          password=aegis_app_dev_pw
+          host=aegis-postgres
+          port=5432
+          name=aegis &&
+        vault kv put secret/aegis/redis
+          url=redis://aegis-redis:6379/0 &&
+        vault kv put secret/aegis/minio
+          access_key=aegis-dev-key
+          secret_key=aegis-dev-secret-please-change &&
+        echo '[aegis-vault-init] Configuration complete'
+      "
+    networks:
+      - aegis-net
+    labels:
+      com.aegis.service: "vault-init"
+      com.aegis.phase: "12"
+
+  # ── Audit log bucket in MinIO ─────────────────────────────────────────── #
+  # MinIO is already defined in docker-compose.yml; this sidecar creates
+  # the audit bucket with object-lock (WORM) enabled.
+  aegis-minio-audit-init:
+    image: minio/mc:latest
+    container_name: aegis-minio-audit-init
+    restart: "no"
+    depends_on:
+      - aegis-minio
+    entrypoint: >
+      sh -c "
+        mc alias set local http://aegis-minio:9000 aegis-dev-key aegis-dev-secret-please-change &&
+        mc mb --with-lock local/aegis-audit 2>/dev/null || true &&
+        mc retention set --default COMPLIANCE 36500d local/aegis-audit 2>/dev/null || true &&
+        echo '[audit-init] aegis-audit bucket ready'
+      "
+    networks:
+      - aegis-net
+
+# ── Volumes ───────────────────────────────────────────────────────────────── #
+volumes:
+  vault-data:
+    name: aegis-vault-data
+
+# ── Network (reuse existing) ──────────────────────────────────────────────── #
+networks:
+  aegis-net:
+    external: true
+    name: aegis_default

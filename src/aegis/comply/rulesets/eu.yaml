@@ -1,0 +1,72 @@
+ruleset: eu
+version: "2026.05"
+jurisdiction: EU
+# EU General Product Safety Regulation (GPSR) + Digital Services Act (DSA)
+# heuristics. Operator orientation only; not legal advice.
+rules:
+  - id: EU-GPSR-CHILD-SAFETY-001
+    name: Child-audience product with explicit hazard language
+    description: A product aimed at children referencing choking/flammable hazards.
+    severity: block
+    category: product_safety
+    citation: "Regulation (EU) 2023/988 (GPSR)"
+    remediation: "Do not list children's products with unmitigated hazards; provide compliant safety warnings and CE/UKCA conformity."
+    match:
+      all_of:
+        - field: audience_children
+          op: eq
+          value: true
+        - field: text
+          op: contains_any
+          value:
+            - "choking hazard"
+            - "flammable"
+            - "small parts"
+            - "sharp edges"
+
+  - id: EU-GPSR-CE-001
+    name: Regulated-category product without conformity marking claim
+    description: Electronics/toys/cosmetics typically require CE marking and an EU responsible person.
+    severity: warn
+    category: product_safety
+    citation: "Regulation (EU) 2023/988 (GPSR), Art. 4 (economic operator)"
+    remediation: "Verify CE/UKCA marking and name an EU-based responsible economic operator before listing."
+    match:
+      all_of:
+        - field: category
+          op: contains_any
+          value: ["electronic", "toy", "cosmetic", "appliance", "battery"]
+        - field: text
+          op: regex_any
+          value: ["\\bce mark", "ce marked", "responsible person"]
+      # NOTE: This rule intentionally fires on the *category* match; the regex
+      # arm is illustrative of where a conformity assertion would appear.
+
+  - id: EU-DSA-TRADER-001
+    name: Marketplace listing missing trader traceability cues
+    description: Selling into the EU while collecting personal data without identifiable trader info.
+    severity: warn
+    category: platform
+    citation: "Regulation (EU) 2022/2065 (DSA), Art. 30/31 (trader traceability)"
+    remediation: "Provide verifiable trader identity, address, and contact per DSA traceability obligations."
+    match:
+      all_of:
+        - field: collects_personal_data
+          op: eq
+          value: true
+        - field: has_privacy_policy
+          op: eq
+          value: false
+
+  - id: EU-COSMETICS-CPNP-001
+    name: Cosmetic product without notification cue
+    description: Cosmetics sold in the EU must be notified via CPNP and carry a responsible person.
+    severity: info
+    category: product_safety
+    citation: "Regulation (EC) 1223/2009 (Cosmetics)"
+    remediation: "Confirm CPNP notification and responsible-person labelling for EU cosmetics sales."
+    match:
+      all_of:
+        - field: category
+          op: contains_any
+          value: ["cosmetic", "skincare", "makeup", "fragrance"]

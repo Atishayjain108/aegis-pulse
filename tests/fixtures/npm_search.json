@@ -1,0 +1,50 @@
+{
+  "objects": [
+    {
+      "package": {
+        "name": "langchain",
+        "version": "0.3.5",
+        "description": "Building applications with LLMs through composability",
+        "keywords": ["llm", "ai", "langchain", "openai"],
+        "publisher": {"username": "langchain-bot"},
+        "links": {
+          "npm": "https://www.npmjs.com/package/langchain",
+          "homepage": "https://langchain.com"
+        }
+      },
+      "score": {"final": 0.95, "detail": {"quality": 0.98, "popularity": 0.97, "maintenance": 0.90}},
+      "searchScore": 1.0
+    },
+    {
+      "package": {
+        "name": "razorpay",
+        "version": "2.9.0",
+        "description": "Official Razorpay payment gateway SDK for Node.js",
+        "keywords": ["payments", "fintech", "india", "razorpay"],
+        "publisher": {"username": "razorpay-dev"},
+        "links": {
+          "npm": "https://www.npmjs.com/package/razorpay"
+        }
+      },
+      "score": {"final": 0.88, "detail": {"quality": 0.90, "popularity": 0.85, "maintenance": 0.88}},
+      "searchScore": 0.87
+    },
+    {
+      "package": {
+        "name": "@shopify/polaris",
+        "version": "13.0.0",
+        "description": "Shopify's design system and React component library",
+        "keywords": ["shopify", "ecommerce", "react", "design-system"],
+        "publisher": {"username": "shopify"},
+        "links": {
+          "npm": "https://www.npmjs.com/package/@shopify/polaris",
+          "homepage": "https://polaris.shopify.com"
+        }
+      },
+      "score": {"final": 0.92, "detail": {"quality": 0.95, "popularity": 0.93, "maintenance": 0.91}},
+      "searchScore": 0.91
+    }
+  ],
+  "total": 3,
+  "time": "2026-05-19T01:00:00Z"
+}

@@ -15,6 +15,7 @@ the heuristic path stays correct.
 
 Author: AEGIS Pulse core team
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -82,7 +83,7 @@ def _hash_embedding(text: str, dim: int = _FALLBACK_DIM) -> list[float]:
         raw_bytes.extend(h)
     floats = [b / 255.0 - 0.5 for b in raw_bytes[:dim]]
     norm_sq = sum(f * f for f in floats)
-    norm = norm_sq ** 0.5 if norm_sq > 0 else 1.0
+    norm = norm_sq**0.5 if norm_sq > 0 else 1.0
     return [f / norm for f in floats]
 
 

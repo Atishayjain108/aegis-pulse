@@ -7,6 +7,7 @@ Two public functions:
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -14,6 +15,31 @@ if TYPE_CHECKING:
 
     from aegis.db.pool import PgPool
     from aegis.schemas.signal import ProductSignal
+
+# audit P4-1: how far before ingestion an article's posted_at may anchor the
+# hypertable partition column `ts`. Beyond this (or any future date), we anchor
+# to scraped_at instead so old content can't fragment the time-series into
+# ancient chunks. 45 days comfortably covers slow news cycles / late discovery.
+_MAX_EVENT_TIME_BACKDATE = timedelta(days=45)
+
+
+def _clamp_event_time(
+    posted_at: datetime | None, scraped_at: datetime
+) -> datetime:
+    """Return the value to use for the `ts` partition/recency column.
+
+    Uses ``posted_at`` when it is a sane, recent, non-future timestamp; otherwise
+    anchors to ``scraped_at`` (ingestion time). Keeps recent content idempotent
+    under ``ON CONFLICT (platform, external_id, ts)`` while preventing a
+    2011-dated article from creating a 2011 chunk.
+    """
+    if posted_at is None:
+        return scraped_at
+    if posted_at > scraped_at:  # future publish date → nonsense, use ingestion
+        return scraped_at
+    if posted_at < scraped_at - _MAX_EVENT_TIME_BACKDATE:  # too old to anchor here
+        return scraped_at
+    return posted_at
 
 
 async def insert_signals(
@@ -65,11 +91,20 @@ async def insert_signals(
                 if row:
                     author_id = row["author_id"]
 
-            ts = signal.posted_at if signal.posted_at is not None else signal.provenance.scraped_at
             scraped_at = signal.provenance.scraped_at
+            # audit P4-1 root cause: `ts` is the hypertable partition column AND
+            # the recency-window key for trust/settlement/dedup queries. Setting
+            # it to a very old (or future) article `posted_at` fragmented the
+            # time-series into thousands of ancient 1-day chunks (ranges back to
+            # 2011) and made "recent signals" windows miss freshly-scraped old
+            # content. Clamp: use posted_at only when it is within a sane window
+            # of ingestion time; otherwise anchor to scraped_at. Recent content
+            # keeps a stable posted_at → ON CONFLICT idempotency is preserved.
+            ts = _clamp_event_time(signal.posted_at, scraped_at)
             eng = signal.engagement
             prov = signal.provenance
             conf = signal.confidence
+            price = signal.price
 
             result = await conn.execute(
                 """
@@ -78,13 +113,15 @@ async def insert_signals(
                     posted_at, scraped_at, title, raw_text, pii_scrubbed_text, language,
                     modality, tags, intent, author_id,
                     views, likes, comments, shares, saves, watch_time_seconds, reactions,
+                    price_amount, price_currency, price_original, price_on_sale,
                     scrape_method, scraper_version, proxy_id, user_agent, ja3_fingerprint,
                     tos_risk, rate_limit_hit, captcha_encountered,
                     completeness, source_confidence, freshness_seconds,
                     content_hash, platform_specific
                 ) VALUES (
                     $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,
-                    $19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38
+                    $19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,
+                    $30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42
                 )
                 ON CONFLICT (platform, external_id, ts) DO NOTHING
                 """,
@@ -113,6 +150,14 @@ async def insert_signals(
                 eng.saves if eng else None,
                 eng.watch_time_seconds if eng else None,
                 eng.reactions if eng else None,
+                # Price columns — required for T2_commerce by the
+                # signals_commerce_needs_price CHECK constraint. Previously the
+                # price lived only in platform_specific JSONB, so every commerce
+                # signal (eBay/BestBuy/Etsy, all T2) failed to insert.
+                price.amount if price else None,
+                price.currency if price else None,
+                price.original_amount if price else None,
+                price.is_on_sale if price else None,
                 prov.method.value,
                 prov.scraper_version,
                 prov.proxy_id,
@@ -140,35 +185,55 @@ async def fetch_recent_signals(
     tenant_id: UUID,
     limit: int,
     platform: str | None = None,
+    since: Any | None = None,
 ) -> list[dict[str, Any]]:
-    """Return the N most recent signals for a tenant, newest first."""
-    if platform:
-        rows = await pool.fetch(
-            """
-            SELECT signal_id, platform, external_id, title, url, ts,
-                   scraped_at AS captured_at, intent
-            FROM signals
-            WHERE platform::text = $2
-            ORDER BY ts DESC
-            LIMIT $1
-            """,
-            limit,
-            platform,
-            tenant_id=tenant_id,
-        )
-    else:
-        rows = await pool.fetch(
-            """
-            SELECT signal_id, platform, external_id, title, url, ts,
-                   scraped_at AS captured_at, intent
-            FROM signals
-            ORDER BY ts DESC
-            LIMIT $1
-            """,
-            limit,
-            tenant_id=tenant_id,
-        )
+    """Return the N most recent signals for a tenant, newest first.
+
+    Args:
+        pool: shared asyncpg pool.
+        tenant_id: RLS-scoping tenant.
+        limit: max rows to return.
+        platform: optional platform filter (string, matched against platform::text).
+        since: optional lower-bound timestamp (rows with ts >= since only).
+    """
+    # Build WHERE clauses dynamically so we avoid scanning the full table
+    # when a time-window constraint is provided (the ts index is used).
+    conditions: list[str] = []
+    params: list[Any] = [limit]
+
+    if since is not None:
+        params.append(since)
+        conditions.append(f"ts >= ${len(params)}")
+
+    if platform is not None:
+        params.append(platform)
+        conditions.append(f"platform::text = ${len(params)}")
+
+    where_clause = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+
+    rows = await pool.fetch(
+        f"""
+        SELECT
+            signal_id, platform, external_id, title, url, ts,
+            -- STAGE 1.5 CLOCK FIX: captured_at is EVENT time (ts), not harvest
+            -- time. The old `scraped_at AS captured_at` made every velocity/
+            -- EMA/OLS/autocorr feature measure the scraper's batch cadence
+            -- (a 15-min batch scrape read as a velocity spike; a scheduler gap
+            -- read as decline) while labels settle on ts — features and labels
+            -- on different clocks. scraped_at stays selected for liveness use.
+            ts AS captured_at,
+            scraped_at,
+            intent, author_id, raw_text,
+            views, likes, comments, shares, saves
+        FROM signals
+        {where_clause}
+        ORDER BY ts DESC
+        LIMIT $1
+        """,
+        *params,
+        tenant_id=tenant_id,
+    )
     return [dict(row) for row in rows]
 
 
-__all__ = ["insert_signals", "fetch_recent_signals"]
+__all__ = ["fetch_recent_signals", "insert_signals"]

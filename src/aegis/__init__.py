@@ -14,10 +14,46 @@ This is the top-level package. Sub-packages:
   - ``agents.memory`` — ChromaDB semantic memory + shared working memory
   - ``agents.messaging`` — Redis Streams inter-agent bus + HMAC signing
   - ``agents.tools`` — deterministic tools (velocity, monte_carlo, …)
+- ``predict`` — Phase 3 Predictive Apex (heuristic ML core)
+  - ``predict.features`` — feature builder, velocity, creator graph
+  - ``predict.models`` — heuristic floor + optional neural backbones
+  - ``predict.inference`` — InferenceRunner (single entry point)
+  - ``predict.causal`` — deterministic attribution + counterfactuals
+  - ``predict.rl`` — fractional-Kelly execution policy
+  - ``predict.backtest`` — walk-forward evaluator
+  - ``predict.registry`` — ModelStore + PromotionGate
+  - ``predict.serving`` — FastAPI /predict surface
+- ``agents_phase3_glue`` — Phase 2 ↔ Phase 3 bridge (no LangGraph import)
 
 Author: AEGIS Pulse Team
 """
 
 from __future__ import annotations
 
-__version__ = "0.2.0"
+import pathlib as _pathlib
+
+__version__ = "0.3.0"
+
+# uv workspace ordering puts aegis-phase4/src before src/ in sys.path, which
+# causes the Phase 4 aegis/__init__.py to shadow this package. By extending
+# __path__ we expose aegis.execute (from aegis-phase4/) alongside the main
+# submodules without requiring a pure namespace-package setup.
+_root = _pathlib.Path(__file__).parent.parent.parent
+
+_p4_aegis = _root / "aegis-phase4" / "src" / "aegis"
+if _p4_aegis.is_dir() and str(_p4_aegis) not in __path__:
+    __path__ = [*__path__, str(_p4_aegis)]  # type: ignore[assignment]
+
+_harden_aegis = _root / "aegis-harden" / "src" / "aegis"
+if _harden_aegis.is_dir() and str(_harden_aegis) not in __path__:
+    __path__ = [*__path__, str(_harden_aegis)]  # type: ignore[assignment]
+
+_phase12_aegis = _root / "aegis-phase12" / "src" / "aegis"
+if _phase12_aegis.is_dir() and str(_phase12_aegis) not in __path__:
+    __path__ = [*__path__, str(_phase12_aegis)]  # type: ignore[assignment]
+
+_phase13_aegis = _root / "aegis-phase13" / "src" / "aegis"
+if _phase13_aegis.is_dir() and str(_phase13_aegis) not in __path__:
+    __path__ = [*__path__, str(_phase13_aegis)]  # type: ignore[assignment]
+
+del _root, _p4_aegis, _harden_aegis, _phase12_aegis, _phase13_aegis, _pathlib

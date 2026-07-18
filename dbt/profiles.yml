@@ -1,0 +1,18 @@
+# dbt-duckdb profile for the AEGIS Data Lake.
+#
+# Point ``path`` at a writable DuckDB file. The dbt run will register the
+# same Parquet glob views as the Phase 10 engine via the macros in
+# ``macros/register_views.sql``.
+
+aegis_datalake:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      # Pin to a local file so dbt can persist tables independent of the
+      # in-memory engine Phase 10 uses for ad-hoc queries.
+      path: "{{ env_var('AEGIS_DBT_DUCKDB_PATH', '/tmp/aegis-dbt.duckdb') }}"
+      threads: 4
+      extensions:
+        - httpfs
+        - parquet

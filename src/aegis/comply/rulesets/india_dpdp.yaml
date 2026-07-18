@@ -1,0 +1,57 @@
+ruleset: india_dpdp
+version: "2026.05"
+jurisdiction: IN
+# India Digital Personal Data Protection Act, 2023. Operator orientation only;
+# not legal advice.
+rules:
+  - id: IN-DPDP-CONSENT-001
+    name: Personal data collection without privacy notice/policy
+    description: Collecting personal data of Data Principals without a published privacy notice.
+    severity: block
+    category: privacy
+    citation: "DPDP Act 2023, s.5 (notice) & s.6 (consent)"
+    remediation: "Publish an itemised privacy notice (in English + 8th Schedule languages) and capture verifiable, free, specific consent before collection."
+    match:
+      all_of:
+        - field: collects_personal_data
+          op: eq
+          value: true
+        - field: has_privacy_policy
+          op: eq
+          value: false
+
+  - id: IN-DPDP-CHILD-001
+    name: Children's data collection without age gate / parental consent
+    description: Processing a child's personal data without verifiable parental consent and an age gate.
+    severity: block
+    category: privacy
+    citation: "DPDP Act 2023, s.9 (processing of children's data)"
+    remediation: "Implement an age gate and obtain verifiable parental consent; do not run tracking/behavioural ads to children."
+    match:
+      all_of:
+        - field: collects_personal_data
+          op: eq
+          value: true
+        - field: audience_children
+          op: eq
+          value: true
+        - field: has_age_gate
+          op: eq
+          value: false
+
+  - id: IN-DPDP-PURPOSE-001
+    name: Data collection without stated, lawful purpose cue
+    description: Personal data collection where no clear, lawful purpose is asserted.
+    severity: warn
+    category: privacy
+    citation: "DPDP Act 2023, s.4 (grounds) & s.6(1) (purpose limitation)"
+    remediation: "State a specific lawful purpose; collect only data necessary for that purpose."
+    match:
+      all_of:
+        - field: collects_personal_data
+          op: eq
+          value: true
+        - not:
+            field: text
+            op: contains_any
+            value: ["purpose", "we use your data to", "for the purpose of"]

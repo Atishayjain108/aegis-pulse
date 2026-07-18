@@ -1,0 +1,2267 @@
+Run started:2026-07-02 08:01:18.250833+00:00
+
+Test results:
+>> Issue: [B311:blacklist] Standard pseudo-random generators are not suitable for security/cryptographic purposes.
+   Severity: Low   Confidence: High
+   CWE: CWE-330 (https://cwe.mitre.org/data/definitions/330.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b311-random
+   Location: aegis-harden/src/aegis/harden/utils/rng.py:35:19
+34	        py_seed, np_seed = ss.spawn(2)
+35	        self._py = random.Random(int(py_seed.generate_state(1)[0]))
+36	        self._np = np.random.default_rng(np_seed)
+
+--------------------------------------------------
+>> Issue: [B105:hardcoded_password_string] Possible hardcoded password: 'admin'
+   Severity: Low   Confidence: Medium
+   CWE: CWE-259 (https://cwe.mitre.org/data/definitions/259.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b105_hardcoded_password_string.html
+   Location: aegis-phase12/src/aegis/security/api.py:132:18
+131	    _users: dict[str, dict[str, str]] = user_store or {
+132	        "admin": {"password": "admin", "role": "admin"},
+133	        "analyst": {"password": "analyst", "role": "analyst"},
+
+--------------------------------------------------
+>> Issue: [B105:hardcoded_password_string] Possible hardcoded password: 'analyst'
+   Severity: Low   Confidence: Medium
+   CWE: CWE-259 (https://cwe.mitre.org/data/definitions/259.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b105_hardcoded_password_string.html
+   Location: aegis-phase12/src/aegis/security/api.py:133:20
+132	        "admin": {"password": "admin", "role": "admin"},
+133	        "analyst": {"password": "analyst", "role": "analyst"},
+134	        "operator": {"password": "operator", "role": "operator"},
+
+--------------------------------------------------
+>> Issue: [B105:hardcoded_password_string] Possible hardcoded password: 'operator'
+   Severity: Low   Confidence: Medium
+   CWE: CWE-259 (https://cwe.mitre.org/data/definitions/259.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b105_hardcoded_password_string.html
+   Location: aegis-phase12/src/aegis/security/api.py:134:21
+133	        "analyst": {"password": "analyst", "role": "analyst"},
+134	        "operator": {"password": "operator", "role": "operator"},
+135	        "viewer": {"password": "viewer", "role": "viewer"},
+
+--------------------------------------------------
+>> Issue: [B105:hardcoded_password_string] Possible hardcoded password: 'viewer'
+   Severity: Low   Confidence: Medium
+   CWE: CWE-259 (https://cwe.mitre.org/data/definitions/259.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b105_hardcoded_password_string.html
+   Location: aegis-phase12/src/aegis/security/api.py:135:19
+134	        "operator": {"password": "operator", "role": "operator"},
+135	        "viewer": {"password": "viewer", "role": "viewer"},
+136	    }
+
+--------------------------------------------------
+>> Issue: [B501:request_with_no_cert_validation] Call to httpx with verify=False disabling SSL certificate checks, security issue.
+   Severity: High   Confidence: High
+   CWE: CWE-295 (https://cwe.mitre.org/data/definitions/295.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b501_request_with_no_cert_validation.html
+   Location: aegis-phase12/src/aegis/security/cli.py:427:15
+426	    try:
+427	        resp = httpx.get(url, timeout=5, verify=False)  # noqa: S501
+428	    except Exception as exc:
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: aegis-phase12/src/aegis/security/crypto.py:77:4
+76	    key = load_pem_private_key(private_key_pem, password=None)
+77	    assert isinstance(key, Ed25519PrivateKey), "Expected Ed25519PrivateKey"
+78	    sig = key.sign(data)
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: aegis-phase12/src/aegis/security/crypto.py:90:8
+89	        key = load_pem_public_key(public_key_pem)
+90	        assert isinstance(key, Ed25519PublicKey)
+91	        sig = b64decode(signature_b64)
+
+--------------------------------------------------
+>> Issue: [B404:blacklist] Consider possible security implications associated with the subprocess module.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_imports.html#b404-import-subprocess
+   Location: aegis-phase12/src/aegis/security/scanner.py:36:0
+35	import shutil
+36	import subprocess
+37	import tempfile
+
+--------------------------------------------------
+>> Issue: [B607:start_process_with_partial_path] Starting a process with a partial executable path
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b607_start_process_with_partial_path.html
+   Location: aegis-phase12/src/aegis/security/scanner.py:270:17
+269	        output = output or (directory / ".secrets.baseline")
+270	        result = subprocess.run(
+271	            ["detect-secrets", "scan", "--all-files", str(directory)],
+272	            capture_output=True,
+273	            text=True,
+274	            timeout=60,
+275	        )
+276	        output.write_text(result.stdout, encoding="utf-8")
+
+--------------------------------------------------
+>> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b603_subprocess_without_shell_equals_true.html
+   Location: aegis-phase12/src/aegis/security/scanner.py:270:17
+269	        output = output or (directory / ".secrets.baseline")
+270	        result = subprocess.run(
+271	            ["detect-secrets", "scan", "--all-files", str(directory)],
+272	            capture_output=True,
+273	            text=True,
+274	            timeout=60,
+275	        )
+276	        output.write_text(result.stdout, encoding="utf-8")
+
+--------------------------------------------------
+>> Issue: [B607:start_process_with_partial_path] Starting a process with a partial executable path
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b607_start_process_with_partial_path.html
+   Location: aegis-phase12/src/aegis/security/scanner.py:304:19
+303	        try:
+304	            proc = subprocess.run(
+305	                [
+306	                    "gitleaks",
+307	                    "detect",
+308	                    "--source", str(repo_path),
+309	                    "--report-format", "json",
+310	                    "--no-banner",
+311	                    "--exit-code", "0",   # don't exit 1 on findings (we handle it)
+312	                ],
+313	                capture_output=True,
+314	                text=True,
+315	                timeout=120,
+316	            )
+317	            if proc.stdout.strip():
+
+--------------------------------------------------
+>> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b603_subprocess_without_shell_equals_true.html
+   Location: aegis-phase12/src/aegis/security/scanner.py:304:19
+303	        try:
+304	            proc = subprocess.run(
+305	                [
+306	                    "gitleaks",
+307	                    "detect",
+308	                    "--source", str(repo_path),
+309	                    "--report-format", "json",
+310	                    "--no-banner",
+311	                    "--exit-code", "0",   # don't exit 1 on findings (we handle it)
+312	                ],
+313	                capture_output=True,
+314	                text=True,
+315	                timeout=120,
+316	            )
+317	            if proc.stdout.strip():
+
+--------------------------------------------------
+>> Issue: [B607:start_process_with_partial_path] Starting a process with a partial executable path
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b607_start_process_with_partial_path.html
+   Location: aegis-phase12/src/aegis/security/scanner.py:364:19
+363	        try:
+364	            proc = subprocess.run(
+365	                [
+366	                    "bandit",
+367	                    "-r", str(target),
+368	                    "-f", "json",
+369	                    "-q",
+370	                    # B101=assert, B603=subprocess, B607=partial path — used intentionally
+371	                    "--skip", "B101,B603,B607",
+372	                ],
+373	                capture_output=True,
+374	                text=True,
+375	                timeout=120,
+376	            )
+377	            if proc.stdout.strip():
+
+--------------------------------------------------
+>> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b603_subprocess_without_shell_equals_true.html
+   Location: aegis-phase12/src/aegis/security/scanner.py:364:19
+363	        try:
+364	            proc = subprocess.run(
+365	                [
+366	                    "bandit",
+367	                    "-r", str(target),
+368	                    "-f", "json",
+369	                    "-q",
+370	                    # B101=assert, B603=subprocess, B607=partial path — used intentionally
+371	                    "--skip", "B101,B603,B607",
+372	                ],
+373	                capture_output=True,
+374	                text=True,
+375	                timeout=120,
+376	            )
+377	            if proc.stdout.strip():
+
+--------------------------------------------------
+>> Issue: [B607:start_process_with_partial_path] Starting a process with a partial executable path
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b607_start_process_with_partial_path.html
+   Location: aegis-phase12/src/aegis/security/scanner.py:403:19
+402	        try:
+403	            proc = subprocess.run(
+404	                [
+405	                    "trivy", "image",
+406	                    "--format", "json",
+407	                    "--quiet",
+408	                    "--severity", "HIGH,CRITICAL",
+409	                    image,
+410	                ],
+411	                capture_output=True,
+412	                text=True,
+413	                timeout=300,
+414	            )
+415	            if proc.stdout.strip():
+
+--------------------------------------------------
+>> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b603_subprocess_without_shell_equals_true.html
+   Location: aegis-phase12/src/aegis/security/scanner.py:403:19
+402	        try:
+403	            proc = subprocess.run(
+404	                [
+405	                    "trivy", "image",
+406	                    "--format", "json",
+407	                    "--quiet",
+408	                    "--severity", "HIGH,CRITICAL",
+409	                    image,
+410	                ],
+411	                capture_output=True,
+412	                text=True,
+413	                timeout=300,
+414	            )
+415	            if proc.stdout.strip():
+
+--------------------------------------------------
+>> Issue: [B607:start_process_with_partial_path] Starting a process with a partial executable path
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b607_start_process_with_partial_path.html
+   Location: aegis-phase12/src/aegis/security/scanner.py:427:19
+426	        try:
+427	            proc = subprocess.run(
+428	                ["detect-secrets", "scan", str(path)],
+429	                capture_output=True,
+430	                text=True,
+431	                timeout=30,
+432	            )
+433	            if not proc.stdout.strip():
+
+--------------------------------------------------
+>> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b603_subprocess_without_shell_equals_true.html
+   Location: aegis-phase12/src/aegis/security/scanner.py:427:19
+426	        try:
+427	            proc = subprocess.run(
+428	                ["detect-secrets", "scan", str(path)],
+429	                capture_output=True,
+430	                text=True,
+431	                timeout=30,
+432	            )
+433	            if not proc.stdout.strip():
+
+--------------------------------------------------
+>> Issue: [B404:blacklist] Consider possible security implications associated with the subprocess module.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_imports.html#b404-import-subprocess
+   Location: aegis-phase12/src/aegis/security/secrets/manager.py:20:0
+19	import os
+20	import subprocess
+21	from pathlib import Path
+
+--------------------------------------------------
+>> Issue: [B607:start_process_with_partial_path] Starting a process with a partial executable path
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b607_start_process_with_partial_path.html
+   Location: aegis-phase12/src/aegis/security/secrets/manager.py:231:21
+230	        try:
+231	            result = subprocess.run(
+232	                ["sops", "--decrypt", str(sops_path)],
+233	                capture_output=True,
+234	                text=True,
+235	                timeout=10,
+236	                check=True,
+237	            )
+238	            for line in result.stdout.splitlines():
+
+--------------------------------------------------
+>> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b603_subprocess_without_shell_equals_true.html
+   Location: aegis-phase12/src/aegis/security/secrets/manager.py:231:21
+230	        try:
+231	            result = subprocess.run(
+232	                ["sops", "--decrypt", str(sops_path)],
+233	                capture_output=True,
+234	                text=True,
+235	                timeout=10,
+236	                check=True,
+237	            )
+238	            for line in result.stdout.splitlines():
+
+--------------------------------------------------
+>> Issue: [B404:blacklist] Consider possible security implications associated with the subprocess module.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_imports.html#b404-import-subprocess
+   Location: aegis-phase12/src/aegis/security/sops/integration.py:28:0
+27	import shutil
+28	import subprocess
+29	from pathlib import Path
+
+--------------------------------------------------
+>> Issue: [B607:start_process_with_partial_path] Starting a process with a partial executable path
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b607_start_process_with_partial_path.html
+   Location: aegis-phase12/src/aegis/security/sops/integration.py:111:17
+110	        self._age_key_file.parent.mkdir(parents=True, exist_ok=True)
+111	        result = subprocess.run(
+112	            ["age-keygen", "-o", str(self._age_key_file)],
+113	            capture_output=True,
+114	            text=True,
+115	            check=True,
+116	        )
+117	        # age-keygen prints the public key to stderr
+
+--------------------------------------------------
+>> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b603_subprocess_without_shell_equals_true.html
+   Location: aegis-phase12/src/aegis/security/sops/integration.py:111:17
+110	        self._age_key_file.parent.mkdir(parents=True, exist_ok=True)
+111	        result = subprocess.run(
+112	            ["age-keygen", "-o", str(self._age_key_file)],
+113	            capture_output=True,
+114	            text=True,
+115	            check=True,
+116	        )
+117	        # age-keygen prints the public key to stderr
+
+--------------------------------------------------
+>> Issue: [B607:start_process_with_partial_path] Starting a process with a partial executable path
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b607_start_process_with_partial_path.html
+   Location: aegis-phase12/src/aegis/security/sops/integration.py:205:8
+204	        env = {**os.environ, "SOPS_AGE_KEY_FILE": str(self._age_key_file)}
+205	        subprocess.run(
+206	            [
+207	                "sops",
+208	                "--encrypt",
+209	                "--input-type", "dotenv",
+210	                "--output-type", "yaml",
+211	                "--output", str(output_path),
+212	                str(plaintext_path),
+213	            ],
+214	            check=True,
+215	            capture_output=True,
+216	            env=env,
+217	        )
+218	        _log.info("sops.encrypted", source=str(plaintext_path), dest=str(output_path))
+
+--------------------------------------------------
+>> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b603_subprocess_without_shell_equals_true.html
+   Location: aegis-phase12/src/aegis/security/sops/integration.py:205:8
+204	        env = {**os.environ, "SOPS_AGE_KEY_FILE": str(self._age_key_file)}
+205	        subprocess.run(
+206	            [
+207	                "sops",
+208	                "--encrypt",
+209	                "--input-type", "dotenv",
+210	                "--output-type", "yaml",
+211	                "--output", str(output_path),
+212	                str(plaintext_path),
+213	            ],
+214	            check=True,
+215	            capture_output=True,
+216	            env=env,
+217	        )
+218	        _log.info("sops.encrypted", source=str(plaintext_path), dest=str(output_path))
+
+--------------------------------------------------
+>> Issue: [B607:start_process_with_partial_path] Starting a process with a partial executable path
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b607_start_process_with_partial_path.html
+   Location: aegis-phase12/src/aegis/security/sops/integration.py:238:17
+237	        env = {**os.environ, "SOPS_AGE_KEY_FILE": str(self._age_key_file)}
+238	        result = subprocess.run(
+239	            [
+240	                "sops",
+241	                "--decrypt",
+242	                "--output-type", "dotenv",
+243	                str(encrypted_path),
+244	            ],
+245	            capture_output=True,
+246	            text=True,
+247	            check=True,
+248	            env=env,
+249	        )
+250	
+
+--------------------------------------------------
+>> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b603_subprocess_without_shell_equals_true.html
+   Location: aegis-phase12/src/aegis/security/sops/integration.py:238:17
+237	        env = {**os.environ, "SOPS_AGE_KEY_FILE": str(self._age_key_file)}
+238	        result = subprocess.run(
+239	            [
+240	                "sops",
+241	                "--decrypt",
+242	                "--output-type", "dotenv",
+243	                str(encrypted_path),
+244	            ],
+245	            capture_output=True,
+246	            text=True,
+247	            check=True,
+248	            env=env,
+249	        )
+250	
+
+--------------------------------------------------
+>> Issue: [B404:blacklist] Consider possible security implications associated with the subprocess module.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_imports.html#b404-import-subprocess
+   Location: aegis-phase12/src/aegis/security/tls/helpers.py:16:0
+15	import shutil
+16	import subprocess
+17	from pathlib import Path
+
+--------------------------------------------------
+>> Issue: [B607:start_process_with_partial_path] Starting a process with a partial executable path
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b607_start_process_with_partial_path.html
+   Location: aegis-phase12/src/aegis/security/tls/helpers.py:49:8
+48	    try:
+49	        subprocess.run(["mkcert", "-install"], check=True, capture_output=True)
+50	        _log.info("tls.ca_installed")
+
+--------------------------------------------------
+>> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b603_subprocess_without_shell_equals_true.html
+   Location: aegis-phase12/src/aegis/security/tls/helpers.py:49:8
+48	    try:
+49	        subprocess.run(["mkcert", "-install"], check=True, capture_output=True)
+50	        _log.info("tls.ca_installed")
+
+--------------------------------------------------
+>> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b603_subprocess_without_shell_equals_true.html
+   Location: aegis-phase12/src/aegis/security/tls/helpers.py:105:8
+104	    try:
+105	        subprocess.run(cmd, check=True, capture_output=True)
+106	        _log.info(
+
+--------------------------------------------------
+>> Issue: [B105:hardcoded_password_string] Possible hardcoded password: 'AEGIS-SEC-0006'
+   Severity: Low   Confidence: Medium
+   CWE: CWE-259 (https://cwe.mitre.org/data/definitions/259.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b105_hardcoded_password_string.html
+   Location: aegis-phase12/src/aegis/security/vault/_errors.py:21:20
+20	    CIRCUIT_OPEN = "AEGIS-SEC-0005"
+21	    TOKEN_EXPIRED = "AEGIS-SEC-0006"  # noqa: S105
+22	    SEAL_ERROR = "AEGIS-SEC-0007"
+
+--------------------------------------------------
+>> Issue: [B105:hardcoded_password_string] Possible hardcoded password: 'aegis_app_dev_pw'
+   Severity: Low   Confidence: Medium
+   CWE: CWE-259 (https://cwe.mitre.org/data/definitions/259.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b105_hardcoded_password_string.html
+   Location: aegis-phase12/src/aegis/security/vault/bootstrap.py:76:8
+75	    "aegis/db": {
+76	        "password": "aegis_app_dev_pw",
+77	        "host": "aegis-postgres",
+78	        "port": "5432",
+79	        "name": "aegis",
+80	        "user": "aegis_app",
+81	    },
+82	    "aegis/redis": {
+83	        "url": "redis://aegis-redis:6379/0",
+
+--------------------------------------------------
+>> Issue: [B105:hardcoded_password_string] Possible hardcoded password: 'aegis-dev-secret-please-change'
+   Severity: Low   Confidence: Medium
+   CWE: CWE-259 (https://cwe.mitre.org/data/definitions/259.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b105_hardcoded_password_string.html
+   Location: aegis-phase12/src/aegis/security/vault/bootstrap.py:87:8
+86	        "access_key": "aegis-dev-key",
+87	        "secret_key": "aegis-dev-secret-please-change",
+88	        "endpoint": "http://aegis-minio:9000",
+89	    },
+90	    "aegis/security": {
+91	        "jwt_secret": "CHANGE-ME-generate-with-openssl-rand-hex-32",
+92	        "hmac_key": "CHANGE-ME-generate-with-openssl-rand-hex-32",
+
+--------------------------------------------------
+>> Issue: [B105:hardcoded_password_string] Possible hardcoded password: 'CHANGE-ME-generate-with-openssl-rand-hex-32'
+   Severity: Low   Confidence: Medium
+   CWE: CWE-259 (https://cwe.mitre.org/data/definitions/259.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b105_hardcoded_password_string.html
+   Location: aegis-phase12/src/aegis/security/vault/bootstrap.py:91:8
+90	    "aegis/security": {
+91	        "jwt_secret": "CHANGE-ME-generate-with-openssl-rand-hex-32",
+92	        "hmac_key": "CHANGE-ME-generate-with-openssl-rand-hex-32",
+93	    },
+94	    "aegis/llm": {
+95	        "groq_api_key": "",
+
+--------------------------------------------------
+>> Issue: [B105:hardcoded_password_string] Possible hardcoded password: ''
+   Severity: Low   Confidence: Medium
+   CWE: CWE-259 (https://cwe.mitre.org/data/definitions/259.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b105_hardcoded_password_string.html
+   Location: aegis-phase12/src/aegis/security/vault/bootstrap.py:100:8
+99	    "aegis/notifiers": {
+100	        "telegram_bot_token": "",
+101	        "discord_webhook_url": "",
+102	        "ntfy_topic": "aegis-alerts",
+103	    },
+104	}
+105	
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: aegis-phase12/src/aegis/security/vault/client.py:278:8
+277	        """Return Vault's health endpoint payload."""
+278	        assert self._client is not None, "VaultClient not connected"
+279	        try:
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: aegis-phase12/src/aegis/security/vault/client.py:296:8
+295	        """Execute a Vault API request with retry + circuit-breaker."""
+296	        assert self._client is not None, "VaultClient not connected — call connect() first"
+297	
+
+--------------------------------------------------
+>> Issue: [B404:blacklist] Consider possible security implications associated with the subprocess module.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_imports.html#b404-import-subprocess
+   Location: aegis-phase13/src/aegis/testing/cli.py:22:0
+21	from pathlib import Path
+22	import subprocess
+23	import sys
+
+--------------------------------------------------
+>> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b603_subprocess_without_shell_equals_true.html
+   Location: aegis-phase13/src/aegis/testing/cli.py:40:13
+39	    click.echo(f"$ {' '.join(cmd)}", err=True)
+40	    result = subprocess.run(cmd, cwd=_REPO_ROOT, env=env, check=False)  # noqa: S603
+41	    if check and result.returncode not in (0, 5):
+
+--------------------------------------------------
+>> Issue: [B105:hardcoded_password_string] Possible hardcoded password: 'pass'
+   Severity: Low   Confidence: Medium
+   CWE: CWE-259 (https://cwe.mitre.org/data/definitions/259.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b105_hardcoded_password_string.html
+   Location: aegis-phase15/src/aegis/dr/schemas.py:53:11
+52	class DrillOutcome(str, Enum):
+53	    PASS = "pass"
+54	    FAIL = "fail"
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: aegis-phase4/src/aegis/execute/api/routes/killswitch.py:69:8
+68	                )
+69	        except Exception:
+70	            pass
+71	    return {"state": "TRIPPED", "reason": body.reason}
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: aegis-phase4/src/aegis/execute/api/routes/killswitch.py:91:8
+90	                )
+91	        except Exception:
+92	            pass
+93	    return {"state": "ARMED", "reason": body.reason}
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: aegis-phase4/src/aegis/execute/outbox/drainer.py:162:8
+161	            metrics.outbox_pending.labels(tenant=str(self._tenant_id)).set(float(depth))
+162	        except Exception:
+163	            pass
+164	        if not rows:
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: aegis-phase4/src/aegis/execute/outbox/drainer.py:300:8
+299	            )
+300	        except Exception:
+301	            pass
+302	        return attempt
+
+--------------------------------------------------
+>> Issue: [B311:blacklist] Standard pseudo-random generators are not suitable for security/cryptographic purposes.
+   Severity: Low   Confidence: High
+   CWE: CWE-330 (https://cwe.mitre.org/data/definitions/330.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b311-random
+   Location: aegis-phase4/src/aegis/execute/pricing.py:69:20
+68	        self._demand_history: list[float] = []
+69	        self._rng = random.Random(seed)  # isolated RNG for reproducibility
+70	
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: aegis-phase4/src/aegis/execute/risk/gates.py:157:16
+156	            if not outcome.passed:
+157	                assert outcome.reason is not None  # type narrowing
+158	                _log.warning(
+
+--------------------------------------------------
+>> Issue: [B311:blacklist] Standard pseudo-random generators are not suitable for security/cryptographic purposes.
+   Severity: Low   Confidence: High
+   CWE: CWE-330 (https://cwe.mitre.org/data/definitions/330.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b311-random
+   Location: aegis-phase4/src/aegis/execute/utils/backoff.py:35:36
+34	        raise ValueError("base and cap must be > 0")
+35	    r = rng if rng is not None else random.Random()
+36	    upper = max(base, previous * 3.0)
+
+--------------------------------------------------
+>> Issue: [B112:try_except_continue] Try, Except, Continue detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b112_try_except_continue.html
+   Location: src/aegis/agents/memory/chroma_store.py:304:12
+303	                out[str(k)] = str(v)
+304	            except Exception:  # pragma: no cover — str() on unknown types
+305	                continue
+306	    return out
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: src/aegis/agents/runner.py:327:8
+326	            _log.debug("langfuse.trace", trace_url=trace_url, trend_id=candidate.trend_id)
+327	        except Exception:
+328	            pass  # tracing is best-effort; never affect the result
+329	
+
+--------------------------------------------------
+>> Issue: [B112:try_except_continue] Try, Except, Continue detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b112_try_except_continue.html
+   Location: src/aegis/agents/supervisor.py:174:8
+173	                    votes[agent] = verdict
+174	        except Exception:
+175	            continue
+176	    if not votes_by_trend:
+
+--------------------------------------------------
+>> Issue: [B311:blacklist] Standard pseudo-random generators are not suitable for security/cryptographic purposes.
+   Severity: Low   Confidence: High
+   CWE: CWE-330 (https://cwe.mitre.org/data/definitions/330.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b311-random
+   Location: src/aegis/agents/tools/monte_carlo.py:64:10
+63	
+64	    rng = random.Random(seed)
+65	
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: src/aegis/api/dr_router.py:33:4
+32	        return {"status": "ok", "source": "aegis.dr", "sla": snapshot}
+33	    except Exception:
+34	        pass
+35	
+
+--------------------------------------------------
+>> Issue: [B404:blacklist] Consider possible security implications associated with the subprocess module.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_imports.html#b404-import-subprocess
+   Location: src/aegis/backup/pgbackrest_manager.py:19:0
+18	import re
+19	import subprocess
+20	import time
+
+--------------------------------------------------
+>> Issue: [B404:blacklist] Consider possible security implications associated with the subprocess module.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_imports.html#b404-import-subprocess
+   Location: src/aegis/backup/restic_manager.py:16:0
+15	import os
+16	import subprocess
+17	import time
+
+--------------------------------------------------
+>> Issue: [B404:blacklist] Consider possible security implications associated with the subprocess module.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_imports.html#b404-import-subprocess
+   Location: src/aegis/cli/main.py:35:0
+34	import shutil
+35	import subprocess
+36	import sys
+
+--------------------------------------------------
+>> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b603_subprocess_without_shell_equals_true.html
+   Location: src/aegis/cli/main.py:75:13
+74	    click.echo(f"$ {' '.join(cmd)}", err=True)
+75	    result = subprocess.run(cmd, cwd=str(cwd) if cwd else None, env=proc_env, check=False)
+76	    if check and result.returncode != 0:
+
+--------------------------------------------------
+>> Issue: [B607:start_process_with_partial_path] Starting a process with a partial executable path
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b607_start_process_with_partial_path.html
+   Location: src/aegis/cli/main.py:93:17
+92	        # Probe the plugin once.
+93	        result = subprocess.run(
+94	            ["docker", "compose", "version"],
+95	            capture_output=True,
+96	            check=False,
+97	        )
+98	        if result.returncode == 0:
+
+--------------------------------------------------
+>> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b603_subprocess_without_shell_equals_true.html
+   Location: src/aegis/cli/main.py:93:17
+92	        # Probe the plugin once.
+93	        result = subprocess.run(
+94	            ["docker", "compose", "version"],
+95	            capture_output=True,
+96	            check=False,
+97	        )
+98	        if result.returncode == 0:
+
+--------------------------------------------------
+>> Issue: [B104:hardcoded_bind_all_interfaces] Possible binding to all interfaces.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-605 (https://cwe.mitre.org/data/definitions/605.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b104_hardcoded_bind_all_interfaces.html
+   Location: src/aegis/cli/main.py:228:32
+227	@_api_group.command(name="serve")
+228	@click.option("--host", default="0.0.0.0", show_default=True)
+229	@click.option("--port", default=8400, show_default=True, type=int)
+
+--------------------------------------------------
+>> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b603_subprocess_without_shell_equals_true.html
+   Location: src/aegis/cli/main.py:313:13
+312	    cmd = [*_docker_compose(), "ps", "--format", "json"]
+313	    result = subprocess.run(cmd, cwd=_repo_root(), capture_output=True, text=True, check=False)
+314	    if result.returncode != 0:
+
+--------------------------------------------------
+>> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b603_subprocess_without_shell_equals_true.html
+   Location: src/aegis/cli/main.py:2208:16
+2207	            (tmpdir / "compose-ps.txt").write_text(
+2208	                subprocess.run(
+2209	                    [*_docker_compose(), "ps"],
+2210	                    cwd=_repo_root(),
+2211	                    capture_output=True,
+2212	                    text=True,
+2213	                    check=False,
+2214	                ).stdout,
+2215	            )
+
+--------------------------------------------------
+>> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b603_subprocess_without_shell_equals_true.html
+   Location: src/aegis/cli/main.py:2222:16
+2221	            (tmpdir / "compose-logs.txt").write_text(
+2222	                subprocess.run(
+2223	                    [*_docker_compose(), "logs", "--tail", "1000"],
+2224	                    cwd=_repo_root(),
+2225	                    capture_output=True,
+2226	                    text=True,
+2227	                    check=False,
+2228	                ).stdout,
+2229	            )
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: src/aegis/compliance/api.py:105:4
+104	        await publish_event(STREAM_COMPLIANCE, payload)
+105	    except Exception:  # pragma: no cover - defensive
+106	        pass
+107	    return payload
+
+--------------------------------------------------
+>> Issue: [B112:try_except_continue] Try, Except, Continue detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b112_try_except_continue.html
+   Location: src/aegis/comply/llm/augmentor.py:232:8
+231	            client = factory()
+232	        except Exception:
+233	            continue
+234	        if _adapt(client) is not None:
+
+--------------------------------------------------
+>> Issue: [B311:blacklist] Standard pseudo-random generators are not suitable for security/cryptographic purposes.
+   Severity: Low   Confidence: High
+   CWE: CWE-330 (https://cwe.mitre.org/data/definitions/330.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b311-random
+   Location: src/aegis/comply/trademark/clients.py:107:40
+106	                await asyncio.sleep(min(delay, LIVE_LOOKUP_RETRY_MAX_S))
+107	                delay = min(delay * 2 + random.random(), LIVE_LOOKUP_RETRY_MAX_S)
+108	        self._circuit.record_failure()
+
+--------------------------------------------------
+>> Issue: [B311:blacklist] Standard pseudo-random generators are not suitable for security/cryptographic purposes.
+   Severity: Low   Confidence: High
+   CWE: CWE-330 (https://cwe.mitre.org/data/definitions/330.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b311-random
+   Location: src/aegis/core/resilience.py:361:11
+360	    upper = min(cap, max(base, prev_delay * 3.0))
+361	    return random.uniform(base, upper)  # not cryptographic
+362	
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: src/aegis/dashboard/app.py:106:4
+105	            return json.loads(raw)  # type: ignore[arg-type]
+106	    except Exception:
+107	        pass
+108	    return list(_watchlist_mem)
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Low
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: src/aegis/dashboard/app.py:555:22
+554	                rows = await conn.fetch(
+555	                    f"SELECT {_signal_cols} FROM signals WHERE platform = $1"  # noqa: S608
+556	                    " ORDER BY scraped_at DESC LIMIT $2",
+557	                    platform, limit,
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Low
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: src/aegis/dashboard/app.py:561:22
+560	                rows = await conn.fetch(
+561	                    f"SELECT {_signal_cols} FROM signals ORDER BY scraped_at DESC LIMIT $1",  # noqa: S608
+562	                    limit,
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Low
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: src/aegis/dashboard/app.py:602:20
+601	            rows = await conn.fetch(
+602	                f"""
+603	                SELECT signal_id, platform, title, url, scraped_at, price_amount,
+604	                       platform_specific
+605	                FROM signals
+606	                {where}
+607	                ORDER BY scraped_at DESC
+608	                LIMIT ${len(params)}
+609	                """,  # noqa: S608 - identifiers are static, values parameterised
+610	                *params,
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: src/aegis/dashboard/app.py:1164:24
+1163	                            yield f"data: {evt}\n\n".encode()
+1164	                        except Exception:
+1165	                            pass
+1166	            except Exception:
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: src/aegis/dashboard/app.py:1188:24
+1187	                            yield f"data: {evt}\n\n".encode()
+1188	                        except Exception:
+1189	                            pass
+1190	            except Exception:
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Low
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: src/aegis/dashboard/app.py:1319:22
+1318	                rows = await conn.fetch(
+1319	                    f"SELECT {_cols} FROM signals WHERE title ILIKE $1 AND platform = $2"  # noqa: S608
+1320	                    " ORDER BY scraped_at DESC LIMIT $3",
+1321	                    f"%{q.strip()}%", platform, min(limit, 200),
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Low
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: src/aegis/dashboard/app.py:1325:22
+1324	                rows = await conn.fetch(
+1325	                    f"SELECT {_cols} FROM signals WHERE title ILIKE $1"  # noqa: S608
+1326	                    " ORDER BY scraped_at DESC LIMIT $2",
+1327	                    f"%{q.strip()}%", min(limit, 200),
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: src/aegis/dashboard/app.py:1487:8
+1486	            })
+1487	        except Exception:
+1488	            pass
+1489	    return results
+
+--------------------------------------------------
+>> Issue: [B108:hardcoded_tmp_directory] Probable insecure usage of temp file/directory.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-377 (https://cwe.mitre.org/data/definitions/377.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b108_hardcoded_tmp_directory.html
+   Location: src/aegis/dashboard/app.py:1618:25
+1617	        from pathlib import Path as _Path
+1618	        _dl_base = _Path("/tmp/aegis-datalake")  # noqa: S108
+1619	        dl_cfg = DataLakeSettings(
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: src/aegis/dashboard/app.py:2313:12
+2312	                    durs.append(float(d))
+2313	            except Exception:
+2314	                pass
+2315	        if durs:
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: src/aegis/dashboard/app.py:2318:4
+2317	            result["pipeline_latency_s"] = round(durs[len(durs) // 2] / 1000.0, 2)
+2318	    except Exception:
+2319	        pass
+2320	    return result
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: src/aegis/dashboard/app.py:2495:12
+2494	                    durations.append(float(d))
+2495	            except Exception:
+2496	                pass
+2497	        if durations:
+
+--------------------------------------------------
+>> Issue: [B404:blacklist] Consider possible security implications associated with the subprocess module.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_imports.html#b404-import-subprocess
+   Location: src/aegis/dashboard/cli.py:23:4
+22	    """Kill whatever process is listening on *port*. Returns True if killed."""
+23	    import subprocess
+24	    try:
+
+--------------------------------------------------
+>> Issue: [B607:start_process_with_partial_path] Starting a process with a partial executable path
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b607_start_process_with_partial_path.html
+   Location: src/aegis/dashboard/cli.py:25:17
+24	    try:
+25	        result = subprocess.run(
+26	            ["fuser", "-k", "-n", "tcp", str(port)],
+27	            capture_output=True, timeout=5, check=False,
+28	        )
+29	        return result.returncode == 0
+
+--------------------------------------------------
+>> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b603_subprocess_without_shell_equals_true.html
+   Location: src/aegis/dashboard/cli.py:25:17
+24	    try:
+25	        result = subprocess.run(
+26	            ["fuser", "-k", "-n", "tcp", str(port)],
+27	            capture_output=True, timeout=5, check=False,
+28	        )
+29	        return result.returncode == 0
+
+--------------------------------------------------
+>> Issue: [B607:start_process_with_partial_path] Starting a process with a partial executable path
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b607_start_process_with_partial_path.html
+   Location: src/aegis/dashboard/cli.py:34:14
+33	    try:
+34	        out = subprocess.check_output(
+35	            ["ss", "-tlnp", f"sport = :{port}"], text=True, timeout=5
+36	        )
+37	        import re
+
+--------------------------------------------------
+>> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b603_subprocess_without_shell_equals_true.html
+   Location: src/aegis/dashboard/cli.py:34:14
+33	    try:
+34	        out = subprocess.check_output(
+35	            ["ss", "-tlnp", f"sport = :{port}"], text=True, timeout=5
+36	        )
+37	        import re
+
+--------------------------------------------------
+>> Issue: [B607:start_process_with_partial_path] Starting a process with a partial executable path
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b607_start_process_with_partial_path.html
+   Location: src/aegis/dashboard/cli.py:41:12
+40	                continue
+41	            subprocess.run(["kill", pid], capture_output=True, check=False)
+42	        return True
+
+--------------------------------------------------
+>> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b603_subprocess_without_shell_equals_true.html
+   Location: src/aegis/dashboard/cli.py:41:12
+40	                continue
+41	            subprocess.run(["kill", pid], capture_output=True, check=False)
+42	        return True
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Low
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: src/aegis/datalake/catalog/registry.py:343:12
+342	        query = (
+343	            "SELECT * FROM partitions WHERE "  # noqa: S608 — clauses built from safe predefined strings
+344	            + " AND ".join(clauses)
+345	            + " ORDER BY written_at"
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: src/aegis/datalake/query/duckdb_engine.py:179:18
+178	            conn.execute(
+179	                f"CREATE OR REPLACE VIEW {view_name} AS "  # noqa: S608 — catalog-resolved names only
+180	                f"SELECT * FROM read_parquet('{uri}', union_by_name=true, "
+181	                f"hive_partitioning=true)"
+182	            )
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Low
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: src/aegis/db/signals.py:181:12
+180	    rows = await pool.fetch(
+181	        f"""
+182	        SELECT
+183	            signal_id, platform, external_id, title, url, ts,
+184	            scraped_at AS captured_at,
+185	            intent, author_id, raw_text,
+186	            views, likes, comments, shares, saves
+187	        FROM signals
+188	        {where_clause}
+189	        ORDER BY ts DESC
+190	        LIMIT $1
+191	        """,
+192	        *params,
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: src/aegis/evolve/api.py:146:8
+145	            outcomes_count = await OutcomeRecorder(pool).count_recent_outcomes(days_back=30)
+146	        except Exception:
+147	            pass
+148	
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: src/aegis/evolve/api.py:171:4
+170	        await publish_event(STREAM_EVOLVE, {"event": "retrain", **run.model_dump(mode="json")})
+171	    except Exception:  # pragma: no cover - defensive
+172	        pass
+173	    return run
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: src/aegis/evolve/evidently_monitor.py:128:8
+127	                    return bool(metric.get("result", {}).get("dataset_drift", False))
+128	        except Exception:
+129	            pass
+130	        return False
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: src/aegis/evolve/evidently_monitor.py:140:8
+139	                        drifted.append(feat)
+140	        except Exception:
+141	            pass
+142	        return drifted
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Low
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: src/aegis/evolve/outcomes.py:284:24
+283	                row = await conn.fetchrow(
+284	                    f"""
+285	                    SELECT COUNT(*) AS n
+286	                    FROM signal_outcomes
+287	                    WHERE settlement_timestamp > NOW() - $1::INTERVAL
+288	                    {clause}
+289	                    """,  # noqa: S608 — clause is a fixed literal, not user input
+290	                    timedelta(days=days_back),
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Low
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: src/aegis/execution_intel/audit.py:112:16
+111	        rows = await conn.fetch(
+112	            f"""
+113	            SELECT plan_id, supplier_name, outcome, realized_pnl_usd, failure_category
+114	            FROM execution_records
+115	            WHERE outcome != 'pending'
+116	              AND realized_pnl_usd IS NOT NULL
+117	              AND created_at > NOW() - ($1::int * INTERVAL '1 day')
+118	            ORDER BY realized_pnl_usd {order}
+119	            LIMIT 5
+120	            """,  # noqa: S608 — `order` is a fixed ASC/DESC literal, not user input
+121	            period_days,
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: src/aegis/execution_intel/supplier.py:62:24
+61	                await conn.execute(
+62	                    f"""
+63	                    INSERT INTO supplier_reliability (supplier_name)
+64	                    VALUES ($1)
+65	                    ON CONFLICT (tenant_id, supplier_name) DO UPDATE SET
+66	                        {sets}, updated_at = NOW()
+67	                    """,  # noqa: S608
+68	                    name, *args,
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: src/aegis/fulfillment/cjdropshipping.py:96:8
+95	            return []
+96	        assert recipient is not None  # narrowed by the missing-field guard above
+97	
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: src/aegis/geo/api.py:103:4
+102	        await publish_event(STREAM_GEO, payload)
+103	    except Exception:  # pragma: no cover - defensive
+104	        pass
+105	    return payload
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: src/aegis/geo/demand.py:157:12
+156	                price_usd_samples.append((amount * rate).quantize(Decimal("0.01")))
+157	            except Exception:
+158	                pass
+159	
+
+--------------------------------------------------
+>> Issue: [B311:blacklist] Standard pseudo-random generators are not suitable for security/cryptographic purposes.
+   Severity: Low   Confidence: High
+   CWE: CWE-330 (https://cwe.mitre.org/data/definitions/330.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b311-random
+   Location: src/aegis/llm/providers/base.py:106:21
+105	    base = RETRY_BASE_S
+106	    sleep = min(cap, random.uniform(base, base * (2**attempt)))
+107	    await asyncio.sleep(sleep)
+
+--------------------------------------------------
+>> Issue: [B701:jinja2_autoescape_false] Using jinja2 templates with autoescape=False is dangerous and can lead to XSS. Use autoescape=True or use the select_autoescape function to mitigate XSS vulnerabilities.
+   Severity: High   Confidence: High
+   CWE: CWE-94 (https://cwe.mitre.org/data/definitions/94.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b701_jinja2_autoescape_false.html
+   Location: src/aegis/llm/registry/prompt_registry.py:104:24
+103	        if _JINJA_AVAILABLE:
+104	            self._env = Environment(
+105	                undefined=StrictUndefined,
+106	                autoescape=False,  # noqa: S701  # LLM prompt templates — not HTML
+107	                keep_trailing_newline=True,
+108	            )
+109	        else:
+
+--------------------------------------------------
+>> Issue: [B112:try_except_continue] Try, Except, Continue detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b112_try_except_continue.html
+   Location: src/aegis/mentor/mentor_agent.py:243:16
+242	                    evidence.append(Evidence(**raw))
+243	                except Exception:  # malformed → skip, never fabricate
+244	                    continue
+245	            channels = r.data.get("acquisition_channels")
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: src/aegis/mentor/operators/customer.py:405:12
+404	                    sources.add(f"sector_pack:{getattr(pack, 'sector_tag', 'baseline')}")
+405	            except Exception:
+406	                pass
+407	        if not angles:
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: src/aegis/observability/metrics.py:94:4
+93	                return collectors[candidate]
+94	    except Exception:  # pragma: no cover
+95	        pass
+96	    return None
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: src/aegis/observability/metrics.py:106:8
+105	            return existing if existing is not None else _NoOpMetric()
+106	        except Exception:  # pragma: no cover
+107	            pass
+108	    return _NoOpMetric()
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: src/aegis/observability/metrics.py:118:8
+117	            return existing if existing is not None else _NoOpMetric()
+118	        except Exception:  # pragma: no cover
+119	            pass
+120	    return _NoOpMetric()
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: src/aegis/observability/metrics.py:138:8
+137	            return existing if existing is not None else _NoOpMetric()
+138	        except Exception:  # pragma: no cover
+139	            pass
+140	    return _NoOpMetric()
+
+--------------------------------------------------
+>> Issue: [B311:blacklist] Standard pseudo-random generators are not suitable for security/cryptographic purposes.
+   Severity: Low   Confidence: High
+   CWE: CWE-330 (https://cwe.mitre.org/data/definitions/330.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b311-random
+   Location: src/aegis/predict/backtest/runner.py:293:20
+292	    def __post_init__(self) -> None:
+293	        self._rng = random.Random(self.spec.seed)
+294	        if self.train_fn is None:
+
+--------------------------------------------------
+>> Issue: [B104:hardcoded_bind_all_interfaces] Possible binding to all interfaces.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-605 (https://cwe.mitre.org/data/definitions/605.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b104_hardcoded_bind_all_interfaces.html
+   Location: src/aegis/predict/cli/commands.py:67:33
+66	    def serve_cmd(
+67	        host: str = typer.Option("0.0.0.0", help="Bind host."),
+68	        port: int = typer.Option(8000, help="Bind port."),
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: src/aegis/predict/inference/runner.py:269:8
+268	            graph_summary["online_velocity_proba"] = float(online_proba)
+269	        except Exception:  # online blend is advisory enrichment
+270	            pass
+271	
+
+--------------------------------------------------
+>> Issue: [B403:blacklist] Consider possible security implications associated with pickle module.
+   Severity: Low   Confidence: High
+   CWE: CWE-502 (https://cwe.mitre.org/data/definitions/502.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_imports.html#b403-import-pickle
+   Location: src/aegis/predict/online/river_models.py:18:0
+17	
+18	import pickle
+19	from pathlib import Path
+
+--------------------------------------------------
+>> Issue: [B301:blacklist] Pickle and modules that wrap it can be unsafe when used to deserialize untrusted data, possible security issue.
+   Severity: Medium   Confidence: High
+   CWE: CWE-502 (https://cwe.mitre.org/data/definitions/502.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b301-pickle
+   Location: src/aegis/predict/online/river_models.py:67:28
+66	                with self._CHECKPOINT.open("rb") as f:
+67	                    saved = pickle.load(f)  # noqa: S301 — trusted local file
+68	                self._model = saved["model"]
+
+--------------------------------------------------
+>> Issue: [B311:blacklist] Standard pseudo-random generators are not suitable for security/cryptographic purposes.
+   Severity: Low   Confidence: High
+   CWE: CWE-330 (https://cwe.mitre.org/data/definitions/330.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b311-random
+   Location: src/aegis/predict/resilience.py:53:11
+52	    upper = min(cap, max(base, last_sleep * 3.0))
+53	    return random.uniform(base, upper)
+54	
+
+--------------------------------------------------
+>> Issue: [B311:blacklist] Standard pseudo-random generators are not suitable for security/cryptographic purposes.
+   Severity: Low   Confidence: High
+   CWE: CWE-330 (https://cwe.mitre.org/data/definitions/330.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b311-random
+   Location: src/aegis/predict/rl/env.py:123:23
+122	            )
+123	            self.rng = random.Random(self.cfg.seed)
+124	            self.state = PortfolioState(
+
+--------------------------------------------------
+>> Issue: [B311:blacklist] Standard pseudo-random generators are not suitable for security/cryptographic purposes.
+   Severity: Low   Confidence: High
+   CWE: CWE-330 (https://cwe.mitre.org/data/definitions/330.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b311-random
+   Location: src/aegis/predict/rl/env.py:158:27
+157	            if seed is not None:
+158	                self.rng = random.Random(seed)
+159	            self.state = PortfolioState(
+
+--------------------------------------------------
+>> Issue: [B311:blacklist] Standard pseudo-random generators are not suitable for security/cryptographic purposes.
+   Severity: Low   Confidence: High
+   CWE: CWE-330 (https://cwe.mitre.org/data/definitions/330.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b311-random
+   Location: src/aegis/predict/training/dataset.py:186:10
+185	    """
+186	    rng = random.Random(seed)
+187	    samples: list[LabelledSample] = []
+
+--------------------------------------------------
+>> Issue: [B311:blacklist] Standard pseudo-random generators are not suitable for security/cryptographic purposes.
+   Severity: Low   Confidence: High
+   CWE: CWE-330 (https://cwe.mitre.org/data/definitions/330.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b311-random
+   Location: src/aegis/predict/training/dataset.py:249:8
+248	    if shuffle:
+249	        random.Random(seed).shuffle(indices)
+250	    for i in range(0, len(indices), batch_size):
+
+--------------------------------------------------
+>> Issue: [B404:blacklist] Consider possible security implications associated with the subprocess module.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_imports.html#b404-import-subprocess
+   Location: src/aegis/scheduler/health_checker.py:24:0
+23	import asyncio
+24	import subprocess
+25	import time
+
+--------------------------------------------------
+>> Issue: [B607:start_process_with_partial_path] Starting a process with a partial executable path
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b607_start_process_with_partial_path.html
+   Location: src/aegis/scheduler/health_checker.py:499:8
+498	        # silent no-op rather than a hung subprocess.
+499	        subprocess.run(
+500	            ["sudo", "-n", "hwclock", "-s"],
+501	            check=False,
+502	            timeout=5,
+503	            capture_output=True,
+504	        )
+505	
+
+--------------------------------------------------
+>> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b603_subprocess_without_shell_equals_true.html
+   Location: src/aegis/scheduler/health_checker.py:499:8
+498	        # silent no-op rather than a hung subprocess.
+499	        subprocess.run(
+500	            ["sudo", "-n", "hwclock", "-s"],
+501	            check=False,
+502	            timeout=5,
+503	            capture_output=True,
+504	        )
+505	
+
+--------------------------------------------------
+>> Issue: [B403:blacklist] Consider possible security implications associated with pickle module.
+   Severity: Low   Confidence: High
+   CWE: CWE-502 (https://cwe.mitre.org/data/definitions/502.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_imports.html#b403-import-pickle
+   Location: src/aegis/scrape/dedup.py:19:0
+18	import hashlib
+19	import pickle
+20	import re
+
+--------------------------------------------------
+>> Issue: [B301:blacklist] Pickle and modules that wrap it can be unsafe when used to deserialize untrusted data, possible security issue.
+   Severity: Medium   Confidence: High
+   CWE: CWE-502 (https://cwe.mitre.org/data/definitions/502.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b301-pickle
+   Location: src/aegis/scrape/dedup.py:106:27
+105	                if cached:
+106	                    return pickle.loads(cached)  # noqa: S301 - trusted self-written cache
+107	            except Exception:
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: src/aegis/scrape/dedup.py:107:12
+106	                    return pickle.loads(cached)  # noqa: S301 - trusted self-written cache
+107	            except Exception:
+108	                pass  # Redis unavailable / corrupt entry -> compute fresh
+109	        m = self._build_minhash(text)
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: src/aegis/scrape/dedup.py:124:8
+123	                return True, matches[0]
+124	        except Exception:
+125	            pass
+126	        # Not a duplicate — add to index for future checks
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: src/aegis/scrape/dedup.py:131:8
+130	                self._session_index[signal_id] = m
+131	        except Exception:
+132	            pass
+133	        return False, None
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: src/aegis/scrape/dedup.py:199:12
+198	                await index.add(sid, content, {"title": title, "url": url})
+199	            except Exception:  # semantic layer is best-effort
+200	                pass
+201	
+
+--------------------------------------------------
+>> Issue: [B311:blacklist] Standard pseudo-random generators are not suitable for security/cryptographic purposes.
+   Severity: Low   Confidence: High
+   CWE: CWE-330 (https://cwe.mitre.org/data/definitions/330.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b311-random
+   Location: src/aegis/scrape/ecommerce_utils.py:60:11
+59	    """Return a random User-Agent string from the pool."""
+60	    return random.choice(USER_AGENTS)
+61	
+
+--------------------------------------------------
+>> Issue: [B112:try_except_continue] Try, Except, Continue detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b112_try_except_continue.html
+   Location: src/aegis/scrape/ecommerce_utils.py:205:12
+204	                data = json.loads(m.group(1).strip())
+205	            except Exception:
+206	                continue
+207	            _walk_ld_products(data, products)
+
+--------------------------------------------------
+>> Issue: [B311:blacklist] Standard pseudo-random generators are not suitable for security/cryptographic purposes.
+   Severity: Low   Confidence: High
+   CWE: CWE-330 (https://cwe.mitre.org/data/definitions/330.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b311-random
+   Location: src/aegis/scrape/governor.py:79:16
+78	    async def jitter(self) -> None:
+79	        delay = random.uniform(0, self._jitter_max)
+80	        await asyncio.sleep(delay)
+
+--------------------------------------------------
+>> Issue: [B311:blacklist] Standard pseudo-random generators are not suitable for security/cryptographic purposes.
+   Severity: Low   Confidence: High
+   CWE: CWE-330 (https://cwe.mitre.org/data/definitions/330.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b311-random
+   Location: src/aegis/scrape/http_client.py:144:14
+143	        last = _HOST_LAST.get(host)
+144	        gap = random.uniform(lo, hi)
+145	        if last is not None:
+
+--------------------------------------------------
+>> Issue: [B311:blacklist] Standard pseudo-random generators are not suitable for security/cryptographic purposes.
+   Severity: Low   Confidence: High
+   CWE: CWE-330 (https://cwe.mitre.org/data/definitions/330.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b311-random
+   Location: src/aegis/scrape/http_client.py:166:30
+165	    """
+166	    ua, sec_ch_ua, platform = random.choice(_UA_POOL)
+167	    defaults = {
+
+--------------------------------------------------
+>> Issue: [B311:blacklist] Standard pseudo-random generators are not suitable for security/cryptographic purposes.
+   Severity: Low   Confidence: High
+   CWE: CWE-330 (https://cwe.mitre.org/data/definitions/330.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b311-random
+   Location: src/aegis/scrape/http_client.py:173:27
+172	        ),
+173	        "Accept-Language": random.choice(_ACCEPT_LANGUAGES),
+174	        "Sec-CH-UA": sec_ch_ua,
+
+--------------------------------------------------
+>> Issue: [B311:blacklist] Standard pseudo-random generators are not suitable for security/cryptographic purposes.
+   Severity: Low   Confidence: High
+   CWE: CWE-330 (https://cwe.mitre.org/data/definitions/330.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b311-random
+   Location: src/aegis/scrape/http_client.py:250:28
+249	
+250	    target = impersonate or random.choice(_IMPERSONATE_POOL)
+251	    proxy = _proxy_url()
+
+--------------------------------------------------
+>> Issue: [B311:blacklist] Standard pseudo-random generators are not suitable for security/cryptographic purposes.
+   Severity: Low   Confidence: High
+   CWE: CWE-330 (https://cwe.mitre.org/data/definitions/330.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b311-random
+   Location: src/aegis/scrape/proxies.py:226:12
+225	        self._rng: random.Random = (
+226	            random.Random(rng_seed) if rng_seed is not None else random.Random()
+227	        )
+
+--------------------------------------------------
+>> Issue: [B311:blacklist] Standard pseudo-random generators are not suitable for security/cryptographic purposes.
+   Severity: Low   Confidence: High
+   CWE: CWE-330 (https://cwe.mitre.org/data/definitions/330.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b311-random
+   Location: src/aegis/scrape/proxies.py:226:65
+225	        self._rng: random.Random = (
+226	            random.Random(rng_seed) if rng_seed is not None else random.Random()
+227	        )
+
+--------------------------------------------------
+>> Issue: [B112:try_except_continue] Try, Except, Continue detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b112_try_except_continue.html
+   Location: src/aegis/scrape/semantic_index.py:153:16
+152	                    ))
+153	                except Exception:
+154	                    continue
+155	            return results
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: src/aegis/scrape/semantic_index.py:180:8
+179	            _log.info("semantic_index.rotated", kept=keep)
+180	        except Exception:
+181	            pass
+182	
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: src/aegis/scrape/session_tokens.py:180:20
+179	                                captured_headers[name.lower()] = value
+180	                    except Exception:  # header access is best-effort
+181	                        pass
+182	
+
+--------------------------------------------------
+>> Issue: [B324:hashlib] Use of weak SHA1 hash for security. Consider usedforsecurity=False
+   Severity: High   Confidence: High
+   CWE: CWE-327 (https://cwe.mitre.org/data/definitions/327.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b324_hashlib.html
+   Location: src/aegis/scrape/sources/_rss_base.py:245:26
+244	
+245	            external_id = hashlib.sha1(  # noqa: S324 — non-security use
+246	                url.encode("utf-8", errors="replace")
+247	            ).hexdigest()[:24]
+248	
+
+--------------------------------------------------
+>> Issue: [B324:hashlib] Use of weak SHA1 hash for security. Consider usedforsecurity=False
+   Severity: High   Confidence: High
+   CWE: CWE-327 (https://cwe.mitre.org/data/definitions/327.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b324_hashlib.html
+   Location: src/aegis/scrape/sources/ajio.py:203:26
+202	
+203	            external_id = hashlib.sha1(  # noqa: S324
+204	                url.encode("utf-8", errors="replace")
+205	            ).hexdigest()[:24]
+206	
+
+--------------------------------------------------
+>> Issue: [B324:hashlib] Use of weak SHA1 hash for security. Consider usedforsecurity=False
+   Severity: High   Confidence: High
+   CWE: CWE-327 (https://cwe.mitre.org/data/definitions/327.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b324_hashlib.html
+   Location: src/aegis/scrape/sources/amazon_in.py:231:36
+230	                items.append({
+231	                    "asin": asin or hashlib.sha1(title.encode()).hexdigest()[:16],  # noqa: S324
+232	                    "title": title,
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: src/aegis/scrape/sources/amazon_in.py:452:12
+451	                    html = rendered
+452	            except Exception:
+453	                pass
+454	        return parse_dp_page(html) if html else {}
+
+--------------------------------------------------
+>> Issue: [B324:hashlib] Use of weak SHA1 hash for security. Consider usedforsecurity=False
+   Severity: High   Confidence: High
+   CWE: CWE-327 (https://cwe.mitre.org/data/definitions/327.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b324_hashlib.html
+   Location: src/aegis/scrape/sources/amazon_in.py:534:26
+533	
+534	            external_id = hashlib.sha1(  # noqa: S324
+535	                f"amazon_in:{asin}".encode()
+536	            ).hexdigest()[:24]
+537	
+
+--------------------------------------------------
+>> Issue: [B324:hashlib] Use of weak SHA1 hash for security. Consider usedforsecurity=False
+   Severity: High   Confidence: High
+   CWE: CWE-327 (https://cwe.mitre.org/data/definitions/327.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b324_hashlib.html
+   Location: src/aegis/scrape/sources/bestbuy.py:187:26
+186	
+187	            external_id = hashlib.sha1(  # noqa: S324
+188	                f"bestbuy:{sku or url}".encode()
+189	            ).hexdigest()[:24]
+190	
+
+--------------------------------------------------
+>> Issue: [B405:blacklist] Using xml.etree.ElementTree to parse untrusted XML data is known to be vulnerable to XML attacks. Replace xml.etree.ElementTree with the equivalent defusedxml package, or make sure defusedxml.defuse_stdlib() is called.
+   Severity: Low   Confidence: High
+   CWE: CWE-20 (https://cwe.mitre.org/data/definitions/20.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_imports.html#b405-import-xml-etree
+   Location: src/aegis/scrape/sources/bing_news_rss.py:18:0
+17	import hashlib
+18	import xml.etree.ElementTree as ET
+19	from dataclasses import dataclass
+
+--------------------------------------------------
+>> Issue: [B314:blacklist] Using xml.etree.ElementTree.fromstring to parse untrusted XML data is known to be vulnerable to XML attacks. Replace xml.etree.ElementTree.fromstring with its defusedxml equivalent function or make sure defusedxml.defuse_stdlib() is called
+   Severity: Medium   Confidence: High
+   CWE: CWE-20 (https://cwe.mitre.org/data/definitions/20.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b313-b320-xml-bad-elementtree
+   Location: src/aegis/scrape/sources/bing_news_rss.py:159:19
+158	        try:
+159	            root = ET.fromstring(xml_bytes)  # noqa: S314
+160	        except ET.ParseError as e:
+
+--------------------------------------------------
+>> Issue: [B324:hashlib] Use of weak SHA1 hash for security. Consider usedforsecurity=False
+   Severity: High   Confidence: High
+   CWE: CWE-327 (https://cwe.mitre.org/data/definitions/327.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b324_hashlib.html
+   Location: src/aegis/scrape/sources/bing_news_rss.py:214:26
+213	
+214	            external_id = hashlib.sha1(  # noqa: S324
+215	                guid.encode("utf-8", errors="replace")
+216	            ).hexdigest()[:24]
+217	
+
+--------------------------------------------------
+>> Issue: [B324:hashlib] Use of weak SHA1 hash for security. Consider usedforsecurity=False
+   Severity: High   Confidence: High
+   CWE: CWE-327 (https://cwe.mitre.org/data/definitions/327.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b324_hashlib.html
+   Location: src/aegis/scrape/sources/devto.py:201:21
+200	                if article_id
+201	                else hashlib.sha1(url.encode()).hexdigest()[:24]  # noqa: S324
+202	            )
+
+--------------------------------------------------
+>> Issue: [B324:hashlib] Use of weak SHA1 hash for security. Consider usedforsecurity=False
+   Severity: High   Confidence: High
+   CWE: CWE-327 (https://cwe.mitre.org/data/definitions/327.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b324_hashlib.html
+   Location: src/aegis/scrape/sources/ebay_browse.py:262:26
+261	
+262	            external_id = hashlib.sha1(  # noqa: S324
+263	                f"ebay:{item_id or url}".encode()
+264	            ).hexdigest()[:24]
+265	
+
+--------------------------------------------------
+>> Issue: [B324:hashlib] Use of weak SHA1 hash for security. Consider usedforsecurity=False
+   Severity: High   Confidence: High
+   CWE: CWE-327 (https://cwe.mitre.org/data/definitions/327.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b324_hashlib.html
+   Location: src/aegis/scrape/sources/economic_times_markets.py:131:26
+130	
+131	            external_id = hashlib.sha1(  # noqa: S324
+132	                url.encode("utf-8", errors="replace")
+133	            ).hexdigest()[:24]
+134	
+
+--------------------------------------------------
+>> Issue: [B324:hashlib] Use of weak SHA1 hash for security. Consider usedforsecurity=False
+   Severity: High   Confidence: High
+   CWE: CWE-327 (https://cwe.mitre.org/data/definitions/327.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b324_hashlib.html
+   Location: src/aegis/scrape/sources/etsy.py:213:26
+212	
+213	            external_id = hashlib.sha1(  # noqa: S324
+214	                f"etsy:{listing_id or url}".encode()
+215	            ).hexdigest()[:24]
+216	
+
+--------------------------------------------------
+>> Issue: [B324:hashlib] Use of weak SHA1 hash for security. Consider usedforsecurity=False
+   Severity: High   Confidence: High
+   CWE: CWE-327 (https://cwe.mitre.org/data/definitions/327.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b324_hashlib.html
+   Location: src/aegis/scrape/sources/flipkart.py:486:26
+485	
+486	            external_id = hashlib.sha1(  # noqa: S324
+487	                url.encode("utf-8", errors="replace")
+488	            ).hexdigest()[:24]
+489	
+
+--------------------------------------------------
+>> Issue: [B324:hashlib] Use of weak SHA1 hash for security. Consider usedforsecurity=False
+   Severity: High   Confidence: High
+   CWE: CWE-327 (https://cwe.mitre.org/data/definitions/327.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b324_hashlib.html
+   Location: src/aegis/scrape/sources/gdelt.py:198:26
+197	
+198	            external_id = hashlib.sha1(url.encode()).hexdigest()[:24]  # noqa: S324
+199	
+
+--------------------------------------------------
+>> Issue: [B324:hashlib] Use of weak SHA1 hash for security. Consider usedforsecurity=False
+   Severity: High   Confidence: High
+   CWE: CWE-327 (https://cwe.mitre.org/data/definitions/327.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b324_hashlib.html
+   Location: src/aegis/scrape/sources/github_public.py:247:21
+246	                if repo_id
+247	                else hashlib.sha1(url.encode()).hexdigest()[:24]  # noqa: S324
+248	            )
+
+--------------------------------------------------
+>> Issue: [B405:blacklist] Using xml.etree.ElementTree to parse untrusted XML data is known to be vulnerable to XML attacks. Replace xml.etree.ElementTree with the equivalent defusedxml package, or make sure defusedxml.defuse_stdlib() is called.
+   Severity: Low   Confidence: High
+   CWE: CWE-20 (https://cwe.mitre.org/data/definitions/20.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_imports.html#b405-import-xml-etree
+   Location: src/aegis/scrape/sources/google_news_rss.py:19:0
+18	import hashlib
+19	import xml.etree.ElementTree as ET
+20	from dataclasses import dataclass
+
+--------------------------------------------------
+>> Issue: [B314:blacklist] Using xml.etree.ElementTree.fromstring to parse untrusted XML data is known to be vulnerable to XML attacks. Replace xml.etree.ElementTree.fromstring with its defusedxml equivalent function or make sure defusedxml.defuse_stdlib() is called
+   Severity: Medium   Confidence: High
+   CWE: CWE-20 (https://cwe.mitre.org/data/definitions/20.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b313-b320-xml-bad-elementtree
+   Location: src/aegis/scrape/sources/google_news_rss.py:155:19
+154	        try:
+155	            root = ET.fromstring(xml_bytes)  # noqa: S314 — bytes from our own controlled HTTPS GET, not user input
+156	        except ET.ParseError as e:
+
+--------------------------------------------------
+>> Issue: [B324:hashlib] Use of weak SHA1 hash for security. Consider usedforsecurity=False
+   Severity: High   Confidence: High
+   CWE: CWE-327 (https://cwe.mitre.org/data/definitions/327.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b324_hashlib.html
+   Location: src/aegis/scrape/sources/google_news_rss.py:208:26
+207	            # Stable external_id: hash of the guid so it's consistent across re-scrapes
+208	            external_id = hashlib.sha1(  # noqa: S324 — non-security use
+209	                guid.encode("utf-8", errors="replace")
+210	            ).hexdigest()[:24]
+211	
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: src/aegis/scrape/sources/google_trends.py:105:8
+104	            _retry_mod.Retry.__init__ = _patched_retry_init  # type: ignore[method-assign]
+105	        except Exception:
+106	            pass  # Best-effort — if patching fails, TrendReq will raise its own error
+107	
+
+--------------------------------------------------
+>> Issue: [B324:hashlib] Use of weak SHA1 hash for security. Consider usedforsecurity=False
+   Severity: High   Confidence: High
+   CWE: CWE-327 (https://cwe.mitre.org/data/definitions/327.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b324_hashlib.html
+   Location: src/aegis/scrape/sources/google_trends_global.py:237:26
+236	
+237	            external_id = hashlib.sha1(f"{geo}:{title.lower()}".encode()).hexdigest()[:24]  # noqa: S324
+238	
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: src/aegis/scrape/sources/google_trends_india.py:72:8
+71	            _r.Retry.__init__ = _p  # type: ignore[method-assign]
+72	        except Exception:
+73	            pass
+74	        pt = TrendReq(hl="en-IN", tz=330, timeout=(10, 25), retries=1, backoff_factor=0.5)
+
+--------------------------------------------------
+>> Issue: [B112:try_except_continue] Try, Except, Continue detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b112_try_except_continue.html
+   Location: src/aegis/scrape/sources/indiamart.py:115:12
+114	                    categories.append(name)
+115	            except Exception:  # known-fragile scraper; skip malformed cards
+116	                continue
+117	
+
+--------------------------------------------------
+>> Issue: [B324:hashlib] Use of weak SHA1 hash for security. Consider usedforsecurity=False
+   Severity: High   Confidence: High
+   CWE: CWE-327 (https://cwe.mitre.org/data/definitions/327.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b324_hashlib.html
+   Location: src/aegis/scrape/sources/indiamart.py:307:26
+306	
+307	            external_id = hashlib.sha1(  # noqa: S324
+308	                url.encode("utf-8", errors="replace")
+309	            ).hexdigest()[:24]
+310	
+
+--------------------------------------------------
+>> Issue: [B324:hashlib] Use of weak SHA1 hash for security. Consider usedforsecurity=False
+   Severity: High   Confidence: High
+   CWE: CWE-327 (https://cwe.mitre.org/data/definitions/327.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b324_hashlib.html
+   Location: src/aegis/scrape/sources/meesho.py:343:26
+342	
+343	            external_id = hashlib.sha1(  # noqa: S324
+344	                url.encode("utf-8", errors="replace")
+345	            ).hexdigest()[:24]
+346	
+
+--------------------------------------------------
+>> Issue: [B324:hashlib] Use of weak SHA1 hash for security. Consider usedforsecurity=False
+   Severity: High   Confidence: High
+   CWE: CWE-327 (https://cwe.mitre.org/data/definitions/327.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b324_hashlib.html
+   Location: src/aegis/scrape/sources/moneycontrol.py:255:26
+254	
+255	            external_id = hashlib.sha1(  # noqa: S324
+256	                url.encode("utf-8", errors="replace")
+257	            ).hexdigest()[:24]
+258	
+
+--------------------------------------------------
+>> Issue: [B324:hashlib] Use of weak SHA1 hash for security. Consider usedforsecurity=False
+   Severity: High   Confidence: High
+   CWE: CWE-327 (https://cwe.mitre.org/data/definitions/327.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b324_hashlib.html
+   Location: src/aegis/scrape/sources/myntra.py:376:26
+375	
+376	            external_id = hashlib.sha1(  # noqa: S324
+377	                url.encode("utf-8", errors="replace")
+378	            ).hexdigest()[:24]
+379	
+
+--------------------------------------------------
+>> Issue: [B324:hashlib] Use of weak SHA1 hash for security. Consider usedforsecurity=False
+   Severity: High   Confidence: High
+   CWE: CWE-327 (https://cwe.mitre.org/data/definitions/327.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b324_hashlib.html
+   Location: src/aegis/scrape/sources/npm_trends.py:235:26
+234	
+235	            external_id = hashlib.sha1(url.encode("utf-8", errors="replace")).hexdigest()[:24]  # noqa: S324
+236	
+
+--------------------------------------------------
+>> Issue: [B324:hashlib] Use of weak SHA1 hash for security. Consider usedforsecurity=False
+   Severity: High   Confidence: High
+   CWE: CWE-327 (https://cwe.mitre.org/data/definitions/327.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b324_hashlib.html
+   Location: src/aegis/scrape/sources/nse_bse.py:307:26
+306	
+307	            external_id = hashlib.sha1(  # noqa: S324
+308	                url.encode("utf-8", errors="replace")
+309	            ).hexdigest()[:24]
+310	
+
+--------------------------------------------------
+>> Issue: [B324:hashlib] Use of weak SHA1 hash for security. Consider usedforsecurity=False
+   Severity: High   Confidence: High
+   CWE: CWE-327 (https://cwe.mitre.org/data/definitions/327.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b324_hashlib.html
+   Location: src/aegis/scrape/sources/nykaa.py:247:26
+246	
+247	            external_id = hashlib.sha1(  # noqa: S324
+248	                url.encode("utf-8", errors="replace")
+249	            ).hexdigest()[:24]
+250	
+
+--------------------------------------------------
+>> Issue: [B324:hashlib] Use of weak SHA1 hash for security. Consider usedforsecurity=False
+   Severity: High   Confidence: High
+   CWE: CWE-327 (https://cwe.mitre.org/data/definitions/327.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b324_hashlib.html
+   Location: src/aegis/scrape/sources/producthunt.py:260:26
+259	
+260	            external_id = hashlib.sha1(url.encode("utf-8", errors="replace")).hexdigest()[:24]  # noqa: S324
+261	
+
+--------------------------------------------------
+>> Issue: [B405:blacklist] Using xml.etree.ElementTree to parse untrusted XML data is known to be vulnerable to XML attacks. Replace xml.etree.ElementTree with the equivalent defusedxml package, or make sure defusedxml.defuse_stdlib() is called.
+   Severity: Low   Confidence: High
+   CWE: CWE-20 (https://cwe.mitre.org/data/definitions/20.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_imports.html#b405-import-xml-etree
+   Location: src/aegis/scrape/sources/reddit_ecommerce.py:12:0
+11	import contextlib
+12	import xml.etree.ElementTree as ET
+13	from dataclasses import dataclass, field
+
+--------------------------------------------------
+>> Issue: [B314:blacklist] Using xml.etree.ElementTree.fromstring to parse untrusted XML data is known to be vulnerable to XML attacks. Replace xml.etree.ElementTree.fromstring with its defusedxml equivalent function or make sure defusedxml.defuse_stdlib() is called
+   Severity: Medium   Confidence: High
+   CWE: CWE-20 (https://cwe.mitre.org/data/definitions/20.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b313-b320-xml-bad-elementtree
+   Location: src/aegis/scrape/sources/reddit_ecommerce.py:159:19
+158	            resp.raise_for_status()
+159	            root = ET.fromstring(resp.content)  # noqa: S314
+160	        except httpx.HTTPStatusError as e:
+
+--------------------------------------------------
+>> Issue: [B405:blacklist] Using xml.etree.ElementTree to parse untrusted XML data is known to be vulnerable to XML attacks. Replace xml.etree.ElementTree with the equivalent defusedxml package, or make sure defusedxml.defuse_stdlib() is called.
+   Severity: Low   Confidence: High
+   CWE: CWE-20 (https://cwe.mitre.org/data/definitions/20.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_imports.html#b405-import-xml-etree
+   Location: src/aegis/scrape/sources/reddit_finance.py:14:0
+13	import contextlib
+14	import xml.etree.ElementTree as ET
+15	from dataclasses import dataclass, field
+
+--------------------------------------------------
+>> Issue: [B314:blacklist] Using xml.etree.ElementTree.fromstring to parse untrusted XML data is known to be vulnerable to XML attacks. Replace xml.etree.ElementTree.fromstring with its defusedxml equivalent function or make sure defusedxml.defuse_stdlib() is called
+   Severity: Medium   Confidence: High
+   CWE: CWE-20 (https://cwe.mitre.org/data/definitions/20.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b313-b320-xml-bad-elementtree
+   Location: src/aegis/scrape/sources/reddit_finance.py:163:19
+162	            resp.raise_for_status()
+163	            root = ET.fromstring(resp.content)  # noqa: S314
+164	        except httpx.HTTPStatusError as e:
+
+--------------------------------------------------
+>> Issue: [B405:blacklist] Using xml.etree.ElementTree to parse untrusted XML data is known to be vulnerable to XML attacks. Replace xml.etree.ElementTree with the equivalent defusedxml package, or make sure defusedxml.defuse_stdlib() is called.
+   Severity: Low   Confidence: High
+   CWE: CWE-20 (https://cwe.mitre.org/data/definitions/20.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_imports.html#b405-import-xml-etree
+   Location: src/aegis/scrape/sources/reddit_rss.py:17:0
+16	import contextlib
+17	import xml.etree.ElementTree as ET
+18	from dataclasses import dataclass
+
+--------------------------------------------------
+>> Issue: [B314:blacklist] Using xml.etree.ElementTree.fromstring to parse untrusted XML data is known to be vulnerable to XML attacks. Replace xml.etree.ElementTree.fromstring with its defusedxml equivalent function or make sure defusedxml.defuse_stdlib() is called
+   Severity: Medium   Confidence: High
+   CWE: CWE-20 (https://cwe.mitre.org/data/definitions/20.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b313-b320-xml-bad-elementtree
+   Location: src/aegis/scrape/sources/reddit_rss.py:207:23
+206	            try:
+207	                root = ET.fromstring(xml_bytes)  # noqa: S314
+208	            except ET.ParseError as e:
+
+--------------------------------------------------
+>> Issue: [B324:hashlib] Use of weak SHA1 hash for security. Consider usedforsecurity=False
+   Severity: High   Confidence: High
+   CWE: CWE-327 (https://cwe.mitre.org/data/definitions/327.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b324_hashlib.html
+   Location: src/aegis/scrape/sources/screener_in.py:309:26
+308	
+309	            external_id = hashlib.sha1(  # noqa: S324
+310	                url.encode("utf-8", errors="replace")
+311	            ).hexdigest()[:24]
+312	
+
+--------------------------------------------------
+>> Issue: [B405:blacklist] Using xml.etree.ElementTree to parse untrusted XML data is known to be vulnerable to XML attacks. Replace xml.etree.ElementTree with the equivalent defusedxml package, or make sure defusedxml.defuse_stdlib() is called.
+   Severity: Low   Confidence: High
+   CWE: CWE-20 (https://cwe.mitre.org/data/definitions/20.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_imports.html#b405-import-xml-etree
+   Location: src/aegis/scrape/sources/snapdeal.py:14:0
+13	import re
+14	import xml.etree.ElementTree as ET
+15	from dataclasses import dataclass
+
+--------------------------------------------------
+>> Issue: [B314:blacklist] Using xml.etree.ElementTree.fromstring to parse untrusted XML data is known to be vulnerable to XML attacks. Replace xml.etree.ElementTree.fromstring with its defusedxml equivalent function or make sure defusedxml.defuse_stdlib() is called
+   Severity: Medium   Confidence: High
+   CWE: CWE-20 (https://cwe.mitre.org/data/definitions/20.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b313-b320-xml-bad-elementtree
+   Location: src/aegis/scrape/sources/snapdeal.py:77:15
+76	    try:
+77	        root = ET.fromstring(xml_text)  # noqa: S314
+78	        channel = root.find("channel")
+
+--------------------------------------------------
+>> Issue: [B324:hashlib] Use of weak SHA1 hash for security. Consider usedforsecurity=False
+   Severity: High   Confidence: High
+   CWE: CWE-327 (https://cwe.mitre.org/data/definitions/327.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b324_hashlib.html
+   Location: src/aegis/scrape/sources/snapdeal.py:332:26
+331	
+332	            external_id = hashlib.sha1(  # noqa: S324
+333	                url.encode("utf-8", errors="replace")
+334	            ).hexdigest()[:24]
+335	
+
+--------------------------------------------------
+>> Issue: [B324:hashlib] Use of weak SHA1 hash for security. Consider usedforsecurity=False
+   Severity: High   Confidence: High
+   CWE: CWE-327 (https://cwe.mitre.org/data/definitions/327.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b324_hashlib.html
+   Location: src/aegis/scrape/sources/wikimedia.py:201:26
+200	
+201	            external_id = hashlib.sha1(f"{project}:{url}".encode()).hexdigest()[:24]  # noqa: S324
+202	
+
+--------------------------------------------------
+>> Issue: [B324:hashlib] Use of weak SHA1 hash for security. Consider usedforsecurity=False
+   Severity: High   Confidence: High
+   CWE: CWE-327 (https://cwe.mitre.org/data/definitions/327.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b324_hashlib.html
+   Location: src/aegis/scrape/sources/youtube_rss.py:275:26
+274	
+275	            external_id = hashlib.sha1(url.encode("utf-8", errors="replace")).hexdigest()[:24]  # noqa: S324
+276	
+
+--------------------------------------------------
+>> Issue: [B311:blacklist] Standard pseudo-random generators are not suitable for security/cryptographic purposes.
+   Severity: Low   Confidence: High
+   CWE: CWE-330 (https://cwe.mitre.org/data/definitions/330.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b311-random
+   Location: src/aegis/scrape/stealth.py:236:19
+235	        """
+236	        r = rng or random.Random()
+237	
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: src/aegis/scrape/swarm_agents.py:193:8
+192	            get_drift_tracker().quarantine(platform, QuarantineReason(reason), message)
+193	        except Exception:  # pragma: no cover - defensive
+194	            pass
+195	
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: src/aegis/scrape/topic.py:821:4
+820	        )
+821	    except Exception:
+822	        pass
+823	
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: src/aegis/scrape/topic.py:931:8
+930	            set_confidence_threshold(_threshold)
+931	        except Exception:
+932	            pass
+933	        conf = await asyncio.to_thread(score_batch, all_signals, threshold=_threshold)
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: src/aegis/scrape/topic.py:984:12
+983	                set_high_priority_slope(await _dyn.get_velocity_slope())
+984	            except Exception:
+985	                pass
+986	
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Low
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: src/aegis/trust/scores.py:91:20
+90	            rows = await conn.fetch(
+91	                f"""
+92	                SELECT prediction_confidence AS p, resolution_status AS s
+93	                FROM signal_outcomes
+94	                WHERE resolution_status IN ('correct', 'incorrect') {where}
+95	                """,  # noqa: S608 — `where` is a fixed literal, never user input
+96	                *args,
+
+--------------------------------------------------
+
+Code scanned:
+	Total lines of code: 92260
+	Total lines skipped (#nosec): 0
+	Total potential issues skipped due to specifically being disabled (e.g., #nosec BXXX): 0
+
+Run metrics:
+	Total issues (by severity):
+		Undefined: 0
+		Low: 138
+		Medium: 23
+		High: 29
+	Total issues (by confidence):
+		Undefined: 0
+		Low: 10
+		Medium: 15
+		High: 165
+Files skipped (0):

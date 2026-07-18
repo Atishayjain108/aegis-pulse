@@ -216,7 +216,20 @@ HMAC_SIGNATURE_ALGO: Final[str] = "sha256"
 # =============================================================================
 
 METRICS_HISTOGRAM_BUCKETS_SECONDS: Final[tuple[float, ...]] = (
-    0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0,
+    0.005,
+    0.01,
+    0.025,
+    0.05,
+    0.1,
+    0.25,
+    0.5,
+    1.0,
+    2.5,
+    5.0,
+    10.0,
+    30.0,
+    60.0,
+    120.0,
 )
 """Wide latency range so a single histogram covers both fast (cached) paths and
 slow (Cloudflare-challenged) paths without losing resolution in the middle."""

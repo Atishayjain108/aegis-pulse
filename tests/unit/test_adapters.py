@@ -400,8 +400,16 @@ def test_instagram_parse_no_shortcode_returns_none():
     from aegis.scrape.sources.instagram import InstagramAdapter, InstagramConfig
 
     adapter = InstagramAdapter(InstagramConfig(allow_red_tos=True))
-    post = SimpleNamespace(shortcode="", caption="test", likes=0, comments=0,
-                           is_video=False, date_utc=None, owner_profile=None, tagged_users=[])
+    post = SimpleNamespace(
+        shortcode="",
+        caption="test",
+        likes=0,
+        comments=0,
+        is_video=False,
+        date_utc=None,
+        owner_profile=None,
+        tagged_users=[],
+    )
     assert adapter.parse(post, ctx()) is None
 
 
@@ -476,5 +484,6 @@ def test_config_loads_defaults(monkeypatch):
     monkeypatch.setenv("AEGIS_PG_DSN", "postgresql://localhost/test")
     monkeypatch.setenv("AEGIS_REDIS_URL", "redis://localhost:6379/0")
     from aegis.config import Settings
+
     s = Settings()
     assert s.pg_dsn_str.startswith("postgresql")

@@ -78,6 +78,10 @@ target_metadata = None
 # ---------------------------------------------------------------------
 
 _RAW_SQL_DIR = _REPO_ROOT / "db" / "migrations"
+
+# Migration files that are SQLite-only / informational and must NOT be executed
+# against Postgres (their real schema is created at runtime in Python).
+_INFORMATIONAL_REVISIONS = frozenset({"0010_catalog"})
 _REV_TABLE = "aegis_sql_revisions"
 _FILENAME_RE = re.compile(r"^(\d{4})_[a-z0-9_]+\.sql$")
 
@@ -94,6 +98,10 @@ def _list_raw_sql_files() -> list[Path]:
     out: list[Path] = []
     for path in sorted(_RAW_SQL_DIR.iterdir()):
         if path.is_dir():
+            continue
+        if path.stem in _INFORMATIONAL_REVISIONS:
+            # SQLite-only DDL kept for documentation; the real schema is built
+            # at runtime in Python. Never execute it against Postgres.
             continue
         if _FILENAME_RE.match(path.name):
             out.append(path)
@@ -200,7 +208,7 @@ def run_migrations_online() -> None:
                 )
                 """
             )
-            rows = await conn_a.fetch(f"SELECT revision FROM {_REV_TABLE}")
+            rows = await conn_a.fetch(f"SELECT revision FROM {_REV_TABLE}")  # noqa: S608
             applied = {row["revision"] for row in rows}
 
             for path in _list_raw_sql_files():
@@ -213,7 +221,7 @@ def run_migrations_online() -> None:
                 # which supports multiple statements in one call.
                 await conn_a.execute(sql)
                 await conn_a.execute(
-                    f"INSERT INTO {_REV_TABLE} (revision) VALUES ($1)", revision
+                    f"INSERT INTO {_REV_TABLE} (revision) VALUES ($1)", revision  # noqa: S608
                 )
                 logger.info("Applied: %s", revision)
         finally:

@@ -1,0 +1,283 @@
+# pyproject.toml — AEGIS Pulse Phase 13: Testing & Quality Infrastructure
+# Integrates with the main aegis workspace as a standalone quality layer.
+# Python 3.12.x strict; all versions pinned for reproducibility.
+#
+# ASSUMPTIONS:
+#   - This file is placed at the repo root alongside the main pyproject.toml,
+#     OR merged into it. The [tool.*] sections are always safe to merge.
+#   - `uv sync --all-packages --all-extras` installs the main workspace first.
+#   - Tests in tests/ shadow the main tests/ directory convention already established.
+#   - Infrastructure (postgres, redis, minio) is available via docker-compose for integration tests.
+
+[build-system]
+requires = ["hatchling>=1.21.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aegis/testing"]
+
+[project]
+name = "aegis-phase13"
+version = "13.0.0"
+description = "AEGIS Pulse — Phase 13: Testing & Quality Infrastructure"
+requires-python = ">=3.12,<3.13"
+readme = "README.md"
+license = { text = "Proprietary" }
+
+dependencies = [
+    # rationale: core framework used throughout the system
+    "pytest>=8.3.3,<9",
+    # rationale: async test support (asyncio_mode=auto)
+    "pytest-asyncio>=0.24.0,<1",
+    # rationale: test coverage measurement and enforcement
+    # rationale: aligned with root workspace pin (5.0.0); phase13 works with 5.x API
+    "pytest-cov>=5.0.0,<7",
+    # rationale: rich terminal output for test results
+    "pytest-rich>=0.1.1,<1",
+    # rationale: xdist for parallel test execution
+    "pytest-xdist>=3.6.1,<4",
+    # rationale: mock library for stdlib
+    "pytest-mock>=3.14.0,<4",
+    # rationale: rerun flaky tests automatically
+    "pytest-rerunfailures>=14.0,<15",
+    # rationale: timeout enforcement per test
+    "pytest-timeout>=2.3.1,<3",
+    # rationale: benchmark / performance regression guard
+    "pytest-benchmark>=4.0.0,<5",
+    # rationale: property-based testing; aligned with root workspace pin (6.112.2)
+    "hypothesis>=6.112.2,<7",
+    # rationale: pandera for DataFrame schema validation
+    "pandera>=0.20.4,<1",
+    # rationale: httpx with HTTP/2 for async test client; aligned with root constraint (<0.30)
+    "httpx[http2]>=0.27,<0.30",
+    # rationale: async ASGI client (starlette TestClient replacement)
+    "asgi-lifespan>=2.1.0,<3",
+    # rationale: testcontainers for real Postgres/Redis/MinIO in integration tests
+    "testcontainers>=4.8.1,<5",
+    # rationale: faker for realistic fixture data generation
+    "faker>=30.3.0,<31",
+    # rationale: freezegun for deterministic datetime testing
+    "freezegun>=1.5.1,<2",
+    # rationale: respx for mocking httpx calls precisely
+    "respx>=0.21.1,<1",
+    # rationale: time machine — fast freezegun alternative for asyncio
+    "time-machine>=2.15.0,<3",
+    # rationale: memory profiler for perf tests
+    "memray>=1.14.0,<2",
+    # rationale: locust for load testing in perf suite
+    "locust>=2.31.8,<3",
+    # rationale: structlog for test log capture assertions
+    "structlog>=24.4.0,<25",
+    # rationale: pydantic v2 used throughout system
+    "pydantic>=2.11,<3",
+    # rationale: anyio backend selection for asyncio tests
+    "anyio>=4.6.2,<5",
+    # rationale: aiofiles used in storage tests
+    "aiofiles>=24.1.0,<25",
+]
+
+[project.optional-dependencies]
+# rationale: mutation testing — run separately, slow
+mutation = [
+    "mutmut>=2.4.5,<3",
+]
+# rationale: data quality validation for datalake tests
+dataquality = [
+    "great-expectations>=1.1.4,<2",
+]
+# rationale: API contract testing from OpenAPI spec
+schemathesis = [
+    "schemathesis>=3.33.0,<4",
+]
+
+[project.scripts]
+aegis-test = "aegis.testing.cli:main"
+
+# ---------------------------------------------------------------------------
+# pytest configuration
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+timeout = 60          # seconds; integration tests override per-test
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "-ra",              # show all non-passing reasons
+    "--tb=short",
+    "--cov=src/aegis",
+    "--cov-report=term-missing:skip-covered",
+    "--cov-report=html:htmlcov",
+    "--cov-report=xml:coverage.xml",
+    "--cov-fail-under=78",  # matches existing floor; phase13 aims for 85
+    "--no-header",
+]
+filterwarnings = [
+    "ignore::ResourceWarning",               # LangGraph Unix socket teardown
+    "ignore::DeprecationWarning:pkg_resources",
+    "error::pytest.PytestUnraisableExceptionWarning",
+]
+markers = [
+    "unit: fast, no I/O (deselect with -m 'not unit')",
+    "integration: requires docker services",
+    "e2e: full-stack end-to-end",
+    "perf: performance/load tests (slow)",
+    "property: hypothesis-driven property tests",
+    "mutation: mutation testing support",
+    "slow: tests taking > 5 seconds",
+    "gpu: requires CUDA GPU",
+    "ollama: requires local Ollama service",
+    "flaky: known-intermittent; handled by --rerun-failures",
+]
+
+# ---------------------------------------------------------------------------
+# Coverage configuration
+# ---------------------------------------------------------------------------
+[tool.coverage.run]
+source = ["src/aegis"]
+branch = true
+omit = [
+    "*/tests/*",
+    "*/test_*",
+    "*_test.py",
+    "*/migrations/*",
+    "*/conftest.py",
+    "aegis-harden/*",          # harden tests run separately
+    "*/llm/providers/*",       # provider adapters need live infra
+    "*/serving/*",             # FastAPI serving: covered by e2e
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if TYPE_CHECKING",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "@(abc\\.)?abstractmethod",
+    "\\.\\.\\.",
+]
+show_missing = true
+skip_covered = false
+fail_under = 78
+
+[tool.coverage.html]
+directory = "htmlcov"
+title = "AEGIS Pulse — Phase 13 Coverage"
+
+# ---------------------------------------------------------------------------
+# ruff — lint + format
+# ---------------------------------------------------------------------------
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",   # pycodestyle
+    "F",        # pyflakes
+    "I",        # isort
+    "N",        # pep8-naming
+    "UP",       # pyupgrade
+    "B",        # flake8-bugbear
+    "C4",       # flake8-comprehensions
+    "DTZ",      # flake8-datetimez (no naive datetimes)
+    "T20",      # flake8-print (no print statements)
+    "RET",      # flake8-return
+    "SIM",      # flake8-simplify
+    "TID",      # flake8-tidy-imports
+    "TCH",      # flake8-type-checking
+    "PTH",      # flake8-use-pathlib
+    "RUF",      # ruff-specific
+    "PL",       # pylint
+    "ANN",      # flake8-annotations
+    "S",        # flake8-bandit (security)
+    "BLE",      # flake8-blind-except (overridden for harden shim)
+    "A",        # flake8-builtins
+    "ARG",      # flake8-unused-arguments
+    "EM",       # flake8-errmsg
+    "FBT",      # flake8-boolean-trap
+    "ICN",      # flake8-import-conventions
+    "PIE",      # flake8-pie
+    "Q",        # flake8-quotes
+]
+ignore = [
+    "ANN101",   # missing self annotation — noise
+    "ANN102",   # missing cls annotation — noise
+    "ANN401",   # Any in return — needed for generic helpers
+    "S101",     # assert — used extensively in tests
+    "S311",     # pseudo-random — acceptable in test fixtures
+    "BLE001",   # blind except — globally ignored (harden shim pattern)
+    "PLR0913",  # too many arguments — fixtures legitimately have many
+    "FBT001",   # boolean positional — test params often boolean
+    "FBT002",   # boolean default — acceptable in test helpers
+    "EM101",    # string in exception — acceptable in tests
+    "EM102",    # f-string in exception — acceptable in tests
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["ANN", "ARG", "S", "PLR2004", "T20", "RET"]
+"conftest.py" = ["ANN", "ARG", "S", "T20"]
+"src/aegis/testing/*" = ["ANN001", "ANN002", "ANN003"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["aegis"]
+force-sort-within-sections = true
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+
+# ---------------------------------------------------------------------------
+# mypy — strict type checking
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_return_any = true
+warn_unused_ignores = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+show_error_codes = true
+pretty = true
+exclude = ["tests/", "docs/"]
+
+[[tool.mypy.overrides]]
+module = ["aegis.harden.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+    "testcontainers.*",
+    "locust.*",
+    "mutmut.*",
+    "great_expectations.*",
+    "schemathesis.*",
+    "hypothesis.*",
+    "memray.*",
+]
+ignore_missing_imports = true
+
+# ---------------------------------------------------------------------------
+# hypothesis settings
+# ---------------------------------------------------------------------------
+[tool.hypothesis]
+suppress_health_check = ["too_slow", "data_too_large"]
+deriving_strategies = true
+
+# ---------------------------------------------------------------------------
+# mutmut — mutation testing
+# ---------------------------------------------------------------------------
+[tool.mutmut]
+paths_to_mutate = "src/aegis/"
+tests_dir = "tests/unit/"
+runner = "python -m pytest -x -q --no-header --no-cov"
+# targets: reach ≥ 85% mutation kill rate

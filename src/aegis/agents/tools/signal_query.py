@@ -8,6 +8,7 @@ behavior; this tool just adapts the shape and error handling.
 
 Author: AEGIS Pulse core team
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -41,8 +42,9 @@ async def fetch_recent(
             message="aegis.db not importable",
         )
 
-    pool = get_shared_pool()
-    if pool is None:
+    try:
+        pool = get_shared_pool()
+    except RuntimeError:
         return ToolResult.failure(
             code="AEGIS-TOOL-SIGNAL-NO-POOL",
             message="no shared PgPool configured; call set_shared_pool() at startup",

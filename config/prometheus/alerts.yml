@@ -1,0 +1,59 @@
+# AEGIS Pulse alert rules (audit P8-1 / P8-2).
+#
+# These fire on the failure paths the audit found to be silent. They surface in
+# Prometheus (/alerts) and, once an Alertmanager receiver is configured, page a
+# human. Thresholds are conservative for a single-node laptop deployment.
+
+groups:
+  - name: aegis-availability
+    rules:
+      - alert: ServiceDown
+        expr: up{job=~"predict|execute-api|dashboard"} == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: "AEGIS service {{ $labels.service }} is DOWN"
+          description: "Prometheus cannot scrape {{ $labels.job }} for >2m."
+
+      - alert: PrometheusTargetMissing
+        expr: up == 0
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "Scrape target {{ $labels.job }} down >5m"
+          description: "{{ $labels.instance }} unreachable."
+
+  - name: aegis-pipeline
+    rules:
+      # execute-api exposes intake handle-failure counter (left-pending path).
+      - alert: IntakeHandlerFailing
+        expr: sum(increase(aegis_execute_intake_handle_failed_total[15m])) > 5
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "Intake worker failing to process verdicts"
+          description: ">5 handler failures in 15m — verdicts are being left pending."
+
+      # Redis rejecting writes (noeviction under memory pressure — P3-2).
+      - alert: RedisMemoryPressure
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.9
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: "Redis >90% of maxmemory — bus writes may be rejected"
+          description: "With noeviction, new stream entries will be refused."
+
+  - name: aegis-freshness
+    rules:
+      # IngestionBlackout DELETED 2026-07-17 (recovery protocol, LAYER (d)).
+      # The alert referenced aegis_ingest_signals_total — a metric with ZERO
+      # series in this Prometheus: no running process exports it (the
+      # observability variant is namespaced aegis_obs_*, and the aegis-host:8001
+      # target that might have served the core-metrics variant is down). An
+      # alert whose expr evaluates to empty can never fire; it sat "configured"
+      # through the entire 2026-07-03..16 blackout. Blackout detection now
+      # lives where it can actually bite: the autonomous container healthcheck
+      # (scripts/healthcheck_ingestion.py — SQL freshness on signals.scraped_at)
+      # and the scheduler's cycle_zero_yield / refused_stale_data ERROR events.
+      # Do not resurrect this alert without first proving the metric has live
+      # samples and demonstrating the alert firing end-to-end.

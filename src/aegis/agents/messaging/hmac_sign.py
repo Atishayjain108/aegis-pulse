@@ -12,6 +12,7 @@ verifier MUST reject messages signed with the default key.
 
 Author: AEGIS Pulse core team
 """
+
 from __future__ import annotations
 
 import hashlib

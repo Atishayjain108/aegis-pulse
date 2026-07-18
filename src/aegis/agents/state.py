@@ -12,6 +12,7 @@ the last write wins (race condition).
 
 Author: AEGIS Pulse core team
 """
+
 from __future__ import annotations
 
 import operator  # required at runtime — used as a reducer in Annotated[int, operator.add]
@@ -20,12 +21,12 @@ from typing import Annotated, Any, TypedDict
 # All types used in GraphState field annotations must be runtime imports.
 # LangGraph calls get_type_hints(GraphState) at StateGraph construction time,
 # which evaluates forward references; TYPE_CHECKING-only imports cause NameError.
+from aegis.schemas import SwarmResult
+
 from .schemas import AgentDecision, AgentVerdict, Priority, TrendCandidate
 
 
-def _merge_decisions(
-    left: list[AgentDecision], right: list[AgentDecision]
-) -> list[AgentDecision]:
+def _merge_decisions(left: list[AgentDecision], right: list[AgentDecision]) -> list[AgentDecision]:
     """Concatenate decision lists, dedupe by (agent, correlation_id).
 
     LangGraph parallel branches each return a list with one decision.
@@ -119,6 +120,21 @@ class GraphState(TypedDict, total=False):
     halt_reason: str
 
     # ------------------------------------------------------------------
+    # Phase 3 enrichment inputs (optional — supplied by CLI/API callers)
+    # ------------------------------------------------------------------
+    # Raw signal dicts from Phase 1 DB. When present, SCOUT and SENTINEL
+    # pass them to the Phase 3 bridge so the temporal/relational models
+    # can build real feature windows instead of returning empty heuristics.
+    signals: list[dict[str, Any]]
+
+    # ------------------------------------------------------------------
+    # Phase 6 — Swarm context (optional cross-platform market intelligence)
+    # ------------------------------------------------------------------
+    # Latest SwarmResult fetched from Redis by the runner before graph
+    # invocation. None when Redis is unavailable or no swarm has run yet.
+    swarm_context: SwarmResult | None
+
+    # ------------------------------------------------------------------
     # Operational
     # ------------------------------------------------------------------
     metadata: Annotated[dict[str, Any], _merge_dicts]
@@ -129,9 +145,11 @@ def initial_state(
     candidate: TrendCandidate,
     *,
     tenant_id: str = "default",
+    signals: list[dict[str, Any]] | None = None,
+    swarm_context: SwarmResult | None = None,
 ) -> GraphState:
     """Build a fresh state dict for a new graph invocation."""
-    return GraphState(
+    state = GraphState(
         candidate=candidate,
         correlation_id=candidate.correlation_id,
         trend_id=candidate.trend_id,
@@ -141,3 +159,8 @@ def initial_state(
         metadata={},
         error_count=0,
     )
+    if signals:
+        state["signals"] = signals
+    if swarm_context is not None:
+        state["swarm_context"] = swarm_context
+    return state

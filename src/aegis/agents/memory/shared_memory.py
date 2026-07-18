@@ -10,6 +10,7 @@ short structured breadcrumbs — not full payloads.
 
 Author: AEGIS Pulse core team
 """
+
 from __future__ import annotations
 
 import json
@@ -66,9 +67,7 @@ class SharedWorkingMemory:
         try:
             await pipe.execute()
         except Exception:
-            _log.exception(
-                "wm.put_failed", tenant_id=tenant_id, trend_id=trend_id, field=field
-            )
+            _log.exception("wm.put_failed", tenant_id=tenant_id, trend_id=trend_id, field=field)
 
     async def get(
         self,
@@ -114,9 +113,7 @@ class SharedWorkingMemory:
         try:
             await pipe.execute()
         except Exception:
-            _log.exception(
-                "wm.update_many_failed", tenant_id=tenant_id, trend_id=trend_id
-            )
+            _log.exception("wm.update_many_failed", tenant_id=tenant_id, trend_id=trend_id)
 
     async def delete(self, tenant_id: str, trend_id: str) -> None:
         try:

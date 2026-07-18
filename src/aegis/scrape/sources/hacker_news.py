@@ -34,6 +34,7 @@ from aegis.schemas.signal import (
     compute_content_hash,
 )
 from aegis.scrape.base import AdapterConfig, ScrapeContext, SourceAdapter
+from aegis.scrape.http_client import get_or_create_client
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -80,18 +81,20 @@ class HackerNewsAdapter(SourceAdapter[dict[str, Any]]):
         return "hacker-news"
 
     async def setup(self, ctx: ScrapeContext) -> None:
-        self._client = httpx.AsyncClient(
-            timeout=httpx.Timeout(self._hn_config.timeout_seconds),
+        self._client = await get_or_create_client(
+            "hn.algolia.com",
+            http2=False,
+            timeout=self._hn_config.timeout_seconds,
             headers={
                 "User-Agent": "aegis-pulse/0.1.0 (market intelligence; not a scraper)",
                 "Accept": "application/json",
             },
+            follow_redirects=False,
         )
 
     async def teardown(self, ctx: ScrapeContext) -> None:
-        if self._client is not None:
-            await self._client.aclose()
-            self._client = None
+        # Shared pooled client (PASS5-5B) — release the reference, never close.
+        self._client = None
 
     async def fetch_raw(  # type: ignore[override]
         self,
@@ -106,9 +109,7 @@ class HackerNewsAdapter(SourceAdapter[dict[str, Any]]):
 
         cfg = self._hn_config
         endpoint = (
-            f"{_ALGOLIA_BASE}/search_by_date"
-            if cfg.search_by_date
-            else f"{_ALGOLIA_BASE}/search"
+            f"{_ALGOLIA_BASE}/search_by_date" if cfg.search_by_date else f"{_ALGOLIA_BASE}/search"
         )
 
         page = 0
@@ -169,9 +170,7 @@ class HackerNewsAdapter(SourceAdapter[dict[str, Any]]):
             posted_at: datetime | None = None
             if created_at_str:
                 with contextlib.suppress(ValueError):
-                    posted_at = datetime.fromisoformat(
-                        created_at_str.replace("Z", "+00:00")
-                    )
+                    posted_at = datetime.fromisoformat(created_at_str.replace("Z", "+00:00"))
 
             hn_url = f"{_HN_ITEM_BASE}?id={obj_id}"
 
@@ -232,4 +231,4 @@ class HackerNewsAdapter(SourceAdapter[dict[str, Any]]):
             return None
 
 
-__all__ = ["HackerNewsAdapter", "HackerNewsConfig", "SCRAPER_VERSION"]
+__all__ = ["SCRAPER_VERSION", "HackerNewsAdapter", "HackerNewsConfig"]

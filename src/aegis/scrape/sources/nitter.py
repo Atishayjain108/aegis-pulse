@@ -75,7 +75,7 @@ class NitterConfig(AdapterConfig):
     """Nitter adapter config."""
 
     name: str = "nitter"
-    per_source_rps: float = 0.5   # 1 request per 2 seconds — conservative
+    per_source_rps: float = 0.5  # 1 request per 2 seconds — conservative
     timeout_seconds: float = 30.0
     max_retries: int = 3
     use_cloudflare_bypass: bool = False
@@ -101,7 +101,9 @@ class NitterAdapter(SourceAdapter[dict[str, Any]]):
         super().__init__(config, **kwargs)
         self._nt_config = config if isinstance(config, NitterConfig) else NitterConfig()
         self._client: httpx.AsyncClient | None = None
-        self._active_instance: str = self._nt_config.instances[0] if self._nt_config.instances else _NITTER_INSTANCES[0]
+        self._active_instance: str = (
+            self._nt_config.instances[0] if self._nt_config.instances else _NITTER_INSTANCES[0]
+        )
 
     @property
     def name(self) -> str:
@@ -228,8 +230,12 @@ class NitterAdapter(SourceAdapter[dict[str, Any]]):
                     except ValueError:
                         continue
 
-            url = f"https://twitter.com/{author_handle}/status/{tweet_id}" if author_handle else None
-            nitter_url = f"{raw.get('instance', _NITTER_INSTANCES[0])}/{author_handle}/status/{tweet_id}"
+            url = (
+                f"https://twitter.com/{author_handle}/status/{tweet_id}" if author_handle else None
+            )
+            nitter_url = (
+                f"{raw.get('instance', _NITTER_INSTANCES[0])}/{author_handle}/status/{tweet_id}"
+            )
 
             author: Author | None = None
             if author_handle:
@@ -242,9 +248,7 @@ class NitterAdapter(SourceAdapter[dict[str, Any]]):
 
             # Extract hashtags from tweet text
             hashtags = frozenset(
-                tag.lower()
-                for tag in re.findall(r"#(\w+)", text)
-                if len(tag) <= 128
+                tag.lower() for tag in re.findall(r"#(\w+)", text) if len(tag) <= 128
             )
 
             h = compute_content_hash(
@@ -321,7 +325,7 @@ def _parse_tweet_block(block: str) -> dict[str, Any] | None:
     """Extract fields from one Nitter tweet block."""
     try:
         # Tweet ID from permalink
-        id_match = re.search(r'/status/(\d+)', block)
+        id_match = re.search(r"/status/(\d+)", block)
         if not id_match:
             return None
         tweet_id = id_match.group(1)
@@ -391,4 +395,4 @@ def _clean_text(html_fragment: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
-__all__ = ["NitterAdapter", "NitterConfig", "SCRAPER_VERSION"]
+__all__ = ["SCRAPER_VERSION", "NitterAdapter", "NitterConfig"]

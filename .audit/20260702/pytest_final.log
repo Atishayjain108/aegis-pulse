@@ -1,0 +1,316 @@
+........................................................................ [  2%]
+........................................................................ [  4%]
+........................................................................ [  7%]
+........................................................................ [  9%]
+........................................................................ [ 12%]
+........................................................................ [ 14%]
+........................................................................ [ 17%]
+........................................................................ [ 19%]
+........................................................................ [ 22%]
+........................................................................ [ 24%]
+........................................................................ [ 27%]
+.............................................s.......................... [ 29%]
+........................................................................ [ 32%]
+........................................................................ [ 34%]
+........................................................................ [ 37%]
+........................................................................ [ 39%]
+.........................................s.............................. [ 42%]
+........................................................................ [ 44%]
+........................................................................ [ 47%]
+........................................................................ [ 49%]
+........................................................................ [ 52%]
+........................................................................ [ 54%]
+........................................................................ [ 57%]
+........................................................................ [ 59%]
+........................................................................ [ 62%]
+........................................................................ [ 64%]
+........................................................................ [ 67%]
+........................................................................ [ 69%]
+........................................................................ [ 72%]
+..................s..................................................... [ 74%]
+........................................................................ [ 77%]
+........................................................................ [ 79%]
+........................................................................ [ 82%]
+........................................................................ [ 84%]
+........................................................................ [ 87%]
+........................................................................ [ 89%]
+........................................................................ [ 92%]
+........................................................................ [ 94%]
+........................................................................ [ 97%]
+........................................................................ [ 99%]
+...                                                                      [100%]
+=============================== warnings summary ===============================
+tests/unit/agents/test_graph.py::TestBuildGraphSmoke::test_compiles
+  /home/atishayjain/code/aegis-pulse/.venv/lib/python3.12/site-packages/langgraph/cache/base/__init__.py:8: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning.
+    from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+
+---------- coverage: platform linux, python 3.12.7-final-0 -----------
+Name                                                         Stmts   Miss Branch BrPart  Cover   Missing
+--------------------------------------------------------------------------------------------------------
+aegis-phase4/src/aegis/execute/api/app.py                      120     89     22      0    22%   62-237
+aegis-phase4/src/aegis/execute/api/auth.py                      21     13      8      0    28%   23, 31-56
+aegis-phase4/src/aegis/execute/api/middleware.py                25     13      0      0    48%   25-52
+aegis-phase4/src/aegis/execute/api/routes/alerts.py             37     19      6      0    42%   22-28, 34-39, 49-50, 60-64, 74-75, 90-93
+aegis-phase4/src/aegis/execute/api/routes/capital.py           138     85     24      0    33%   82-88, 92-98, 102-108, 112-116, 122-127, 141-146, 163-184, 195-242, 253-256, 267-281, 296-324, 339-356
+aegis-phase4/src/aegis/execute/api/routes/dashboard.py          29     17      6      0    34%   23-29, 38-62
+aegis-phase4/src/aegis/execute/api/routes/health.py             29     18      2      0    35%   19, 30-45, 56-65
+aegis-phase4/src/aegis/execute/api/routes/killswitch.py         47     27      6      0    38%   35-41, 49-51, 60-74, 83-96
+aegis-phase4/src/aegis/execute/api/routes/stream.py             44     25      4      0    40%   30-36, 41-47, 51-71, 79-87
+aegis-phase4/src/aegis/execute/approval.py                      91     52      8      0    39%   35, 85-89, 93, 100-149, 162-175, 188-229, 240, 244-256
+aegis-phase4/src/aegis/execute/bus/__init__.py                  64     37      4      0    40%   39-41, 45, 49, 53-70, 74-76, 90-92, 95-100, 103-105, 110-116, 120
+aegis-phase4/src/aegis/execute/config.py                        65      6      8      1    88%   132, 169-171, 180, 186
+aegis-phase4/src/aegis/execute/engine.py                       191     87     32      4    48%   158-181, 243-288, 292, 296, 300, 317-348, 357-363, 372, 378-382, 388-394, 407-419, 429-435, 457, 463, 470-473
+aegis-phase4/src/aegis/execute/errors.py                        33      4      0      0    88%   168-171
+aegis-phase4/src/aegis/execute/killswitch/switch.py             45     19     16      4    49%   40->exit, 41->exit, 42->exit, 66-82, 87, 96-102, 106-107, 111
+aegis-phase4/src/aegis/execute/metrics.py                       70     20     10      4    68%   78, 81, 84, 87, 90, 95, 104, 110, 124, 136, 139, 143-148, 173, 234-236
+aegis-phase4/src/aegis/execute/outbox/drainer.py               117     89     16      0    21%   93-101, 105, 109-113, 123-128, 131-141, 146-171, 175-229, 241-302
+aegis-phase4/src/aegis/execute/outbox/writer.py                 22     11      0      0    50%   36, 40-65
+aegis-phase4/src/aegis/execute/pipeline.py                      78     42     14      0    39%   98-105, 115-221, 232-239
+aegis-phase4/src/aegis/execute/policy/classifier.py             25     20     16      0    12%   46-85
+aegis-phase4/src/aegis/execute/policy/composer.py              114     88     48      0    16%   65, 69, 78-86, 97-102, 106-114, 118-126, 133-162, 166-168, 177-197, 209-284
+aegis-phase4/src/aegis/execute/policy/deduper.py                41     25     12      0    30%   26, 47-53, 56, 60-81, 85-90
+aegis-phase4/src/aegis/execute/policy/throttle.py               35     17     10      2    44%   24->exit, 25->exit, 40-46, 49-50, 54-69
+aegis-phase4/src/aegis/execute/risk/gates.py                    73     18     26      9    71%   62, 66, 68, 74, 77, 79, 85, 87, 107-108, 124-129, 157-166
+aegis-phase4/src/aegis/execute/schemas/alert.py                100      7      8      3    89%   129, 138, 146-148, 153, 173
+aegis-phase4/src/aegis/execute/schemas/dashboard.py             25      1      0      0    96%   14
+aegis-phase4/src/aegis/execute/schemas/intent.py                43      5      4      0    81%   70-74
+aegis-phase4/src/aegis/execute/schemas/notification.py          31      1      0      0    97%   25
+aegis-phase4/src/aegis/execute/settlement.py                   146     21     32      9    80%   168-185, 224-231, 313-314, 319-320, 339-347, 367->372, 382->394, 384->386, 386->394, 388-389, 406->413
+aegis-phase4/src/aegis/execute/sizing/kelly.py                  46     22     10      3    48%   52-57, 75, 77, 109-143
+aegis-phase4/src/aegis/execute/store/repository.py             122     91     16      1    23%   44->exit, 48-72, 88, 93, 102-154, 157-165, 170-178, 189-197, 208-256, 259-262, 286-290, 310-316, 322-344, 349-356, 373-404, 415-416
+aegis-phase4/src/aegis/execute/utils/backoff.py                 13      7      4      0    35%   31-37
+aegis-phase4/src/aegis/execute/utils/hashing.py                 19      8      0      0    58%   19, 38-48, 53-55, 60
+aegis-phase4/src/aegis/execute/utils/hmac_signer.py             15      8      4      0    37%   25-28, 33-36
+aegis-phase4/src/aegis/execute/utils/time.py                    15      4      0      0    73%   20, 28, 34, 40
+aegis-phase4/src/aegis/execute/workers/drain_worker.py          38     23      2      0    38%   38-86
+aegis-phase4/src/aegis/execute/workers/intake_worker.py        240    192     60      0    16%   104-113, 117-128, 135-151, 155-156, 159-160, 165-175, 178-197, 201-218, 228-247, 250-272, 279-314, 317-320, 324-349, 353-364, 368-380, 393-400, 409-421, 453-472, 503-509
+aegis-phase12/src/aegis/security/audit/logger.py               163    124     32      1    21%   45, 78, 83-91, 95-107, 111, 114, 147-178, 189-230, 236-243, 247-271, 279-326, 330-348
+aegis-phase12/src/aegis/security/config.py                      61      7      8      2    81%   257, 265-273
+aegis-phase12/src/aegis/security/crypto.py                      77     52     12      0    28%   37-63, 73-79, 84-95, 100-104, 109-110, 120-124, 136-140, 145, 150, 155-157, 162-164, 169
+aegis-phase12/src/aegis/security/middleware/headers.py          29     18      8      0    30%   58-62, 66-90, 93-128, 135-140
+aegis-phase12/src/aegis/security/middleware/ratelimit.py        66     49     16      0    21%   113-119, 126-181, 198-219, 225-233
+aegis-phase12/src/aegis/security/pii/scrubber.py               126     89     42      0    22%   58-73, 171, 175, 197-202, 219-245, 267-302, 308-321, 325-346
+aegis-phase12/src/aegis/security/rbac/enforcer.py               79     58     16      0    22%   157, 166-178, 182-192, 207-253, 257-297
+aegis-phase12/src/aegis/security/secrets/manager.py            128    101     40      0    16%   64-68, 73-74, 77, 81-90, 94-96, 132-160, 168, 184-189, 197-206, 210-217, 223-259, 270, 275-292, 297-314
+aegis-phase12/src/aegis/security/secrets/rotation.py            90     60     10      0    30%   45, 58-64, 69, 74-75, 78, 109-113, 148-209, 219-241, 253, 259, 265, 271-272, 280-290
+aegis-phase12/src/aegis/security/tls/helpers.py                 55     43      6      0    20%   32, 42-54, 84-113, 123-143, 153
+aegis-phase12/src/aegis/security/tls/jwt_manager.py             96     57     10      0    37%   53, 57, 61, 91-92, 115-127, 148-151, 155-158, 165-173, 177-194, 198-204, 215-225, 232-247
+aegis-phase12/src/aegis/security/vault/_circuit_breaker.py      58     41     18      0    22%   31-39, 42-51, 54-57, 60-74, 78, 81-83
+aegis-phase12/src/aegis/security/vault/_errors.py               21      5      0      0    76%   48-51, 55
+aegis-phase12/src/aegis/security/vault/bootstrap.py             68     51     14      0    21%   125-127, 137-143, 149-159, 163-178, 182-197, 201-210, 213-218, 223
+aegis-phase12/src/aegis/security/vault/client.py               161    119     28      0    22%   75-83, 88-89, 92, 96-115, 123-129, 159-167, 197-203, 211-216, 220-221, 225-227, 244-251, 261-266, 270-272, 278-283, 296-355, 362-367, 371-398
+src/aegis/__init__.py                                           17      0      8      4    84%   44->47, 48->51, 52->55, 56->59
+src/aegis/agents/graph.py                                       80      2     10      0    98%   143, 148
+src/aegis/agents/llm/__init__.py                                11      5      0      0    55%   31-35
+src/aegis/agents/llm/guardrails.py                              67      2     26      1    97%   58->41, 92-93
+src/aegis/agents/llm/router.py                                 158     43     38      6    69%   127-129, 162-171, 174-176, 256-261, 265-270, 274-279, 283-288, 290->296, 311-316, 323-324
+src/aegis/agents/memory/__init__.py                              4      4      0      0     0%   22-26
+src/aegis/agents/messaging/hmac_sign.py                         32      1      8      1    95%   71
+src/aegis/agents/nodes/_demand.py                               72     46     12      3    35%   48, 54-70, 82-100, 113-129, 145
+src/aegis/agents/nodes/auditor.py                               59     12     12      2    77%   50, 105, 190-212
+src/aegis/agents/nodes/base.py                                  87     35     18      2    53%   83-85, 94-99, 144, 155-158, 172-206
+src/aegis/agents/nodes/compliance.py                            87     47     24      2    41%   43-45, 75, 91->94, 139-203, 224-245
+src/aegis/agents/nodes/geo_arbitrage.py                         65     11     16      1    83%   108, 193-213
+src/aegis/agents/nodes/hedge.py                                 65      8     16      2    88%   107, 192-208
+src/aegis/agents/nodes/historian.py                             58     19     10      3    62%   84-98, 104, 113->116, 147-169
+src/aegis/agents/nodes/narrative.py                             65     13     16      3    78%   79, 88, 111, 184-204
+src/aegis/agents/nodes/red_team.py                              68     11     28      2    84%   73, 85->87, 159-178
+src/aegis/agents/nodes/scout.py                                 88     24     22      5    72%   77, 121, 194-196, 200, 205, 214, 230-247, 264-287
+src/aegis/agents/nodes/sentinel.py                              87     28     16      6    65%   77-78, 84, 106-107, 167-169, 173, 178, 186, 199-216, 232-252
+src/aegis/agents/nodes/sourcer.py                               84     13     18      2    83%   177, 247-248, 303-324
+src/aegis/agents/runner.py                                     234     57     40     10    74%   66, 81-83, 94-120, 142, 190->197, 201-202, 210->217, 221-222, 290-291, 294->322, 318-319, 323-337, 341-342, 408-409, 414-415, 424-425, 465-466, 474-475, 515, 521-532, 559-562, 599-601, 617-620
+src/aegis/agents/schemas.py                                    146      2     12      1    98%   75, 230
+src/aegis/agents/state.py                                       65      1     12      1    97%   163
+src/aegis/agents/supervisor.py                                 218     19     82     11    89%   109-110, 114-115, 120->124, 158->160, 161, 167, 172->169, 174-175, 200, 209, 221, 229-231, 331, 366, 439-442
+src/aegis/agents/tools/base.py                                  43      4      0      0    91%   82-85
+src/aegis/agents/tools/historical.py                             9      4      0      0    56%   30-42
+src/aegis/agents/tools/monte_carlo.py                           56      2     10      2    94%   44, 88
+src/aegis/agents/tools/signal_query.py                          33      2      6      0    95%   39-40
+src/aegis/agents_phase3_glue/bridge.py                         116     34     30      5    68%   72-93, 147, 150, 192->195, 257-267, 286->292, 294-303, 342-344
+src/aegis/backup/__init__.py                                    10      1      0      0    90%   35
+src/aegis/backup/health.py                                     107      7     18      1    92%   179-180, 190-200
+src/aegis/backup/pgbackrest_manager.py                         193     71     20      2    64%   170-172, 312-320, 377-378, 384-406, 423-428, 434-437, 449-468, 472-502, 509-531
+src/aegis/backup/restic_manager.py                             138      1     20      2    98%   274, 364->360
+src/aegis/compliance/aml.py                                     51      5     20      2    90%   154, 166-167, 181-182
+src/aegis/compliance/counterfeit.py                            123     43     40      3    67%   119-121, 170-181, 187, 249-315
+src/aegis/compliance/engine.py                                 108      9     22      1    92%   212-213, 297-298, 352, 371-375
+src/aegis/compliance/fda.py                                    101      6     40      6    91%   63->66, 133, 144, 159-160, 195, 213
+src/aegis/compliance/ipr.py                                    151      6     56      8    93%   65->68, 110->113, 190, 225, 265, 300, 308, 338
+src/aegis/compliance/privacy.py                                 72      4     18      2    93%   131-134, 140->142
+src/aegis/comply/api/router.py                                  39      4      6      1    89%   44, 61-64
+src/aegis/comply/bridge/agents_bridge.py                        37      7      6      1    77%   52-58
+src/aegis/comply/bridge/phase4_bridge.py                        34      7      6      1    80%   62-63, 95-101
+src/aegis/comply/cli/__init__.py                               111     52     44      6    46%   76-100, 119-124, 128-130, 149, 166, 179-181, 199-201, 221-222, 234-240, 251
+src/aegis/comply/engine.py                                      63      4     18      2    93%   131-134, 146->145
+src/aegis/comply/errors.py                                      24      1      2      1    92%   26
+src/aegis/comply/llm/augmentor.py                              114     12     34      5    87%   47->exit, 147->153, 176->178, 183-184, 186, 193-194, 220, 225, 234-235, 244, 259-260
+src/aegis/comply/logging.py                                     10      2      2      1    75%   16-17, 25->36
+src/aegis/comply/matrix/scorer.py                               45      1     18      1    97%   130
+src/aegis/comply/rules/base.py                                 109     10     42      7    89%   98, 101-102, 105, 107, 112-113, 123, 127, 133
+src/aegis/comply/rules/loader.py                                55      4     10      1    92%   71-72, 83-84
+src/aegis/comply/trademark/clients.py                           75     20     10      1    73%   84-109
+src/aegis/config.py                                            134      4      4      2    96%   240, 373, 399, 403
+src/aegis/core/dynamic_thresholds.py                           111      5     22      3    94%   84, 193, 214->229, 261-262, 270
+src/aegis/core/event_bus.py                                     38      1      4      1    95%   43
+src/aegis/core/logging.py                                      111     12     32      7    87%   133-134, 138, 143-144, 196, 244, 251, 292, 402, 439-440
+src/aegis/core/metrics.py                                       53     14     16      3    67%   61, 85, 95-98, 106-109, 122-125
+src/aegis/core/resilience.py                                   183      3     38      8    95%   350, 403-404, 409->502, 414->421, 435->442, 450->457, 467->474, 482->489, 503->509
+src/aegis/dashboard/app.py                                    1133    338    188     26    67%   49-55, 70-74, 102-108, 113-115, 121-132, 161-165, 182-183, 193-220, 265-266, 277, 288-332, 342->346, 356->360, 363, 376, 419-420, 455-456, 463-464, 601-647, 751, 761-776, 871-876, 1025-1039, 1047-1080, 1096-1118, 1127-1132, 1140-1291, 1423-1424, 1439-1440, 1461-1462, 1496-1497, 1623, 1637, 1640-1643, 1677, 1702-1704, 1740->1738, 1742->1738, 1946->exit, 1973-2005, 2042-2052, 2099-2100, 2107, 2196-2197, 2237->2239, 2275->2283, 2290->2295, 2307->2314, 2318-2323, 2325-2328, 2449, 2497->2501, 2499->2501, 2502->2494, 2504-2505, 2506->2511, 2515-2516, 2528-2529, 2533-2534, 2541-2542
+src/aegis/dashboard/cli.py                                      54     41     12      0    20%   12-18, 23-44, 69-101
+src/aegis/datalake/__init__.py                                  26     10     12      5    61%   69-71, 73-75, 77-79, 81-83, 85-87
+src/aegis/datalake/_logging.py                                  34     15      6      1    50%   35, 44, 47-51, 54, 57, 60, 63, 67-71
+src/aegis/datalake/bronze/writer.py                             42      5      4      2    85%   51, 153, 155, 160-162
+src/aegis/datalake/catalog/registry.py                         160      4     24      3    96%   168, 171, 224, 293->298, 394
+src/aegis/datalake/facade.py                                   119      8      8      1    93%   221->223, 275-276, 282-283, 300-301, 305-306
+src/aegis/datalake/gold/aggregator.py                          129     42     32      4    63%   124->128, 131-139, 161-171, 286->288, 315-353, 360-386
+src/aegis/datalake/quality/gate.py                              81      1     18      2    97%   115, 141->143
+src/aegis/datalake/query/duckdb_engine.py                      131     29     20      5    76%   100-101, 117-130, 151, 154, 167, 172-173, 193-194, 236-242, 246, 264-265, 272
+src/aegis/datalake/retention.py                                103      8     30      4    89%   51, 94, 115->105, 206-208, 227, 235-236
+src/aegis/datalake/schemas.py                                  168      2      4      2    98%   46, 53
+src/aegis/datalake/settings.py                                  65     10     14      3    78%   121, 123, 140-144, 149-151
+src/aegis/datalake/silver/builder.py                           143     41     30      8    66%   154, 201-229, 303-315, 384-386, 405, 408-409, 413-421, 426, 433, 436-437, 439, 458, 460, 463-464
+src/aegis/datalake/storage/parquet.py                          102     14     22      2    87%   39-40, 164, 167-168, 185-186, 285-286, 289-290, 312-314
+src/aegis/db/dedup.py                                          263     78     92     15    68%   109, 111, 128-130, 140-154, 176-178, 195-208, 215, 226, 238, 300->297, 327->329, 366, 383, 392, 399-400, 403-404, 411->413, 435-517, 599, 606-614
+src/aegis/evolve/drift.py                                      149     31     36      4    78%   90->93, 236-262, 329-330, 357-358, 377-388, 408-430
+src/aegis/evolve/evidently_monitor.py                           60     24     14      2    62%   29-31, 74-121, 126->125, 128-129, 140-141
+src/aegis/evolve/experiment_tracker.py                          72     28     14      6    60%   35-37, 64-70, 79-85, 91-92, 98-99, 108-109, 115-123
+src/aegis/evolve/outcomes.py                                    77     12      2      0    85%   256-263, 272-295
+src/aegis/evolve/retrain.py                                    308     26     58      6    91%   209, 222, 279, 286-292, 308-309, 428-453, 748, 763-769, 774, 781-782, 795-796, 807-808, 931-932
+src/aegis/evolve/rl_policy.py                                  155      8     30      2    95%   232-238, 251, 271-273, 349
+src/aegis/evolve/settlement_loop.py                            115     15     18      4    86%   168, 179-185, 217-219, 319-320, 326-327, 361, 372-378
+src/aegis/execution_intel/audit.py                              46      3      2      0    94%   92-94
+src/aegis/execution_intel/buyer.py                              58     11      8      2    80%   56, 78-80, 91, 109-111, 125-127
+src/aegis/execution_intel/explain.py                            18      1      6      1    92%   61
+src/aegis/execution_intel/forecast.py                           59      8     10      2    86%   80, 107-109, 119, 134-136
+src/aegis/execution_intel/memory.py                            111     26     24      5    77%   80-82, 87, 105-107, 127, 158-160, 182, 213-215, 242-244, 256, 272-274, 291, 303-305
+src/aegis/execution_intel/supplier.py                           70     10      8      1    86%   55, 71-73, 128-130, 173-175
+src/aegis/geo/api.py                                            70      2      0      0    97%   118-119
+src/aegis/geo/arbitrage.py                                      84      2     18      2    96%   164, 205
+src/aegis/geo/demand.py                                         67      2      8      0    97%   157-158
+src/aegis/geo/fx.py                                             63      4     12      2    92%   77->75, 87, 120, 133-134
+src/aegis/intelligence/product_intel.py                        577     63    174     29    87%   299, 319, 334-335, 343-345, 412-413, 467, 483, 492->495, 515->511, 535-602, 681, 686->688, 688->673, 731, 736-737, 740, 818, 837, 839, 1088, 1090->1086, 1098, 1101, 1168->1173, 1202, 1224, 1231->1229, 1233, 1242, 1247, 1249, 1261, 1270-1272, 1280-1281, 1295
+src/aegis/intelligence/research_engine.py                      165      8     40      5    94%   249-253, 393-398, 409->413, 413->418, 424, 426
+src/aegis/llm/bridge/agents_bridge.py                           49     23     12      3    48%   65-88, 114-117, 159->178, 165-176
+src/aegis/llm/bridge/phase3_bridge.py                           41     13      0      0    68%   181-191, 227-248
+src/aegis/llm/bridge/phase4_bridge.py                           45     11      8      2    72%   144-163, 203->208, 250-251
+src/aegis/llm/cache.py                                         155     23     38      6    84%   147, 239-261, 299->311, 308-309, 344-345, 359->exit, 362-363, 372->374, 375-376, 389->exit
+src/aegis/llm/cli/commands.py                                  146     28     26      3    78%   206, 221-234, 285-294, 297-304
+src/aegis/llm/config.py                                         49      6     14      6    81%   200, 202, 204, 206, 208, 210
+src/aegis/llm/council.py                                        84      5     18      5    90%   113, 134, 169, 188, 192
+src/aegis/llm/errors.py                                         53      1      0      0    98%   44
+src/aegis/llm/eval/metrics.py                                   62      5      6      2    87%   40, 90-92, 146
+src/aegis/llm/gateway/gateway.py                               131     64     36      5    46%   126-177, 241-252, 265, 286->290, 303-313, 338-341, 373-380, 387-405, 415-417, 446-452
+src/aegis/llm/gateway/response.py                               31      2      2      1    91%   33, 84
+src/aegis/llm/guardrails/validator.py                           58      1     18      0    99%   154
+src/aegis/llm/instructor/adapter.py                             51      1     10      1    97%   156
+src/aegis/llm/metrics.py                                        61     19      4      2    68%   38-40, 45, 52, 55, 58, 61, 64, 118-126, 150
+src/aegis/llm/providers/base.py                                 92     29     14      2    65%   78-79, 85, 104-107, 193-250
+src/aegis/llm/registry/model_registry.py                       111     12     26      7    85%   53-55, 60, 93, 171, 185, 192, 210, 212, 214, 216
+src/aegis/llm/registry/prompt_registry.py                       95     11     20      5    86%   47-48, 110, 131-132, 142, 160, 168->167, 230-231, 250, 255
+src/aegis/llm/routing/cost_router.py                            36      3      8      2    89%   92, 112-118
+src/aegis/llm/routing/selector.py                               63      6      8      1    90%   46, 142-143, 186, 207-208
+src/aegis/llm/routing/semantic_router.py                        96     16     22      6    81%   55, 62, 103-104, 180-181, 206, 213-215, 222, 224->220, 233-240, 267-268
+src/aegis/llm/routing/task_router.py                            63      1     26      1    98%   226
+src/aegis/llm/tokenizer.py                                      77     17     18      4    74%   45-47, 73-74, 104-115, 244->251, 248-249, 264->270, 268-269
+src/aegis/memory/backfill.py                                    59      1      8      1    97%   163
+src/aegis/memory/graph.py                                       48      0      6      1    98%   86->85
+src/aegis/memory/verify.py                                      57      0      8      2    97%   95->94, 133->138
+src/aegis/mentor/intent.py                                     171     18     72     18    85%   145, 152->154, 155, 159, 169, 172, 184, 196, 202, 205, 212, 228, 232, 270, 284-285, 306-307, 310->314, 312->314, 315->318, 327
+src/aegis/mentor/mentor_agent.py                               127     16     42      8    86%   118, 120, 122, 124, 165-166, 241-244, 247, 250-251, 288-289, 319
+src/aegis/mentor/operators/base.py                              28      1      0      0    96%   68
+src/aegis/mentor/operators/customer.py                         208     46     60      9    77%   85-91, 109, 114-129, 133-134, 140-147, 162, 169-170, 184->186, 187->191, 189-190, 243, 345-347, 359-360, 363->378, 379->389, 398->407, 405-406
+src/aegis/mentor/operators/explore.py                           37      6      8      2    82%   34-36, 47-49, 61
+src/aegis/mentor/operators/finance.py                          113      7     30      3    93%   197, 221, 224-225, 227, 260-261
+src/aegis/mentor/operators/knowledge.py                         64      5     26      4    90%   36, 68->66, 70->74, 72-73, 106-107
+src/aegis/mentor/operators/ops.py                              146     31     28      8    78%   65-67, 72-78, 84, 139->145, 185, 196-198, 232, 235-237, 265-266, 269-270, 288-290, 302, 305-306, 308, 328-329, 336->338
+src/aegis/mentor/operators/research.py                          27      2      4      1    90%   39-41
+src/aegis/mentor/operators/supplier.py                         178     26     62      5    87%   67-73, 85-87, 94-100, 120-121, 127->142, 171, 176-178, 203-206, 357
+src/aegis/mentor/packs/d2c_india.py                             12      1      0      0    92%   76
+src/aegis/mentor/profiles.py                                    47      8      8      3    80%   117-119, 152, 154, 158-159, 161
+src/aegis/mentor/sector.py                                      60      4     10      0    94%   43, 47, 51, 94
+src/aegis/observability/metrics.py                              97     21     16      4    73%   84-96, 103-108, 115-120, 132->134, 135-140
+src/aegis/observability/sentry_init.py                          41      3      4      0    93%   64, 73, 82
+src/aegis/observability/tracing.py                              77     21      6      1    73%   94-116, 131->133, 143-144, 156-157, 169-170, 182-183, 190-192
+src/aegis/predict/backtest/metrics.py                           82      2     26      2    96%   53, 64
+src/aegis/predict/backtest/runner.py                           177     21     40      9    83%   137, 158-167, 172, 179, 204, 294->exit, 306, 347-348, 353, 364, 452-454
+src/aegis/predict/causal/attributor.py                          55      9     10      3    78%   93, 96, 106, 162-167, 250
+src/aegis/predict/causal/counterfactual.py                      67      7     24      4    86%   103->113, 109->113, 118, 121-124, 171-172
+src/aegis/predict/causal/explainer.py                           72      4     44      4    93%   91->102, 155, 176-177, 189
+src/aegis/predict/features/builder.py                          216     25     78      6    87%   125->120, 139, 233, 280->283, 292-293, 354, 391-429
+src/aegis/predict/features/graph.py                             80      4     22      2    94%   118-125, 169
+src/aegis/predict/features/velocity.py                          38      1     14      1    96%   73
+src/aegis/predict/inference/runner.py                          128     25     18      2    82%   145, 154, 161->186, 164-166, 197-209, 222-224, 269-270, 312-314, 368
+src/aegis/predict/models/factory.py                             32      6      2      0    82%   61-63, 71-73, 77-79
+src/aegis/predict/models/fusion.py                             103      3     34      3    96%   104, 138, 199
+src/aegis/predict/models/heuristic.py                          231     23     82     18    86%   67-71, 81, 92, 116, 198, 248, 261, 264, 269, 281, 284, 294, 348, 419, 432, 444, 446, 450, 491
+src/aegis/predict/models/uncertainty.py                         89      2     18      2    96%   154, 173
+src/aegis/predict/online/river_models.py                       100     21     16      1    79%   30-31, 80-81, 88-94, 104-107, 117-118, 148-149, 160-161
+src/aegis/predict/registry/promotion.py                         40      1     12      1    96%   99
+src/aegis/predict/registry/store.py                            156     17     30      7    86%   90-93, 121-124, 127->exit, 146->exit, 204-205, 221->224, 245-246, 252, 264, 269, 277, 288
+src/aegis/predict/resilience.py                                101      5     24      4    93%   75, 102, 112->119, 172, 193, 214
+src/aegis/predict/rl/policy.py                                  93     14     36      9    81%   78, 80, 93, 115-120, 175, 183, 208, 224, 284
+src/aegis/scheduler/health_checker.py                          226     27     50      1    89%   79, 203-204, 257-258, 286-303, 357-358, 378-379, 413-414, 444-445, 459-460, 492-493, 499, 534-535
+src/aegis/scheduler/sentinel.py                                150     67     28      3    56%   48-51, 55-58, 127-128, 132->130, 142-144, 151-173, 177-180, 193-202, 229-262, 269, 277-278
+src/aegis/schemas/signal.py                                    228     12     40      7    91%   206, 432, 450, 468-473, 539, 574, 593-596
+src/aegis/scrape/adapter_router.py                              87      2     24      2    96%   172-173, 178->191
+src/aegis/scrape/analytics.py                                  134     17     44     12    83%   94-96, 100->98, 102, 122, 130, 177, 191, 193, 255-257, 262, 273->271, 282-284, 292
+src/aegis/scrape/anomaly_detector.py                            40     23     12      0    37%   51-93
+src/aegis/scrape/base.py                                       227     52     36      3    74%   157-167, 171-176, 303, 392, 393->398, 434-435, 514-535, 546-548, 569-594
+src/aegis/scrape/budget.py                                      64      2     14      1    96%   144-145
+src/aegis/scrape/confidence.py                                  97      0     30      2    98%   156->158, 158->163
+src/aegis/scrape/creator_graph.py                               86     10     30      4    88%   31-32, 48->exit, 79->81, 96, 101-103, 142, 159-161
+src/aegis/scrape/dedup.py                                      127     23     42      9    80%   33-36, 78->exit, 85, 90, 100, 118, 124-125, 128->133, 131-132, 168, 178->189, 190-200
+src/aegis/scrape/ecommerce_utils.py                            133    104     62      2    18%   34-45, 60, 77, 97-123, 128-129, 144-178, 193-249, 254-279
+src/aegis/scrape/governor.py                                    45      1      4      1    96%   44
+src/aegis/scrape/harden_shim.py                                 68      9     10      2    83%   44->67, 58-59, 119, 153-154, 231-234
+src/aegis/scrape/http_client.py                                127     48     24      4    59%   108-112, 127-128, 137-149, 154, 166-185, 205, 207, 239-269, 364, 412-413
+src/aegis/scrape/normalizer.py                                  53      2     14      0    97%   39-40
+src/aegis/scrape/pattern_engine.py                             159      9     60      9    92%   61->59, 107, 192->191, 207, 217, 224, 226-227, 242, 249, 292
+src/aegis/scrape/patterns.py                                   153      5     60      6    95%   107-108, 119->121, 192, 196, 234, 282->280
+src/aegis/scrape/playwright_fetcher.py                          53     34      6      0    32%   32-39, 60-76, 92-118
+src/aegis/scrape/proxies.py                                    201     15     44      5    91%   256->253, 322, 399-400, 411-413, 425->427, 441-455
+src/aegis/scrape/schema_drift.py                               102      3     20      3    95%   136, 149, 185
+src/aegis/scrape/schema_guard.py                                41      1     16      1    96%   84
+src/aegis/scrape/semantic_index.py                             122     48     30      4    58%   29-30, 73-74, 78-100, 110, 114, 124-126, 136, 144, 153-154, 156-158, 169-181
+src/aegis/scrape/sentiment.py                                   36      2     12      0    96%   75-76
+src/aegis/scrape/session_tokens.py                              91     39     18      5    54%   91-92, 125-128, 142-144, 156-215, 246->251, 256, 263, 271->273, 278
+src/aegis/scrape/sources/_rss_base.py                          133     13     26      5    89%   55-57, 67, 183, 198, 210-211, 216->218, 223, 231, 288-290
+src/aegis/scrape/sources/amazon.py                             106     36     18      0    61%   108, 139-182, 238-240, 265-266
+src/aegis/scrape/sources/bestbuy.py                            105    105     16      0     0%   17-253
+src/aegis/scrape/sources/bing_news_rss.py                      114      4     20      4    94%   169, 174->exit, 186->174, 212-213, 270
+src/aegis/scrape/sources/business_standard_rss.py               14      1      0      0    93%   31
+src/aegis/scrape/sources/devto.py                              106     13     18      5    85%   86, 89, 99, 103, 113-115, 130, 168, 176, 188->194, 246-248
+src/aegis/scrape/sources/ebay_browse.py                        157    157     28      0     0%   22-331
+src/aegis/scrape/sources/economic_times_markets.py              65      8     16      4    85%   69, 90-91, 96->99, 107, 115, 173-175
+src/aegis/scrape/sources/etsy.py                               129    129     20      0     0%   19-281
+src/aegis/scrape/sources/github_trending.py                    123     15     18      5    86%   109, 114, 116, 125-130, 135, 216-218, 231->229, 277-278
+src/aegis/scrape/sources/google_news_rss.py                    113      6     22      5    92%   164, 167->exit, 179->167, 206, 259-261, 268
+src/aegis/scrape/sources/hacker_news.py                        103     16     22      7    82%   108, 118->exit, 128, 134-139, 147, 149, 155, 172-173, 229-231
+src/aegis/scrape/sources/investing_com_rss.py                   14      1      0      0    93%   32
+src/aegis/scrape/sources/medium_rss.py                          19      3      0      0    84%   34, 37-38
+src/aegis/scrape/sources/mint_rss.py                            14      1      0      0    93%   34
+src/aegis/scrape/sources/ndtv_profit.py                         14      1      0      0    93%   27
+src/aegis/scrape/sources/reddit_rss.py                         154     24     36      8    81%   63, 66, 147, 152, 160, 167, 171-184, 196-197, 203-205, 209-211, 285->289, 353-355
+src/aegis/scrape/sources/reuters_rss.py                         14      1      0      0    93%   33
+src/aegis/scrape/sources/wired_rss.py                           14      1      0      0    93%   26
+src/aegis/scrape/sources/yahoo_finance_rss.py                   21      4      0      0    81%   36, 39-41
+src/aegis/scrape/stealth.py                                     80      7     14      2    86%   302->307, 364->362, 619-627
+src/aegis/scrape/swarm.py                                      266      7     76      6    96%   170, 179->182, 183->173, 335-336, 419, 422, 432-433, 557->580
+src/aegis/scrape/swarm_agents.py                               165      2     32      2    98%   115->exit, 284-285
+src/aegis/scrape/topic.py                                      380     28    112     13    92%   372->371, 385->387, 394->396, 402->401, 410->414, 418->416, 502-510, 596-601, 621, 821-822, 884->890, 895-896, 931-932, 946-947, 984-985, 997-998, 1016-1017, 1026-1028, 1029->1033, 1034-1036, 1126->1129
+src/aegis/trust/calibration.py                                 103      9     46      9    88%   31, 46, 60, 64, 101, 122, 151, 161, 164
+src/aegis/trust/claim_emitter.py                               130     21     16      6    82%   125-126, 196-197, 229-232, 241-243, 304-305, 310-311, 339-340, 372, 379-381
+--------------------------------------------------------------------------------------------------------
+TOTAL                                                        27954   5672   5610    732    77%
+
+163 files skipped due to complete coverage.
+Coverage XML written to file coverage.xml
+
+FAIL Required test coverage of 78% not reached. Total coverage: 77.40%
+=========================== short test summary info ============================
+SKIPPED [1] tests/unit/datalake/test_storage.py:121: S3 backend probes endpoint on construction
+SKIPPED [1] tests/unit/geo/test_phase6_bridge.py:49: Phase 6 is available — skipping unavailability test
+SKIPPED [1] tests/unit/scrape/test_anomaly_detector.py:50: pyod optional extra not installed
+2880 passed, 3 skipped, 1 warning in 2098.24s (0:34:58)

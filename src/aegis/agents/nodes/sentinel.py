@@ -32,10 +32,13 @@ the pipeline forward; it advises on exits.
 
 Author: AEGIS Pulse core team
 """
+
 from __future__ import annotations
 
 import math
 from typing import TYPE_CHECKING, Any
+
+import structlog
 
 from ..llm import prompts
 from ..schemas import AgentDecision, AgentVerdict, TrendCandidate
@@ -44,6 +47,8 @@ from .base import AgentNode
 
 if TYPE_CHECKING:
     from ..state import GraphState
+
+_log = structlog.get_logger("aegis.agents.nodes.sentinel")
 
 _SAT_VOLUME_REFERENCE = 1000  # signals → maturity 1.0
 _PROCEED_THRESHOLD = 0.70  # exit recommended
@@ -91,12 +96,7 @@ class SentinelAgent(AgentNode):
         novelty_decay = 1.0 - max(0.0, min(1.0, candidate.novelty))
         coord = max(0.0, min(1.0, candidate.coordination_risk))
 
-        sat = (
-            0.40 * decay_score
-            + 0.25 * volume_maturity
-            + 0.20 * novelty_decay
-            + 0.15 * coord
-        )
+        sat = 0.40 * decay_score + 0.25 * volume_maturity + 0.20 * novelty_decay + 0.15 * coord
         sat = max(0.0, min(1.0, sat))
 
         if sat >= _PROCEED_THRESHOLD:
@@ -141,6 +141,87 @@ class SentinelAgent(AgentNode):
             details=details,
         )
 
+    async def _augment_with_phase3(
+        self,
+        candidate: TrendCandidate,
+        state: GraphState,
+        heuristic: AgentDecision,
+    ) -> AgentDecision | None:
+        """Enrich with Phase 3 decline-axis inference (p_decline, 6h horizon).
+
+        Phase 3's p_decline replaces the heuristic saturation index as the
+        score. The verdict is always kept from the heuristic floor.
+        """
+        try:
+            from aegis.agents_phase3_glue.bridge import enrich_sentinel_decision
+
+            enriched = await enrich_sentinel_decision(
+                {
+                    "trend_id": candidate.trend_id,
+                    "tenant_id": state.get("tenant_id", "default"),
+                    "signals": state.get("signals"),
+                    "feature_window": state.get("feature_window"),
+                },
+                primary_horizon=6,
+            )
+        except Exception as exc:
+            _log.warning("sentinel.phase3_skipped", reason=type(exc).__name__)
+            return None
+
+        p3 = enriched.get("phase3_decision")
+        if p3 is None:
+            return None
+
+        # Skip blending if Phase 3 itself failed (inference error, no signals).
+        halt_reasons: list[str] = p3.get("halt_reasons", [])
+        if any(r.startswith("phase3_inference_failed") for r in halt_reasons):
+            return None
+
+        # Skip blending if Phase 3 was a no-op (no signal/feature data). The
+        # bridge returns a score=0.0 placeholder; blending it would clobber the
+        # heuristic floor. A skipped Phase 3 must never alter the score.
+        if str(p3.get("reasoning", "")).startswith("phase3_skipped"):
+            return None
+
+        return self._blend_phase3(heuristic, p3)
+
+    def _blend_phase3(
+        self,
+        heuristic: AgentDecision,
+        p3: dict[str, Any],
+    ) -> AgentDecision:
+        """Merge Phase 3 decline-axis result into the heuristic decision.
+
+        Score ← Phase 3 p_decline (better calibrated decline signal).
+        Confidence ← 40% heuristic + 60% Phase 3.
+        Verdict stays from heuristic.
+        """
+        p3_score = float(p3.get("score", heuristic.score))
+        p3_conf = float(p3.get("confidence", heuristic.confidence))
+        blended_conf = max(0.0, min(1.0, 0.4 * heuristic.confidence + 0.6 * p3_conf))
+
+        p3_reasoning = str(p3.get("reasoning", ""))[:600]
+        new_reasoning = f"{heuristic.reasoning}\n[Phase3] {p3_reasoning}".strip()[:4000]
+
+        new_details = {
+            **heuristic.details,
+            "phase3": {
+                "verdict": p3.get("verdict"),
+                "score": p3_score,
+                "model_id": p3.get("model_id"),
+                "correlation_id": p3.get("correlation_id"),
+                "halt_reasons": p3.get("halt_reasons", []),
+            },
+        }
+        return heuristic.model_copy(
+            update={
+                "score": p3_score,
+                "confidence": blended_conf,
+                "reasoning": new_reasoning,
+                "details": new_details,
+            }
+        )
+
     async def _augment_with_llm(
         self,
         candidate: TrendCandidate,
@@ -160,7 +241,8 @@ class SentinelAgent(AgentNode):
                 volume_maturity=round(heuristic.details.get("volume_maturity", 0.0), 3),
                 signal_count=candidate.signal_count,
             )
-        except Exception:
+        except Exception as exc:
+            _log.debug("sentinel.llm_input_build_failed", error=str(exc))
             return None
         system_text = (
             "You are SENTINEL, the saturation detector. Reply JSON only: "
@@ -172,9 +254,7 @@ class SentinelAgent(AgentNode):
     def _extra_state(self, decision: AgentDecision) -> dict[str, Any]:
         return {
             "sentinel_saturation": float(decision.details.get("saturation_index", 0.0)),
-            "sentinel_recommended_exit": bool(
-                decision.details.get("recommended_exit", False)
-            ),
+            "sentinel_recommended_exit": bool(decision.details.get("recommended_exit", False)),
         }
 
     def _merge_partial(

@@ -104,8 +104,7 @@ class YouTubeAdapter(SourceAdapter[dict[str, Any]]):
     async def setup(self, ctx: ScrapeContext) -> None:
         if build is None:  # pragma: no cover
             raise RuntimeError(
-                "YouTubeAdapter requires google-api-python-client. "
-                "Run: uv sync --extra scrape"
+                "YouTubeAdapter requires google-api-python-client. " "Run: uv sync --extra scrape"
             )
 
         api_key = self._yt_config.api_key
@@ -144,13 +143,13 @@ class YouTubeAdapter(SourceAdapter[dict[str, Any]]):
 
             per_page = min(50, limit - total_yielded)
 
-            def _search(tok: str | None = page_token) -> dict[str, Any]:
+            def _search(tok: str | None = page_token, _per_page: int = per_page) -> dict[str, Any]:
                 req = self._service.search().list(
                     part="snippet",
                     q=query or "trending",
                     type="video",
                     order="relevance" if query else "viewCount",
-                    maxResults=per_page,
+                    maxResults=_per_page,
                     pageToken=tok,
                 )
                 return req.execute()  # type: ignore[no-any-return]
@@ -171,24 +170,25 @@ class YouTubeAdapter(SourceAdapter[dict[str, Any]]):
                 video_ids = [
                     item["id"]["videoId"]
                     for item in items
-                    if isinstance(item.get("id"), dict)
-                    and item["id"].get("videoId")
+                    if isinstance(item.get("id"), dict) and item["id"].get("videoId")
                 ]
                 if video_ids:
                     await self._rate_limit()
                     self._record_request_metric(method="yt_videos")
 
                     def _videos(vids: list[str] = video_ids) -> dict[str, Any]:
-                        return self._service.videos().list(  # type: ignore[no-any-return]
-                            part="snippet,statistics,contentDetails",
-                            id=",".join(vids),
-                        ).execute()
+                        return (
+                            self._service.videos()
+                            .list(  # type: ignore[no-any-return]
+                                part="snippet,statistics,contentDetails",
+                                id=",".join(vids),
+                            )
+                            .execute()
+                        )
 
                     try:
                         vids_resp = await asyncio.to_thread(_videos)
-                        details_map = {
-                            v["id"]: v for v in vids_resp.get("items", [])
-                        }
+                        details_map = {v["id"]: v for v in vids_resp.get("items", [])}
                     except Exception as e:
                         log.warning("youtube.videos.failed", error=str(e))
 
@@ -224,9 +224,7 @@ class YouTubeAdapter(SourceAdapter[dict[str, Any]]):
             posted_at: datetime | None = None
             if published_str:
                 with contextlib.suppress(ValueError):
-                    posted_at = datetime.fromisoformat(
-                        published_str.replace("Z", "+00:00")
-                    )
+                    posted_at = datetime.fromisoformat(published_str.replace("Z", "+00:00"))
 
             stats = detail.get("statistics", {})
             views = _int_or_none(stats.get("viewCount"))
@@ -258,9 +256,7 @@ class YouTubeAdapter(SourceAdapter[dict[str, Any]]):
 
             raw_tags: list[str] = (detail.get("snippet") or {}).get("tags") or []
             tags = frozenset(
-                t.lower().replace(" ", "_")[:128]
-                for t in raw_tags[:20]
-                if t and len(t.strip()) > 0
+                t.lower().replace(" ", "_")[:128] for t in raw_tags[:20] if t and len(t.strip()) > 0
             )
 
             h = compute_content_hash(
@@ -325,4 +321,4 @@ def _int_or_none(v: Any) -> int | None:
         return None
 
 
-__all__ = ["YouTubeAdapter", "YouTubeConfig", "SCRAPER_VERSION"]
+__all__ = ["SCRAPER_VERSION", "YouTubeAdapter", "YouTubeConfig"]

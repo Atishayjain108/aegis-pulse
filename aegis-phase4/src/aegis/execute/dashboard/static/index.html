@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AEGIS Pulse — Execute</title>
+  <style>
+    :root {
+      --bg: #0b0f17;
+      --panel: #121826;
+      --panel-2: #18202f;
+      --border: #232b3d;
+      --text: #e6e9ef;
+      --muted: #8892a6;
+      --accent: #5eead4;
+      --enter: #22c55e;
+      --exit: #ef4444;
+      --hold: #eab308;
+      --block: #94a3b8;
+      --degraded: #f97316;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; padding: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+        Roboto, "Helvetica Neue", Arial, sans-serif;
+      font-size: 14px;
+      line-height: 1.4;
+    }
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 24px;
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+      position: sticky; top: 0; z-index: 10;
+    }
+    header h1 { margin: 0; font-size: 16px; letter-spacing: 0.04em; }
+    header h1 .v { color: var(--muted); font-weight: 400; margin-left: 8px; }
+    .status { display: flex; gap: 14px; align-items: center; }
+    .pill {
+      padding: 4px 10px; border-radius: 999px; font-size: 12px; border: 1px solid var(--border);
+    }
+    .pill.ok { color: var(--enter); border-color: var(--enter); }
+    .pill.err { color: var(--exit); border-color: var(--exit); }
+    .pill.warn { color: var(--hold); border-color: var(--hold); }
+    main { padding: 16px 24px; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 14px;
+    }
+    .card .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
+    .card .value { font-size: 22px; font-weight: 600; margin-top: 4px; }
+    .card .hint { color: var(--muted); font-size: 11px; margin-top: 2px; }
+    .table-wrap { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+    .table-wrap h2 { margin: 0; padding: 12px 14px; font-size: 13px; letter-spacing: 0.04em; background: var(--panel-2); border-bottom: 1px solid var(--border); text-transform: uppercase; color: var(--muted); }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
+    th { color: var(--muted); font-weight: 500; text-transform: uppercase; font-size: 11px; letter-spacing: 0.06em; background: var(--panel-2); }
+    td.mono, th.mono { font-family: ui-monospace, "JetBrains Mono", Menlo, monospace; }
+    td.trunc { max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
+    .badge { padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+    .badge.ENTER { background: rgba(34,197,94,0.15); color: var(--enter); }
+    .badge.EXIT { background: rgba(239,68,68,0.15); color: var(--exit); }
+    .badge.HOLD { background: rgba(234,179,8,0.15); color: var(--hold); }
+    .badge.BLOCK { background: rgba(148,163,184,0.15); color: var(--block); }
+    .badge.DEGRADED { background: rgba(249,115,22,0.15); color: var(--degraded); }
+    .prio { font-weight: 700; font-family: ui-monospace, monospace; }
+    .prio.P0 { color: var(--exit); }
+    .prio.P1 { color: var(--degraded); }
+    .prio.P2 { color: var(--text); }
+    .prio.P3 { color: var(--muted); }
+    .controls { display: flex; gap: 8px; margin-bottom: 16px; align-items: center; }
+    input[type=text] {
+      background: var(--panel); border: 1px solid var(--border); color: var(--text);
+      padding: 6px 10px; border-radius: 6px; width: 320px; font-family: inherit;
+    }
+    button {
+      background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
+      padding: 6px 12px; border-radius: 6px; cursor: pointer; font: inherit;
+    }
+    button:hover { background: #1f293b; }
+    .empty { padding: 24px; color: var(--muted); text-align: center; font-style: italic; }
+    .live-dot {
+      display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+      background: var(--muted); margin-right: 6px; vertical-align: middle;
+    }
+    .live-dot.on { background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: pulse 1.4s ease-in-out infinite; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+  </style>
+</head>
+<body>
+<header>
+  <h1>AEGIS PULSE — EXECUTE <span class="v" id="version"></span></h1>
+  <div class="status">
+    <span id="stream-state" class="pill warn"><span class="live-dot" id="live-dot"></span>connecting…</span>
+    <span id="ks-state" class="pill ok">KILLSWITCH: ?</span>
+  </div>
+</header>
+<main>
+  <div class="controls">
+    <label for="tenant-input">Tenant:</label>
+    <input type="text" id="tenant-input" placeholder="00000000-0000-0000-0000-000000000000" />
+    <button id="apply-tenant">Apply</button>
+    <button id="refresh">Refresh snapshot</button>
+  </div>
+  <div class="grid" id="cards"></div>
+  <div class="table-wrap">
+    <h2>Recent alerts</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>Verdict</th>
+          <th>Prio</th>
+          <th>Trend</th>
+          <th>Score</th>
+          <th>Conf</th>
+          <th>Source</th>
+          <th class="trunc">Title</th>
+        </tr>
+      </thead>
+      <tbody id="alerts-body">
+        <tr><td colspan="8" class="empty">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</main>
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const fmt = (n, d = 2) => (n == null ? "—" : Number(n).toFixed(d));
+  const fmtTime = (iso) => {
+    if (!iso) return "";
+    const t = new Date(iso);
+    return t.toLocaleString();
+  };
+
+  // Persist tenant in localStorage
+  const TENANT_KEY = "aegis_tenant_id";
+  function getTenant() {
+    return localStorage.getItem(TENANT_KEY) || "";
+  }
+  function setTenant(v) {
+    localStorage.setItem(TENANT_KEY, v);
+  }
+
+  function renderCards(cards) {
+    const root = $("cards");
+    root.innerHTML = "";
+    cards.forEach((c) => {
+      const div = document.createElement("div");
+      div.className = "card";
+      div.innerHTML = `
+        <div class="label">${c.label}</div>
+        <div class="value">${c.value}</div>
+        <div class="hint">${c.hint || ""}</div>`;
+      root.appendChild(div);
+    });
+  }
+
+  function rowFor(a) {
+    return `
+      <tr>
+        <td class="mono">${fmtTime(a.created_at)}</td>
+        <td><span class="badge ${a.verdict}">${a.verdict}</span></td>
+        <td class="prio P${a.priority}">P${a.priority}</td>
+        <td class="mono">${a.trend_id}</td>
+        <td>${fmt(a.score)}</td>
+        <td>${fmt(a.confidence)}</td>
+        <td>${a.source}</td>
+        <td class="trunc">${a.title || ""}</td>
+      </tr>`;
+  }
+
+  function renderAlerts(alerts) {
+    const tb = $("alerts-body");
+    if (!alerts.length) {
+      tb.innerHTML = '<tr><td colspan="8" class="empty">No alerts yet.</td></tr>';
+      return;
+    }
+    tb.innerHTML = alerts.map(rowFor).join("");
+  }
+
+  async function loadSnapshot() {
+    const tenant = getTenant();
+    if (!tenant) {
+      $("alerts-body").innerHTML = '<tr><td colspan="8" class="empty">Set a tenant UUID above to begin.</td></tr>';
+      return;
+    }
+    try {
+      const r = await fetch("/snapshot", { headers: { "X-Aegis-Tenant": tenant } });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const snap = await r.json();
+      $("ks-state").textContent = "KILLSWITCH: " + snap.killswitch_state;
+      $("ks-state").className = "pill " + (snap.killswitch_state === "ARMED" ? "ok" : "err");
+      renderCards(snap.cards);
+      renderAlerts(snap.recent_alerts);
+    } catch (e) {
+      $("alerts-body").innerHTML = `<tr><td colspan="8" class="empty">Snapshot failed: ${e.message}</td></tr>`;
+    }
+  }
+
+  function connectSSE() {
+    const es = new EventSource("/stream");
+    es.onopen = () => {
+      $("stream-state").innerHTML = '<span class="live-dot on"></span>live';
+      $("stream-state").className = "pill ok";
+    };
+    es.onerror = () => {
+      $("stream-state").innerHTML = '<span class="live-dot"></span>reconnecting…';
+      $("stream-state").className = "pill warn";
+    };
+    es.addEventListener("alert.created", () => loadSnapshot());
+    es.addEventListener("stream.opened", () => loadSnapshot());
+  }
+
+  // --- bootstrap ---
+  $("version").textContent = "0.4.0";
+  const t = getTenant();
+  if (t) $("tenant-input").value = t;
+  $("apply-tenant").addEventListener("click", () => {
+    const v = $("tenant-input").value.trim();
+    setTenant(v);
+    loadSnapshot();
+  });
+  $("refresh").addEventListener("click", loadSnapshot);
+  loadSnapshot();
+  connectSSE();
+})();
+</script>
+</body>
+</html>

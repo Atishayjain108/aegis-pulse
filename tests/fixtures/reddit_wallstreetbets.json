@@ -1,0 +1,58 @@
+{
+  "kind": "Listing",
+  "data": {
+    "children": [
+      {
+        "kind": "t3",
+        "data": {
+          "id": "abc123",
+          "title": "NVDA calls printing money this week",
+          "selftext": "Bought 50 calls at open, already up 40%. AI wave is real.",
+          "subreddit": "wallstreetbets",
+          "author": "stonks_trader",
+          "score": 4521,
+          "num_comments": 312,
+          "url": "https://www.reddit.com/r/wallstreetbets/comments/abc123/nvda_calls/",
+          "permalink": "/r/wallstreetbets/comments/abc123/nvda_calls/",
+          "created_utc": 1716076800.0,
+          "is_self": true,
+          "over_18": false
+        }
+      },
+      {
+        "kind": "t3",
+        "data": {
+          "id": "def456",
+          "title": "I lost everything on TSLA puts",
+          "selftext": "Musk tweeted again and I got wrecked. Down 80% in one day.",
+          "subreddit": "wallstreetbets",
+          "author": "ruined_again",
+          "score": 7890,
+          "num_comments": 889,
+          "url": "https://www.reddit.com/r/wallstreetbets/comments/def456/tsla_puts/",
+          "permalink": "/r/wallstreetbets/comments/def456/tsla_puts/",
+          "created_utc": 1716080400.0,
+          "is_self": true,
+          "over_18": false
+        }
+      },
+      {
+        "kind": "t3",
+        "data": {
+          "id": "ghi789",
+          "title": "SPY 420 EOD — technical analysis",
+          "selftext": "Resistance at 420, support at 415. Breakout imminent.",
+          "subreddit": "wallstreetbets",
+          "author": "chart_wizard",
+          "score": 2100,
+          "num_comments": 145,
+          "url": "https://www.reddit.com/r/wallstreetbets/comments/ghi789/spy_420/",
+          "permalink": "/r/wallstreetbets/comments/ghi789/spy_420/",
+          "created_utc": 1716084000.0,
+          "is_self": true,
+          "over_18": false
+        }
+      }
+    ]
+  }
+}

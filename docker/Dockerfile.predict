@@ -1,0 +1,125 @@
+# =====================================================================
+# AEGIS Pulse — Phase 3 Predict Serving
+#
+# Multi-stage build:
+#   * stage 1 (builder): install deps into a venv
+#   * stage 2 (runtime): copy venv into a slim image, drop dev tooling
+#
+# Image size target: < 250 MB without optional ML deps (heuristic-only path)
+#                    < 1.4 GB with torch + onnxruntime
+#
+# The runtime image runs as non-root (uid 10001) and uses tini as PID 1
+# for signal forwarding (FastAPI's lifespan teardown depends on SIGTERM).
+# =====================================================================
+
+ARG PYTHON_VERSION=3.12.7
+ARG INSTALL_OPTIONAL_ML=0   # set to 1 to bake in torch + onnxruntime
+ARG INSTALL_SCRAPE=0        # set to 1 for the autonomous scheduler image:
+                            # installs the [scrape] extra (defusedxml,
+                            # feedparser, bs4, ...) and gates the build on an
+                            # import walk of every aegis.scrape module.
+                            # 2026-07-03..15 blackout: the scheduler ran scrape
+                            # adapters on an image that only installed
+                            # [predict]; 20 source modules were unimportable.
+
+# ---------- stage 1: builder ----------
+FROM python:${PYTHON_VERSION}-slim-bookworm AS builder
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        curl \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# uv is pinned and lives in the SYSTEM python, NOT /opt/venv: `uv sync`
+# makes /opt/venv match the lockfile exactly and would purge anything the
+# lock doesn't pin — including uv itself if it lived there.
+RUN /usr/local/bin/python -m pip install uv==0.5.7
+
+WORKDIR /app
+COPY pyproject.toml uv.lock README.md /app/
+COPY src /app/src
+# uv reads [tool.uv.workspace].members from pyproject.toml and must be able to
+# parse each member's pyproject — copy them all even though predict only needs
+# the `aegis` package. Missing dirs → "Failed to parse entry: aegis-harden".
+COPY aegis-phase4 /app/aegis-phase4
+COPY aegis-harden /app/aegis-harden
+COPY aegis-phase12 /app/aegis-phase12
+COPY aegis-phase13 /app/aegis-phase13
+
+# Lockfile-driven, drift-proof install. 2026-07-16 incident: the previous
+# `uv pip install "/app[predict]"` re-resolved from pyproject.toml and IGNORED
+# uv.lock — the image pulled datasketch 2.0.0 against a host lock of 1.10.0
+# and broke MinHash at db/dedup.py:232 on the first working scrape cycle.
+# `uv sync --locked` installs EXACTLY what uv.lock pins and FAILS the build
+# if uv.lock is stale w.r.t. pyproject.toml. It never silently re-resolves.
+# One sync per image flavor (sync prunes extras it wasn't asked for, so it
+# must not be split into sequential layering).
+ARG INSTALL_SCRAPE
+ENV UV_PROJECT_ENVIRONMENT=/opt/venv
+COPY scripts/smoke_import_scrape.py /app/scripts/smoke_import_scrape.py
+RUN if [ "$INSTALL_SCRAPE" = "1" ] ; then \
+        /usr/local/bin/uv sync --locked --no-dev --no-editable \
+            --extra predict --extra scrape \
+        && PYTHONPATH=/app/src AEGIS_ENV=dev /opt/venv/bin/python \
+            /app/scripts/smoke_import_scrape.py ; \
+    else \
+        /usr/local/bin/uv sync --locked --no-dev --no-editable \
+            --extra predict ; \
+    fi
+
+ARG INSTALL_OPTIONAL_ML
+RUN if [ "$INSTALL_OPTIONAL_ML" = "1" ] ; then \
+        uv pip install --python /opt/venv/bin/python --no-cache-dir \
+            "torch==2.5.1+cpu" \
+            --index-url https://download.pytorch.org/whl/cpu \
+            && uv pip install --python /opt/venv/bin/python --no-cache-dir \
+                "onnx==1.17.0" "onnxruntime==1.20.1" ; \
+    fi
+
+# ---------- stage 2: runtime ----------
+FROM python:${PYTHON_VERSION}-slim-bookworm AS runtime
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH="/opt/venv/bin:$PATH" \
+    AEGIS_ENV=prod \
+    AEGIS_PHASE=3
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        tini \
+        ca-certificates \
+        curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --system --gid 10001 aegis \
+    && useradd --system --uid 10001 --gid aegis --create-home --home-dir /home/aegis aegis
+
+COPY --from=builder /opt/venv /opt/venv
+COPY --from=builder /app/src /app/src
+COPY --from=builder /app/scripts/smoke_import_scrape.py /app/scripts/smoke_import_scrape.py
+# LAYER (c): SQL-freshness healthcheck for the autonomous scheduler flavor.
+COPY scripts/healthcheck_ingestion.py /app/scripts/healthcheck_ingestion.py
+
+WORKDIR /app
+ENV PYTHONPATH=/app/src
+
+USER aegis
+
+EXPOSE 8000
+
+# Graceful shutdown: uvicorn handles SIGTERM if tini is PID 1.
+ENTRYPOINT ["tini", "--"]
+
+# Liveness probe target.
+HEALTHCHECK --interval=10s --timeout=2s --start-period=20s --retries=3 \
+    CMD curl -fsS http://localhost:8000/healthz || exit 1
+
+CMD ["uvicorn", "aegis.predict.serving.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--loop", "uvloop", "--http", "httptools", "--no-access-log"]

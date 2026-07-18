@@ -135,6 +135,25 @@ docker exec -it aegis-redis redis-cli
 DB DSN: `postgresql://aegis_app:aegis_app_dev_pw@localhost:5433/aegis`  
 Redis URL: `redis://localhost:6380/0`
 
+### Docker command gotchas (INFRA-4 / INFRA-5)
+
+- **`exec` / `logs` take the SERVICE name, not the container name.** Service
+  names are the keys in `docker-compose.yml` (`postgres`, `redis`, `dashboard`,
+  `predict`, `execute-api`, `loki`, …); container names are the `aegis-`-prefixed
+  runtime names (`aegis-postgres`, …). Using a container name yields a misleading
+  `"service X is not running"` even when it's healthy.
+  ```bash
+  docker compose logs -f predict          # ✅ service name
+  docker compose exec postgres psql -U aegis_app -d aegis
+  docker compose logs -f aegis-predict    # ❌ container name → "not running"
+  ```
+- **`predict` port mapping is `8100:8000`.** The container listens on `8000`
+  internally; the host sees it on **`:8100`**. Docs refer to ":8100" (host side) —
+  that's correct, not a typo. In-cluster callers use `http://predict:8000`.
+- **Dashboard runs on the HOST, not in Docker.** `uv run aegis dashboard serve`
+  (`:8300`) is the supported path; the compose `dashboard` service is opt-in only
+  behind `--profile dashboard` and carries no `docker.sock` (see INFRA-1/2).
+
 ---
 
 ## 5. Phase 2 Agent Pipeline

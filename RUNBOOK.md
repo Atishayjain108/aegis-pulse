@@ -1,1163 +1,1101 @@
-# AEGIS Pulse — Complete Runbook
 
-> Phase 0 → Phase 1 → Phase 2: full step-by-step guide  
-> Every command, every file, every data flow, every UI explained.
+# AEGIS Pulse — Operations Runbook
 
----
-
-## Table of Contents
-
-1. [Project Architecture](#1-project-architecture)
-2. [Prerequisites & One-Time Setup](#2-prerequisites--one-time-setup)
-3. [Start the Stack](#3-start-the-stack)
-4. [How to See the Database (Docker)](#4-how-to-see-the-database-docker)
-5. [Phase 0 — Data Ingestion (Scrape)](#5-phase-0--data-ingestion-scrape)
-6. [Phase 1 — Data Storage & Inspection](#6-phase-1--data-storage--inspection)
-7. [Phase 2 — Agent Intelligence Pipeline](#7-phase-2--agent-intelligence-pipeline)
-8. [Data Flow: Phase 0 → 1 → 2](#8-data-flow-phase-0--1--2)
-9. [Seeing Graphs, Metrics & Traces](#9-seeing-graphs-metrics--traces)
-10. [All CLI Commands Reference](#10-all-cli-commands-reference)
-11. [File Map — What Every File Does](#11-file-map--what-every-file-does)
-12. [What to Expect: Outputs Explained](#12-what-to-expect-outputs-explained)
-13. [Troubleshooting](#13-troubleshooting)
+Last verified: **2026-06-08**  
+Maintained by: engineering  
+Emergency contact: check `AEGIS_ALERT_*` env vars for configured notification channels
 
 ---
 
-## 1. Project Architecture
+## Quick Reference
 
-```
-╔══════════════════════════════════════════════════════════════════╗
-║                    AEGIS PULSE SYSTEM                           ║
-╠══════════════════════════════════════════════════════════════════╣
-║                                                                  ║
-║  ┌─────────────────────────────────────────────────────────┐   ║
-║  │              PHASE 0 — Data Ingestion                   │   ║
-║  │                                                         │   ║
-║  │  Web Sources: Reddit, HackerNews, GitHub, TikTok,       │   ║
-║  │               Amazon, Pinterest, Nitter, YouTube, etc.  │   ║
-║  │       ↓                                                 │   ║
-║  │  Scrape Adapters (src/aegis/scrape/sources/)            │   ║
-║  │       ↓                                                 │   ║
-║  │  ProductSignal (Pydantic model, deduped by hash)        │   ║
-║  └────────────────────────┬────────────────────────────────┘   ║
-║                           │ INSERT                              ║
-║  ┌────────────────────────▼────────────────────────────────┐   ║
-║  │              PHASE 1 — Persistence                      │   ║
-║  │                                                         │   ║
-║  │  Postgres/TimescaleDB                                   │   ║
-║  │    signals (hypertable, 1-day chunks)                   │   ║
-║  │    authors                                              │   ║
-║  │    velocity_snapshots                                   │   ║
-║  │    prediction_outcomes                                  │   ║
-║  │                                                         │   ║
-║  │  Redis ─── Cache, pub/sub, inter-agent streams          │   ║
-║  │  MinIO ─── Raw objects, feature snapshots               │   ║
-║  └────────────────────────┬────────────────────────────────┘   ║
-║                           │ fetch + build TrendCandidate        ║
-║  ┌────────────────────────▼────────────────────────────────┐   ║
-║  │              PHASE 2 — Agent Intelligence               │   ║
-║  │                                                         │   ║
-║  │  LangGraph 10-node DAG                                  │   ║
-║  │                                                         │   ║
-║  │  scout → geo_arbitrage → narrative → historian          │   ║
-║  │       → sourcer → auditor → sentinel → compliance       │   ║
-║  │       → red_team → hedge → finalize                     │   ║
-║  │                                                         │   ║
-║  │  Output: GraphResult                                    │   ║
-║  │    final_verdict: PROCEED / HOLD / BLOCK / ESCALATE     │   ║
-║  │    final_score: 0.0–1.0                                 │   ║
-║  │    final_priority: P0/P1/P2/P3                          │   ║
-║  └─────────────────────────────────────────────────────────┘   ║
-╚══════════════════════════════════════════════════════════════════╝
-```
-
-### Services (Docker)
-
-| Container | External Port | What it does |
-|-----------|--------------|--------------|
-| `aegis-postgres` | `5433` | TimescaleDB (Postgres 16 + TimescaleDB + pgvector) |
-| `aegis-redis` | `6380` | Cache, rate-limit counters, inter-agent bus |
-| `aegis-minio` | `9002` (API), `9003` (UI) | S3-compatible object store |
-| `aegis-flaresolverr` | `8191` | Cloudflare challenge bypass for scraping |
-| `aegis-prometheus` | `9091` | Metrics collection and alerting |
-| `aegis-grafana` | `3001` | Dashboard UI |
-| `aegis-jaeger` | `16687` | Distributed request tracing |
+| Situation | Command |
+|-----------|---------|
+| Start core stack | `docker compose up -d` |
+| Start with logging (Loki+Promtail) | `docker compose --profile logging up -d` |
+| Health check all services | `uv run aegis doctor` |
+| Tail all logs | `docker compose logs -f` |
+| Stop (keep data) | `docker compose down` |
+| Emergency kill all alerts | `uv run --package aegis-execute aegis-execute killswitch trip --reason "emergency"` |
+| Re-enable alerts | `uv run --package aegis-execute aegis-execute killswitch arm --reason "all clear"` |
+| Full data wipe + restart | `docker compose down --volumes && docker compose up -d` |
+| Run daily intelligence cycle | `uv run aegis daily` |
 
 ---
 
-## 2. Prerequisites & One-Time Setup
+## Service Profiles
 
-### 2a. Install system tools
+The stack is split into profiles so optional heavy services don't block the core stack:
 
-```bash
-# On Ubuntu/WSL2:
-sudo apt-get update && sudo apt-get install -y git curl
+| Profile | Services | How to start |
+|---------|----------|--------------|
+| *(default)* | postgres, redis, minio, flaresolverr, predict, execute-api, execute-drain, prometheus, grafana, jaeger | `docker compose up -d` |
+| `dashboard` | aegis-dashboard (Docker) | `docker compose --profile dashboard up -d dashboard` *(see note below)* |
+| `logging` | loki, promtail | `docker compose --profile logging up -d` |
+| `orchestration` | prefect | `docker compose --profile orchestration up -d` |
+| `tracing` | langfuse | `docker compose --profile tracing up -d` |
+| `llm-proxy` | litellm | `docker compose --profile llm-proxy up -d` |
+| `local-llm` | ollama, ollama-init | `docker compose --profile local-llm up -d` |
 
-# Install uv (the package manager):
-curl -LsSf https://astral.sh/uv/install.sh | sh
-source ~/.bashrc   # or restart terminal
+> **Dashboard — recommended mode (host):** Run `uv run aegis dashboard serve` directly on the host.
+> It reads `.env` live, picks up code changes instantly, and never has stale env baked in.
+> Port 8300 must be free (stop Docker dashboard first if needed: `docker compose stop dashboard`).
 
-# Verify:
-uv --version
-docker --version
-docker compose version
-```
+**Docker naming convention**: service names (used with `docker compose`) differ from container names (used with raw `docker`):
+- Service `dashboard` → container `aegis-dashboard`
+- Service `execute-api` → container `aegis-execute-api`
+- Service `postgres` → container `aegis-postgres`
+- etc.
 
-### 2b. Clone and configure
-
-```bash
-git clone <your-repo-url> aegis-pulse
-cd aegis-pulse
-
-# Create your local environment file:
-cp .env.example .env
-```
-
-The `.env` file you just created has all defaults pre-filled for the
-Docker stack. **You do not need to change anything to get started.**
-
-Optional — if you want LLM-enhanced analysis (free), add a Groq key:
-```bash
-# Get a free key at https://console.groq.com/
-echo 'GROQ_API_KEY=gsk_your_key_here' >> .env
-```
-
-### 2c. Install Python dependencies
-
-```bash
-uv sync --all-extras
-```
-
-This creates `.venv/` with all packages including optional extras:
-- `langgraph` — the agent graph runtime
-- `chromadb` + `sentence-transformers` — semantic vector memory
-- `boto3` — MinIO/S3 object store client
-
-### 2d. Verify install
-
-```bash
-uv run aegis --version
-# Should print: aegis, version 0.2.0
-```
+Use `docker compose restart dashboard` (service name). Use `docker restart aegis-dashboard` (container name). Mixing these up causes "service not found" errors.
 
 ---
 
-## 3. Start the Stack
+## 1. Service Health Checks
 
-### Start all 7 services
+### 1.1 All services at once
 
 ```bash
-uv run aegis up
+uv run aegis doctor
 # or:
+docker compose ps
+```
+
+All containers should show `healthy`. Any container stuck in `starting` after 3 minutes indicates a dependency or config problem.
+
+### 1.2 Individual service health endpoints
+
+```bash
+curl -s http://localhost:8300/healthz      # Dashboard (Command Center)
+curl -s http://localhost:8200/healthz      # Phase 4 execute-api
+curl -s http://localhost:8200/readyz       # Phase 4 readiness (DB + Redis check)
+curl -s http://localhost:8100/healthz      # Phase 3 predict
+curl -s http://localhost:9091/-/healthy    # Prometheus
+curl -s http://localhost:3001/api/health   # Grafana
+curl -s http://localhost:3100/ready        # Loki (logging profile only)
+curl -s http://localhost:14269/            # Jaeger
+```
+
+Expected response for all: HTTP 200 or `{"status":"ok"}`.
+
+### 1.3 Database health
+
+```bash
+psql postgresql://aegis_app:aegis_app_dev_pw@localhost:5433/aegis \
+  -c "SELECT COUNT(*) FROM signals;"
+```
+
+If this hangs: check `docker compose logs postgres` for lock contention or OOM.
+
+### 1.4 Redis health
+
+```bash
+redis-cli -h localhost -p 6380 PING                              # → PONG
+redis-cli -h localhost -p 6380 INFO memory                       # check used_memory_human
+redis-cli -h localhost -p 6380 XLEN aegis:phase2:graph_results   # should be ≤ 10000
+```
+
+### 1.5 MinIO health
+
+```bash
+curl -s http://localhost:9002/minio/health/live   # → 200 OK
+```
+
+### 1.6 Daily automated verification
+
+```bash
+# Runs 7 checks: data flow, API health, DB signals, Redis stream, ruff lint
+bash scripts/daily_verify.sh
+```
+
+---
+
+## 2. Starting and Stopping
+
+### 2.1 Normal start (core stack)
+
+```bash
 docker compose up -d
+# Wait ~90 seconds for Postgres + Redis health checks before services come up.
+uv run aegis doctor   # confirm all healthy
 ```
 
-### Wait for health checks (30–60 seconds)
+### 2.2 Start with optional profiles
 
 ```bash
-uv run aegis status
+# With log shipping (Loki + Promtail):
+docker compose --profile logging up -d
+
+# With Prefect orchestration UI:
+docker compose --profile orchestration up -d
+
+# With Langfuse LLM tracing (create DB first — see §5.9):
+docker compose --profile tracing up -d
+
+# With LiteLLM proxy:
+docker compose --profile llm-proxy up -d
+
+# Everything at once:
+docker compose --profile logging --profile orchestration --profile tracing up -d
 ```
 
-Expected output (all services `healthy`):
-```
-SERVICE                  STATE          HEALTH         PORTS
-flaresolverr             running        healthy        8191->8191
-grafana                  running        healthy        3001->3000
-jaeger                   running        healthy        16687->16686,...
-minio                    running        healthy        9002->9000,9003->9001
-postgres                 running        healthy        5433->5432
-prometheus               running        healthy        9091->9090
-redis                    running        healthy        6380->6379
-```
+### 2.3 Rebuild images after code changes
 
-> **Why does Postgres say 5433?** Docker maps container port 5432 to host
-> port 5433 to avoid conflicts if you already have Postgres running locally.
-> The app's `.env` uses `localhost:5433` accordingly.
-
-### Database is auto-initialized
-
-The first time you start `aegis-postgres`, Docker runs
-`db/migrations/0001_init.sql` automatically via the `initdb.d` volume mount.
-This creates all tables, TimescaleDB hypertables, RLS policies, and the
-default tenant. **You never need to run migrations manually for a fresh stack.**
-
-For subsequent schema changes (new columns, etc.) run:
 ```bash
-uv run aegis migrate
+docker compose up -d --build
+# Rebuild a single service:
+docker compose up -d --build predict
+docker compose up -d --build execute-api
+
+# Dashboard does NOT need a rebuild — run it on the host instead:
+#   uv run aegis dashboard serve   (live reloads from src/ automatically)
+```
+
+### 2.4 Restart a single service
+
+```bash
+# Use SERVICE names (not container names) with docker compose:
+docker compose restart execute-drain
+docker compose restart predict
+docker compose restart execute-api
+docker compose restart postgres
+docker compose restart redis
+docker compose restart grafana
+docker compose restart prometheus
+docker compose restart jaeger
+docker compose restart loki       # logging profile only
+docker compose restart promtail   # logging profile only
+```
+
+### 2.5 Stop (preserve all data)
+
+```bash
+docker compose down
+```
+
+### 2.6 Stop + wipe all data (DESTRUCTIVE)
+
+```bash
+# This deletes ALL data: database rows, Redis streams, MinIO objects, model artifacts.
+# There is NO undo. Always run a backup first.
+docker compose down --volumes
+# or:
+uv run aegis down --volumes
+```
+
+### 2.7 View logs
+
+```bash
+docker compose logs -f                    # all services, follow
+docker compose logs dashboard --since 5m  # one service, last 5 minutes
+docker compose logs execute-api -n 100    # last 100 lines
+docker compose logs postgres --since 10m | tail -50
 ```
 
 ---
 
-## 4. How to See the Database (Docker)
+## 3. Phase-Specific Operations
 
-### Option A — psql in the container (no external tool needed)
-
-```bash
-# Connect as the app user:
-docker exec -it aegis-postgres psql -U aegis_app -d aegis
-
-# Inside psql:
-\dt                          -- list all tables
-\d signals                   -- describe the signals table
-SET app.current_tenant = '00000000-0000-0000-0000-000000000001';
-SELECT count(*) FROM signals;
-SELECT platform, title, ts FROM signals ORDER BY ts DESC LIMIT 10;
-\q                           -- quit
-```
-
-### Option B — DBeaver (recommended GUI)
-
-1. Download DBeaver Community Edition: https://dbeaver.io/download/
-2. New Connection → PostgreSQL
-3. Fill in:
-   - Host: `localhost`
-   - Port: `5433`
-   - Database: `aegis`
-   - Username: `aegis_app`
-   - Password: `aegis_app_dev_pw`
-4. Click Test Connection → Finish
-5. In the SQL Editor, always set the tenant context first:
-   ```sql
-   SET app.current_tenant = '00000000-0000-0000-0000-000000000001';
-   SELECT * FROM signals ORDER BY ts DESC LIMIT 20;
-   ```
-
-> **Why do I need SET app.current_tenant?**  
-> All tables use Row-Level Security (RLS). Without this SET, Postgres
-> returns zero rows for any query. This is by design — the same DB schema
-> supports multiple tenants in production.
-
-### Option C — pgAdmin
-
-Same connection details as DBeaver. Port `5433`, not `5432`.
-
-### Useful queries to watch data arrive
-
-```sql
--- Signal count by platform (run after scraping)
-SET app.current_tenant = '00000000-0000-0000-0000-000000000001';
-SELECT platform, count(*) AS n FROM signals GROUP BY platform ORDER BY n DESC;
-
--- Latest 20 signals:
-SELECT platform, title, ts, source_confidence FROM signals ORDER BY ts DESC LIMIT 20;
-
--- Signals from the last hour:
-SELECT platform, title, ts FROM signals WHERE ts > NOW() - INTERVAL '1 hour' ORDER BY ts DESC;
-
--- Author table:
-SELECT handle, platform, follower_count, total_posts FROM authors ORDER BY follower_count DESC LIMIT 10;
-
--- Signal velocity (hourly aggregate — TimescaleDB continuous view):
-SELECT bucket, platform, signal_count FROM signals_hourly ORDER BY bucket DESC LIMIT 24;
-```
-
-### Redis inspection
+### 3.1 Scraping (Phase 0)
 
 ```bash
-# Redis CLI (via Docker):
-docker exec -it aegis-redis redis-cli
-
-# Check all AEGIS keys:
-KEYS aegis:*
-
-# See inter-agent stream messages:
-XRANGE aegis:agent-bus - + COUNT 10
-
-# Exit:
-quit
-```
-
----
-
-## 5. Phase 0 — Data Ingestion (Scrape)
-
-Phase 0 fetches raw content from web sources and writes `ProductSignal`
-records to the `signals` table.
-
-### Run your first scrape
-
-```bash
-# Reddit (no API key needed):
-uv run aegis scrape --source reddit-rss --subreddit MachineLearning --limit 20
-
-# HackerNews (no API key):
-uv run aegis scrape --source hacker-news --limit 30
-
-# GitHub Trending (no API key):
-uv run aegis scrape --source github-trending --limit 25
-
-# TikTok trends (no API key, scrapes public pages):
-uv run aegis scrape --source tiktok --limit 20
-
-# Amazon best-sellers (no API key):
-uv run aegis scrape --source amazon --limit 15
-
-# Pinterest (no API key):
-uv run aegis scrape --source pinterest --limit 20
-
-# Nitter/Twitter mirror (no API key):
-uv run aegis scrape --source nitter --limit 20
-
-# Google Trends (no API key):
-uv run aegis scrape --source google-trends --limit 10
-```
-
-### Sources that require API keys
-
-```bash
-# Reddit API (PRAW) — register at https://www.reddit.com/prefs/apps
-# Add to .env: AEGIS_REDDIT_CLIENT_ID=... AEGIS_REDDIT_CLIENT_SECRET=...
-uv run aegis scrape --source reddit --subreddit Entrepreneur --limit 50
-
-# YouTube Data API v3 — get at https://console.cloud.google.com/
-# Add to .env: AEGIS_YOUTUBE_API_KEY=...
-uv run aegis scrape --source youtube --query "dropshipping products 2026" --limit 20
-```
-
-### What happens during a scrape (step by step)
-
-```
-1. CLI parses arguments → builds adapter config
-2. Adapter.run() fetches from the source (HTTP, RSS, or Playwright)
-3. Each item → ProductSignal (Pydantic validation, hash dedup)
-4. Signals batched in memory (batch of 50)
-5. insert_signals() called:
-   a. Upsert authors (ON CONFLICT DO UPDATE)
-   b. INSERT INTO signals ON CONFLICT DO NOTHING (dedup by platform+external_id)
-6. Progress printed: "flushed N (total emitted: M)"
-7. Final: "Done. Emitted N signals."
-```
-
-### Dry-run mode (no DB writes)
-
-```bash
-uv run aegis scrape --source reddit-rss --subreddit programming --limit 5 --dry-run
-```
-
-Prints JSON for each signal without writing to the DB. Useful for debugging.
-
-### What `content_hash mismatch` warnings mean
-
-```
-WARNING: reddit_rss.parse.failed — content_hash mismatch: stored=... derived=...
-```
-
-This is a known pre-existing issue: certain Reddit RSS fields are
-populated after the hash is computed. The signal is **safely skipped**,
-not corrupted. You will see 1–3 of these per scrape run. Ignore them.
-
----
-
-## 6. Phase 1 — Data Storage & Inspection
-
-Phase 1 is the persistence layer. After scraping, data lives in Postgres.
-
-### Verify signals landed
-
-```bash
-# Via CLI:
-uv run aegis signals tail --limit 20
-
-# With platform filter:
-uv run aegis signals tail --limit 10 --platform reddit
-
-# Via psql:
-docker exec aegis-postgres psql -U aegis_app -d aegis \
-  -c "SET app.current_tenant='00000000-0000-0000-0000-000000000001'; SELECT count(*) FROM signals;"
-```
-
-### Daily summary report
-
-```bash
-# Yesterday's signals:
-uv run aegis report daily
-
-# A specific date:
-uv run aegis report daily --date 2026-05-04
-```
-
-### Database tables explained
-
-| Table | Type | Purpose |
-|-------|------|---------|
-| `tenants` | regular | Multi-tenant root. One row per org. |
-| `authors` | regular | Social media authors (upserted per signal). |
-| `signals` | **hypertable** (1-day chunks) | Main signal store. Every scraped post/item. |
-| `media` | **hypertable** (7-day chunks) | Attachments linked to signals. |
-| `velocity_snapshots` | **hypertable** (1-day chunks) | Time-series trend velocity snapshots. |
-| `prediction_outcomes` | **hypertable** (7-day chunks) | Feedback loop: actual vs predicted outcomes. |
-| `alembic_version` | regular | Tracks which migrations have been applied. |
-| `aegis_sql_revisions` | regular | Records raw SQL migration history. |
-
-### TimescaleDB views (auto-updated)
-
-```sql
--- Hourly signal counts per platform (last 24 hours):
-SET app.current_tenant = '00000000-0000-0000-0000-000000000001';
-SELECT bucket, platform, signal_count FROM signals_hourly
-WHERE bucket > NOW() - INTERVAL '24 hours'
-ORDER BY bucket DESC, signal_count DESC;
-
--- 6-hourly:
-SELECT * FROM signals_6hourly ORDER BY bucket DESC LIMIT 20;
-
--- Daily:
-SELECT * FROM signals_daily ORDER BY bucket DESC LIMIT 7;
-```
-
----
-
-## 7. Phase 2 — Agent Intelligence Pipeline
-
-Phase 2 takes the signals from Phase 1 and runs them through a
-10-node LangGraph agent pipeline to score and prioritize arbitrage opportunities.
-
-### Run the pipeline (the easy way)
-
-```bash
-uv run aegis analyze
-```
-
-This automatically:
-1. Fetches 20 most recent signals from DB
-2. Builds a `TrendCandidate`
-3. Runs all 10 agents
-4. Prints a color-coded verdict table
-
-### Options
-
-```bash
-# Use more signals (higher confidence):
-uv run aegis analyze --limit 50
-
-# Filter by platform:
-uv run aegis analyze --platform reddit --limit 30
-
-# Force heuristic-only path (fast, no LLM needed):
-uv run aegis analyze --no-llm
-
-# Get full JSON output for programmatic use:
-uv run aegis analyze --json-out
-
-# Custom trend ID and title:
-uv run aegis analyze --trend-id "ml-trends-001" --title "ML Stack Trends"
-```
-
-### What the output looks like
-
-```
-==============================================================
-  AEGIS Pulse — Phase 2 Analysis   [analyze-c645273a]
-==============================================================
-  Verdict   : HOLD
-  Score     : 0.362   Confidence: 0.598
-  Priority  : P3_HOUSEKEEPING
-  Halt      : completed
-  Agents    : 7 ran   Duration: 1649ms
-
-  Agent            Verdict     Score    Conf  Rationale
-  ---------------- ---------- ------  ------  ------------------------------
-  compliance       proceed     1.000   0.850  no flags
-  hedge            proceed     1.000   0.200  no active pool
-  red_team         hold        0.750   0.760  falsifiers=1
-  geo_arbitrage    proceed     0.667   0.640  arbitrage_score=0.33
-  narrative        hold        0.450   0.773  sentiment_intensity=0.30
-  scout            hold        0.443   0.580  velocity_class=hot
-  historian        proceed     0.000   0.200  no analogues found
-==============================================================
-```
-
-### Understanding the verdict
-
-| Verdict | Score range | Meaning | Action |
-|---------|------------|---------|--------|
-| `PROCEED` | 0.7–1.0 | Strong arbitrage signal | Act now — review details |
-| `HOLD` | 0.3–0.7 | Moderate signal | Monitor — re-analyze in 6h |
-| `BLOCK` | 0.0–0.4 | Weak/risky signal | Do not act |
-| `ESCALATE` | any | Edge case, human needed | Manual review required |
-
-### Understanding `halt_reason`
-
-| Halt reason | What happened |
-|------------|---------------|
-| `completed` | All 10 agents ran to completion — full verdict |
-| `scout_below_threshold` | Scout blocked early — too little velocity to proceed |
-| `blocked_by_compliance` | Compliance agent found TOS violation — hard stop |
-| `vetoed_by_red_team` | Red team adversarial test failed — too many falsifiers |
-| `vetoed_by_hedge` | Hedge agent found negative expected value — stop |
-| `exception` | Internal error — check logs |
-| `timeout` | Pipeline exceeded 120s wall clock — rare |
-
-### Priority levels
-
-| Level | Name | Meaning |
-|-------|------|---------|
-| P0 | `BREAKOUT` | Confirmed breakout — act in minutes |
-| P1 | `EXIT` | Exit signal on existing position |
-| P2 | `OPPORTUNITY` | Standard candidate — act today |
-| P3 | `HOUSEKEEPING` | Background — monitor, no urgency |
-
-### The 10 agents explained
-
-| Agent | What it does |
-|-------|-------------|
-| **scout** | Gate: checks velocity (v1h/v6h/v24h). Blocks low-signal noise. |
-| **geo_arbitrage** | Finds regional pricing gaps and sentiment differences. |
-| **narrative** | Analyzes coherence: is the trend a real narrative or noise? |
-| **historian** | Looks up analogous past trends in ChromaDB vector memory. |
-| **sourcer** | Checks source diversity — are signals from many authors/platforms? |
-| **auditor** | Data quality audit: completeness, freshness, confidence. |
-| **sentinel** | Coordination/astroturfing detection — fake virality check. |
-| **compliance** | TOS risk and legal exposure screening. |
-| **red_team** | Adversarial: tries to falsify the thesis to stress-test it. |
-| **hedge** | Risk-adjusted expected-value calculation across the position. |
-| **finalize** | Supervisor: aggregates all decisions → final verdict + score. |
-
-### Running the pipeline programmatically (Python API)
-
-```python
-import asyncio
-from uuid import UUID
-
-from aegis.db.pool import PgConfig, PgPool, set_shared_pool
-from aegis.db.signals import fetch_recent_signals
-from aegis.agents.schemas import TrendCandidate
-from aegis.agents.runner import run_trend
-
-TENANT_ID = UUID("00000000-0000-0000-0000-000000000001")
-
-async def main():
-    # 1. Connect to Postgres and make it available to Phase 2 tools
-    pool = PgPool(PgConfig(
-        dsn="postgresql://aegis_app:aegis_app_dev_pw@localhost:5433/aegis"
-    ))
-    await pool.start()
-    set_shared_pool(pool)       # Phase 2 tools pick this up automatically
-
-    # 2. Fetch signals from Phase 1 DB
-    rows = await fetch_recent_signals(pool, tenant_id=TENANT_ID, limit=20)
-    signal_ids = [str(r["signal_id"]) for r in rows[:10]]
-
-    # 3. Build a TrendCandidate (the Phase 2 input format)
-    candidate = TrendCandidate(
-        trend_id="my-trend-001",
-        title="My Trend Title",
-        summary="Brief description of the trend cluster.",
-        velocity_1h=50.0,       # signals per hour
-        velocity_6h=200.0,      # signals per 6h
-        velocity_24h=600.0,     # signals per 24h
-        sentiment=0.4,          # -1.0 to 1.0 (positive = bullish)
-        commercial_intent=0.5,  # 0.0 to 1.0 (buy intent)
-        novelty=0.6,            # 0.0 to 1.0 (how new is this)
-        coordination_risk=0.05, # 0.0 to 1.0 (astroturf risk)
-        signal_count=len(rows),
-        unique_authors=min(len(rows), 15),
-        platforms=["reddit"],
-        sample_signal_ids=signal_ids,
-        representative_text=rows[0].get("title", "") if rows else "",
-    )
-
-    # 4. Run the 10-node LangGraph pipeline
-    result = await run_trend(candidate)
-
-    # 5. Inspect the result
-    print(f"Verdict:   {result.final_verdict}")
-    print(f"Score:     {result.final_score:.3f}")
-    print(f"Halt:      {result.halt_reason}")
-    for dec in result.decisions:
-        print(f"  {dec.agent}: {dec.verdict.value} ({dec.score:.2f})")
-
-    await pool.close()
-
-asyncio.run(main())
-```
-
----
-
-## 8. Data Flow: Phase 0 → 1 → 2
-
-Here is exactly what happens at each boundary:
-
-### Phase 0 → Phase 1: ProductSignal → signals table
-
-```
-ProductSignal (Pydantic model)
-  .platform          → signals.platform (enum: reddit, tiktok, ...)
-  .external_id       → signals.external_id (dedup key)
-  .title             → signals.title
-  .raw_text          → signals.raw_text
-  .posted_at         → signals.posted_at
-  .provenance.scraped_at → signals.scraped_at
-  .engagement.views  → signals.views
-  .engagement.likes  → signals.likes
-  .engagement.comments → signals.comments
-  .author.handle     → authors.handle (upserted first)
-  .confidence.source_confidence → signals.source_confidence
-  .confidence.completeness → signals.completeness
-  .content_hash      → used for dedup (ON CONFLICT DO NOTHING)
-```
-
-The full insert SQL is in `src/aegis/db/signals.py:insert_signals()`.
-
-### Phase 1 → Phase 2: DB rows → TrendCandidate
-
-This conversion is done in `aegis analyze` or in your own code.
-Key mapping:
-
-```
-DB rows (list of dicts from fetch_recent_signals)
-  ↓
-TrendCandidate
-  .signal_count      ← len(rows)
-  .unique_authors    ← count distinct author_ids
-  .platforms         ← {r["platform"] for r in rows}
-  .sample_signal_ids ← [r["signal_id"] for r in rows[:10]]
-  .representative_text ← rows[0]["title"] (or joined titles)
-  .velocity_*        ← computed from signal timestamps (or set manually)
-  .sentiment         ← computed from raw_text if NLP available, else 0.3
-  .commercial_intent ← from intent field counts
-```
-
-In production you would compute velocity from the `signals_hourly`
-continuous aggregate view and sentiment from an NLP pass over `raw_text`.
-For now, `aegis analyze` uses simple heuristics based on signal count.
-
-### Phase 2 internals: GraphState flows through 10 nodes
-
-```
-initial_state(candidate)                   ← GraphState TypedDict created
-         │
-         ▼
-[scout] velocity_classify tool → AgentDecision
-         │ if scout.verdict == BLOCK → finalize immediately (scout_below_threshold)
-         ▼
-[geo_arbitrage] scoring → AgentDecision
-[narrative] coherence analysis → AgentDecision
-[historian] ChromaDB lookup → AgentDecision       ← optional, needs chromadb
-[sourcer] diversity scoring → AgentDecision
-[auditor] completeness check → AgentDecision
-[sentinel] coordination detection → AgentDecision
-[compliance] TOS check tool → AgentDecision       ← hard block if flagged
-[red_team] adversarial falsifiers → AgentDecision
-[hedge] expected value calc → AgentDecision
-         │
-         ▼
-[finalize] supervisor.build_graph_result()
-  → GraphResult(final_verdict, final_score, final_priority, decisions[])
-```
-
-All decisions are accumulated in `GraphState.decisions` (a list with
-append-merge semantics). The finalize node reads all of them and computes
-a weighted aggregation.
-
----
-
-## 9. Seeing Graphs, Metrics & Traces
-
-### Grafana Dashboards — http://localhost:3001
-
-Login: `admin` / `aegis_dev_admin_pw`
-
-What you'll find:
-- **Scrape metrics**: signals per minute, adapter success rate, dedup rate
-- **DB pool**: connection pool size, query latency histogram
-- **Redis**: cache hit rate, memory usage
-- **System**: CPU, memory, disk I/O per container
-
-To see signal ingestion in real time:
-1. Go to http://localhost:3001
-2. Click "Dashboards" in the left sidebar
-3. Open "AEGIS Pulse Overview" (if preconfigured) or create a new panel
-
-**Create a custom signal count panel:**
-1. Dashboards → New → New Panel
-2. Data Source: `Prometheus`
-3. Query: `rate(aegis_signals_inserted_total[5m])`
-4. Panel title: "Signals/sec" → Save
-
-### Prometheus Metrics — http://localhost:9091
-
-Direct metrics UI. Useful for ad-hoc queries:
-- `up` — which services are reachable
-- `aegis_db_pool_size` — Postgres pool connections
-- `aegis_db_query_duration_seconds` — query latency
-- Search for `aegis_` to find all AEGIS-specific metrics
-
-### Jaeger Traces — http://localhost:16687
-
-Distributed request tracing. Shows how long each part of a request takes.
-- Service: `aegis-pulse`
-- Operations: `scrape.run`, `db.query`, `agent.run`
-- Useful for diagnosing slow scrapes or slow agent nodes
-
-### MinIO Console — http://localhost:9003
-
-Login: `aegis-dev-key` / `aegis-dev-secret-please-change`
-
-Buckets:
-- `aegis-raw` — raw scraped objects
-- `aegis-features` — feature vectors
-- `aegis-models` — serialized model snapshots
-- `aegis-backups` — agent pipeline output snapshots (if snapshot_manager configured)
-
----
-
-## 10. All CLI Commands Reference
-
-```bash
-# Stack management
-uv run aegis up                    # start all 7 Docker services
-uv run aegis up --build            # rebuild and start
-uv run aegis down                  # stop (keep data)
-uv run aegis down --volumes        # DANGER: stop + wipe all data
-uv run aegis status                # show container health
-uv run aegis tail                  # stream logs (all services)
-uv run aegis tail aegis-postgres   # stream Postgres logs only
-uv run aegis reset                 # DANGER: full wipe + restart
-uv run aegis migrate               # run Alembic migrations
-
-# Scraping (Phase 0)
-uv run aegis scrape --source reddit-rss --subreddit MachineLearning --limit 20
+# Best no-API-key adapters:
+uv run aegis scrape --source reddit-rss --subreddit MachineLearning --limit 50
+uv run aegis scrape --source reddit-rss --subreddit Entrepreneur --limit 50
 uv run aegis scrape --source hacker-news --limit 50
 uv run aegis scrape --source github-trending --limit 30
-uv run aegis scrape --source tiktok --limit 20
-uv run aegis scrape --source amazon --limit 15
-uv run aegis scrape --source nitter --limit 20
-uv run aegis scrape --source pinterest --limit 20
-uv run aegis scrape --source google-trends --limit 10
-uv run aegis scrape --source reddit-rss --subreddit wallstreetbets --limit 50 --dry-run
-
-# Signal inspection (Phase 1)
-uv run aegis signals tail                        # last 20 signals
-uv run aegis signals tail --limit 50            # last 50
-uv run aegis signals tail --platform reddit     # filter by platform
-
-# Reports
-uv run aegis report daily                       # yesterday's summary
-uv run aegis report daily --date 2026-05-04     # specific date
-
-# Agent pipeline (Phase 2)
-uv run aegis analyze                            # analyze 20 most recent signals
-uv run aegis analyze --limit 50                 # more signals = better
-uv run aegis analyze --platform reddit          # filter source platform
-uv run aegis analyze --no-llm                   # heuristic path (no API key needed)
-uv run aegis analyze --json-out                 # machine-readable full output
-uv run aegis analyze --trend-id "my-id" --title "My Trend"
-
-# Diagnostics
-uv run aegis doctor                             # full health check
-uv run aegis doctor --secrets                   # check only credentials
-uv run aegis support-bundle                     # generate diagnostic zip
-```
-
----
-
-## 11. File Map — What Every File Does
-
-### Root
-
-```
-aegis-pulse/
-  .env                    YOUR local config (not committed). Copy from .env.example.
-  .env.example            Template with all variables documented and default values.
-  pyproject.toml          Package metadata, dependencies, test config, coverage config.
-  docker-compose.yml      Defines all 7 services, volumes, networks, healthchecks.
-  alembic.ini             Alembic migration tool config (DB URL read from AEGIS_PG_DSN).
-  CLAUDE.md               Claude Code context — architecture reference for AI assistant.
-  PHASE_2_OPERATIONS_MANUAL.md   Operations SOP for running the system.
-  RUNBOOK.md              ← this file
-```
-
-### `db/`
-
-```
-db/migrations/
-  0001_init.sql           The entire database schema:
-                            - Extensions (timescaledb, vector, pgcrypto, citext)
-                            - Enums (platform, tier, modality, intent, etc.)
-                            - Tables (tenants, authors, signals, media, ...)
-                            - TimescaleDB hypertables + chunk policy
-                            - Continuous aggregates (hourly/6hourly/daily)
-                            - RLS policies + current_tenant_id() function
-                            - HNSW vector indexes (pgvector)
-                            - 90-day data retention policy
-```
-
-### `alembic/`
-
-```
-alembic/env.py            Alembic environment. Reads AEGIS_PG_DSN from env.
-                           Runs migrations as the migrate user (DDL-capable).
-alembic/script.py.mako    Template for generated migration files.
-alembic/versions/         Future incremental migrations go here.
-```
-
-### `src/aegis/`
-
-```
-__init__.py               Package root. Exports __version__ = "0.2.0".
-config.py                 Pydantic-settings Settings class. Reads all AEGIS_* env vars.
-constants.py              Immutable numeric constants (pool sizes, timeouts, etc.).
-```
-
-### `src/aegis/cli/`
-
-```
-main.py                   The `aegis` CLI entry point (Click). All commands defined here:
-                             up, down, status, tail, migrate, scrape, signals, report,
-                             analyze, reset, doctor, support-bundle.
-```
-
-### `src/aegis/core/`
-
-```
-logging.py                Structlog setup. JSON mode for prod, console for dev.
-                           All aegis.* loggers go through here.
-metrics.py                Prometheus metric definitions (counters, histograms, gauges).
-                           reset_registry() used in tests to avoid duplicates.
-resilience.py             Retry + circuit-breaker decorators for external calls.
-```
-
-### `src/aegis/db/`
-
-```
-pool.py                   PgPool: asyncpg connection pool with:
-                             - Tenant RLS context injection on every checkout
-                             - Statement timeout enforcement
-                             - Prometheus metrics integration
-                             - get_shared_pool()/set_shared_pool() for Phase 2 tools
-signals.py                Two functions:
-                             insert_signals(pool, signals, tenant_id)  ← Phase 0→1
-                             fetch_recent_signals(pool, tenant_id, limit)  ← Phase 1→2
-authors.py                Author upsert helpers (called by insert_signals).
-```
-
-### `src/aegis/cache/`
-
-```
-redis_cache.py            RedisCache class. Wraps redis.asyncio with:
-                             - Namespace prefixing (all keys: `aegis:namespace:...`)
-                             - TTL-based cache operations
-                             - connect()/close() lifecycle
-```
-
-### `src/aegis/schemas/`
-
-```
-signal.py                 ProductSignal — the Phase 0 data model. Every scrape adapter
-                           produces these. Validated by Pydantic v2. Contains:
-                             - Platform enum ref
-                             - EngagementMetrics (views/likes/comments/shares/saves)
-                             - ProvenanceInfo (scraped_at, scraper_version, method)
-                             - ConfidenceScores (source_confidence, completeness)
-                             - AuthorProfile (handle, follower_count, etc.)
-enums.py                  Platform, SourceTier, ContentModality, Intent enums.
-```
-
-### `src/aegis/scrape/`
-
-```
-base.py                   BaseAdapter abstract class. All adapters inherit from this.
-                           Defines the run(**params) → AsyncIterator[ProductSignal] protocol.
-cloudflare.py             FlareSolverr integration for Cloudflare-protected sites.
-proxies.py                Proxy pool manager (reads from config/proxies.yaml if present).
-stealth.py                Browser stealth helpers: random user agents, timing jitter.
-
-sources/
-  reddit.py               Reddit PRAW adapter (needs API key).
-  reddit_rss.py           Reddit public JSON adapter (no key needed). Most reliable.
-  hacker_news.py          HN Algolia API adapter (free, no key).
-  github_trending.py      GitHub trending scraper (HTML parsing, no key).
-  tiktok.py               TikTok public trends (Playwright-based).
-  youtube.py              YouTube Data API v3 adapter (needs API key).
-  instagram.py            Instagram public data (high TOS risk — use with care).
-  amazon.py               Amazon best-sellers (Playwright-based).
-  pinterest.py            Pinterest public boards (HTTP scraping).
-  nitter.py               Twitter/X via Nitter mirrors (no key, public).
-  google_trends.py        Google Trends via pytrends (no key).
-```
-
-### `src/aegis/agents/`
-
-```
-schemas.py                Core Pydantic v2 models for Phase 2:
-                             TrendCandidate  — pipeline input
-                             AgentDecision   — per-agent output
-                             AgentMessage    — Redis Streams envelope
-                             GraphResult     — full pipeline output
-
-state.py                  GraphState TypedDict — the shared state object passed through
-                           all 10 nodes. Uses annotated reducers (_merge_decisions, etc.)
-                           for parallel-safe state updates.
-
-graph.py                  build_graph() — assembles the LangGraph DAG:
-                             10 agent nodes + conditional edges + finalize node
-                             Compiled with .compile() for performance caching.
-
-runner.py                 run_trend(candidate) — the public API:
-                             - Lazily compiles graph (cached)
-                             - Enforces 120s timeout
-                             - Never raises — errors become halt_reason="exception"
-                             - Optional MinIO snapshot on completion
-
-supervisor.py             build_graph_result() — aggregates all AgentDecision objects
-                           into a single GraphResult using weighted scoring.
-
-nodes/
-  base.py                 BaseAgentNode — shared logic for all agents:
-                             - Tool execution with timing
-                             - LLM prompt rendering (Jinja2)
-                             - Heuristic fallback when no LLM available
-  scout.py                Velocity threshold gating.
-  geo_arbitrage.py        Regional pricing/sentiment arbitrage scoring.
-  narrative.py            Narrative coherence and framing analysis.
-  historian.py            ChromaDB analogue lookup (past trend comparison).
-  sourcer.py              Source diversity and tier quality scoring.
-  auditor.py              Data completeness and freshness audit.
-  sentinel.py             Coordination/astroturf detection.
-  compliance.py           TOS risk and legal exposure check.
-  red_team.py             Adversarial falsifier generation.
-  hedge.py                Risk-adjusted expected-value calculation.
-
-llm/
-  router.py               LLMRouter — tries providers in order:
-                             Ollama → Groq → OpenRouter → Gemini
-                             Per-provider circuit breakers + retry.
-  prompts.py              PromptRegistry — loads .jinja2 files, renders with candidate data.
-  guardrails.py           Output validation: ensures LLM output is parseable JSON.
-  providers/
-    base.py               BaseLLMProvider abstract class.
-    ollama.py             Local Ollama provider (http://localhost:11434).
-    groq.py               Groq cloud provider (GROQ_API_KEY).
-    openrouter.py         OpenRouter proxy provider (OPENROUTER_API_KEY).
-    gemini.py             Google Gemini provider (GEMINI_API_KEY).
-
-memory/
-  chroma_store.py         ChromaMemoryStore — stores/retrieves past trend analogues
-                           using sentence-transformers embeddings + ChromaDB.
-  shared_memory.py        SharedWorkingMemory — Redis-backed working memory shared
-                           between agents in the same pipeline run.
-  snapshots.py            SnapshotManager — writes GraphResult JSON to MinIO.
-
-messaging/
-  streams.py              AgentBus — Redis Streams publisher/consumer for inter-agent
-                           event broadcasting.
-  hmac_sign.py            HMAC-SHA256 message signing and verification.
-
-tools/
-  base.py                 ToolResult dataclass — standardized tool output (ok, data, error).
-  velocity.py             velocity_classify — classifies velocity as quiet/growing/hot/breakout.
-  compliance_check.py     compliance_check — checks against TOS violation patterns.
-  monte_carlo.py          monte_carlo_margin — Monte Carlo simulation for margin estimation.
-  historical.py           historical_lookup — retrieves price/volume history for comparables.
-  signal_query.py         signal_query — queries DB via get_shared_pool() for recent signals.
-
-prompts/
-  scout.jinja2            Prompt template for the scout agent.
-  geo_arbitrage.jinja2    ...and so on for each agent (10 total).
-  (+ 8 more .jinja2 files)
-```
-
-### `config/`
-
-```
-prometheus/
-  prometheus.yml          Scrape config: tells Prometheus where to pull metrics from.
-                           Scrapes aegis-pulse:9464 (the app's Prometheus port).
-grafana/
-  (dashboard JSON files)  Pre-built Grafana dashboards loaded on first start.
-```
-
-### `bootstrap/`
-
-```
-aegis-doctor              Bash script: comprehensive health check (Docker, ports, DB, etc.)
-wsl/                      WSL2 setup scripts
-windows/                  Windows setup scripts
-```
-
-### `tests/`
-
-```
-conftest.py               Shared fixtures: env isolation, Prometheus reset,
-                           Docker container fixtures (pg_container, redis_container).
-unit/
-  test_config.py          Settings validation tests.
-  test_db_pool.py         PgPool tests (mock asyncpg).
-  test_signals.py         insert_signals / fetch_recent_signals tests.
-  test_scrape_*.py        Adapter unit tests (all mocked HTTP).
-  test_cache.py           Redis cache tests.
-  test_cli.py             CLI command tests (subprocess or Click test runner).
-  agents/
-    conftest.py           Agent-specific fixtures: LLM router reset, trend_factory.
-    test_schemas.py       TrendCandidate, AgentDecision, GraphResult validation.
-    test_graph.py         LangGraph build and traverse tests.
-    test_runner.py        run_trend() tests (mocked graph).
-    test_nodes_*.py       Per-node unit tests (10 files, one per node).
-    test_tools_*.py       Tool unit tests.
-    test_llm_router.py    Router fallback chain tests.
-    test_messaging.py     HMAC signing + Redis Streams tests.
-integration/
-  (future integration tests with real containers)
-```
-
----
-
-## 12. What to Expect: Outputs Explained
-
-### During `aegis scrape`
-
-```
-$ uv run aegis scrape --source reddit-rss --subreddit MachineLearning --limit 20
-
-(JSON log lines from structlog — normal)
-{"event": "pgpool.connecting", ...}
-{"event": "pgpool.connected", ...}
-{"event": "adapter.run.start", "adapter": "reddit-rss", ...}
-{"event": "HTTP Request: GET https://www.reddit.com/... 200 OK", ...}
-WARNING: content_hash mismatch ... (safe to ignore, 1-3 per run)
-{"event": "adapter.run.end", "seen": 20, "emitted": 17, ...}
-flushed 10 (total emitted: 17)        ← batch flush
-Done. Emitted 17 signals.              ← final count
-```
-
-**`seen`**: items fetched from source  
-**`emitted`**: items that passed validation and were inserted  
-**Difference**: deduplication (already in DB) + hash mismatch skips
-
-### During `aegis analyze`
-
-```
-Running Phase 2 pipeline on 20 signals (LLM-assisted)…
-{"event": "graph.built", "nodes": [...], "use_llm": true, ...}
-{"event": "tool.call", "tool": "velocity_classify", "ok": true, ...}
-{"event": "llm.provider_error", "provider": "ollama", ...}   ← expected if no Ollama
-{"event": "supervisor.finalize", "verdict": "hold", "score": 0.362, ...}
-{"event": "runner.completed", "duration_ms": 1649.0, ...}
-
-(color table printed)
-```
-
-**`llm.provider_error`** on Ollama is **expected** if you don't have Ollama running locally.
-The system automatically falls back to the heuristic path. Add `GROQ_API_KEY=...` to `.env`
-to get LLM-enhanced reasoning without running Ollama.
-
-### After running tests
-
-```
-$ uv run pytest tests/unit/ -q
-
-466 passed in 126.57s (0:02:06)
-Coverage: 79.37%
-```
-
-466 tests, ~2 minutes. All should pass. If any fail, check:
-1. `AEGIS_DISABLE_OLLAMA=1` is in your environment (set automatically in tests)
-2. No running servers on port 5432 or 6379 (tests use mocks, not real servers)
-
----
-
-## 13. Troubleshooting
-
-### "No signals found in DB. Run `aegis scrape` first."
-Scrape has not been run yet, or it wrote 0 signals.
-```bash
-uv run aegis scrape --source reddit-rss --subreddit technology --limit 10
-uv run aegis signals tail
-```
-
-### "llm.no_providers_available — agents will use heuristic-only path"
-No LLM API keys configured. This is fine — the pipeline still works.
-To add an LLM:
-```bash
-echo 'GROQ_API_KEY=gsk_yourkey' >> .env
-# Then run again — no restart needed
-uv run aegis analyze
-```
-
-### "scout_below_threshold" halt
-The signal cluster has low velocity. The scout agent blocked early.
-This means the content you scraped is not trending fast enough to be
-an arbitrage candidate. Try:
-```bash
-# Scrape a more actively-trending subreddit:
-uv run aegis scrape --source reddit-rss --subreddit wallstreetbets --limit 30
-uv run aegis analyze --limit 30
-```
-
-### Containers not starting / "Cannot connect to Docker"
-```bash
-# Check Docker is running:
-docker info
-
-# Check ports not in use:
-sudo ss -tlnp | grep -E '5433|6380|9002|9003|3001|9091|16687'
-
-# Restart the stack:
-docker compose down
-docker compose up -d
-```
-
-### Postgres authentication error
-The default user is `aegis_app` with password `aegis_app_dev_pw`.
-If you're getting auth errors, verify your `.env` matches:
-```
-AEGIS_PG_DSN=postgresql://aegis_app:aegis_app_dev_pw@localhost:5433/aegis
-```
-
-### Coverage below 78%
-```bash
-uv run pytest tests/unit/ --cov=aegis --cov-report=term-missing -q
-# Look at "Missing" column for uncovered lines
-```
-
-### "ResourceWarning: unclosed socket" in tests
-This is LangGraph leaving Unix domain sockets open on teardown. It is
-harmless and suppressed by default via `filterwarnings = ["ignore::ResourceWarning"]`
-in `pyproject.toml`. If you see it as a test failure, verify that line exists.
-
----
-
-## Complete First-Run Walkthrough (Copy-Paste)
-
-```bash
-# 1. One-time setup
-git clone <repo> aegis-pulse && cd aegis-pulse
-cp .env.example .env
-uv sync --all-extras
-
-# 2. Start infrastructure
-docker compose up -d
-
-# 3. Wait for healthy (run a few times until all show "healthy"):
-uv run aegis status
-
-# 4. Phase 0 — Scrape signals from three sources
-uv run aegis scrape --source reddit-rss --subreddit MachineLearning --limit 20
-uv run aegis scrape --source hacker-news --limit 30
-uv run aegis scrape --source github-trending --limit 20
-
-# 5. Phase 1 — Verify data in DB
+uv run aegis scrape --source google-news --query "AI chips" --limit 30
+uv run aegis scrape --source bing-news --query "market opportunity" --limit 30
+uv run aegis scrape --source amazon --limit 80
+uv run aegis scrape --source google-trends --limit 20
+
+# View stored signals:
 uv run aegis signals tail --limit 20
-
-# 6. Phase 2 — Run agent intelligence pipeline
-uv run aegis analyze --limit 50
-
-# 7. See daily report
-uv run aegis report daily --date 2026-05-04
-
-# 8. Open monitoring UIs
-# Grafana:    http://localhost:3001   (admin / aegis_dev_admin_pw)
-# Prometheus: http://localhost:9091
-# Jaeger:     http://localhost:16687
-# MinIO:      http://localhost:9003   (aegis-dev-key / aegis-dev-secret-please-change)
-
-# 9. Run tests
-uv run pytest tests/unit/ -q
-
-# 10. See DB in terminal
-docker exec -it aegis-postgres psql -U aegis_app -d aegis \
-  -c "SET app.current_tenant='00000000-0000-0000-0000-000000000001'; SELECT platform, count(*) FROM signals GROUP BY platform;"
+uv run aegis signals tail --platform hacker_news --limit 10
 ```
 
-That's it. AEGIS Pulse is fully operational.
+### 3.2 Full topic deep-dive (Phase 0 + 2)
+
+```bash
+# One keyword → expand → scrape 6+ sources → dedup → AI analysis → verdict:
+uv run aegis topic "AI chips"
+uv run aegis topic "bitcoin" --limit 50
+uv run aegis topic "NVIDIA" --no-llm --json-out   # heuristic-only, no LLM keys needed
+uv run aegis topic "e-commerce" --no-analyze       # scrape only, skip agent pipeline
+```
+
+### 3.3 Phase 2 — Agent intelligence pipeline
+
+```bash
+# Analyze most recent signals with the 10-node LangGraph DAG:
+uv run aegis analyze --limit 20
+uv run aegis analyze --limit 30 --platform reddit
+uv run aegis analyze --no-llm              # heuristic-only (no API keys needed)
+uv run aegis analyze --json-out            # machine-readable output
+
+# Detect semantic clusters in recent signals:
+uv run aegis patterns
+uv run aegis patterns --limit 500 --min-cluster-size 3
+uv run aegis patterns --platform hacker_news
+
+# Deduplicate stored signals:
+uv run aegis dedup                              # dry-run (safe)
+uv run aegis dedup --delete                     # delete duplicates
+uv run aegis dedup --lookback-hours 720 --threshold 0.90
+
+# Daily summary report:
+uv run aegis report daily
+uv run aegis report daily --date 2026-06-05
+```
+
+If analysis hangs > 5 minutes: check `AEGIS_DISABLE_OLLAMA=1` is set and at least one LLM provider key is configured, or use `--no-llm`.
+
+### 3.4 Phase 3 — Prediction server
+
+```bash
+# Health check:
+curl -s http://localhost:8100/healthz
+
+# Test prediction via REST:
+curl -s -X POST http://localhost:8100/predict \
+  -H "Content-Type: application/json" \
+  -d '{"trend_id":"test-1","signals":[]}'
+
+# Batch prediction:
+curl -s -X POST http://localhost:8100/predict/batch \
+  -H "Content-Type: application/json" \
+  -d '{"items":[{"trend_id":"t1","signals":[]},{"trend_id":"t2","signals":[]}]}'
+
+# Metrics endpoint:
+curl -s http://localhost:8100/metrics | grep aegis_predict
+
+# Restart if unresponsive:
+docker compose restart predict
+```
+
+### 3.5 Phase 4 — Alert pipeline & killswitch
+
+```bash
+# Health checks:
+curl -s http://localhost:8200/healthz
+curl -s http://localhost:8200/readyz
+
+# Killswitch control:
+uv run --package aegis-execute aegis-execute killswitch state
+uv run --package aegis-execute aegis-execute killswitch trip --reason "maintenance window"
+uv run --package aegis-execute aegis-execute killswitch arm  --reason "maintenance complete"
+
+# Tail recent alerts:
+uv run --package aegis-execute aegis-execute tail \
+  --tenant 00000000-0000-0000-0000-000000000001 --limit 20
+
+# Watch live SSE stream (Ctrl+C to stop):
+curl -N http://localhost:8200/stream
+
+# Smoke test (no infrastructure needed):
+uv run --package aegis-execute aegis-execute compose-demo \
+  --trend-id demo-1 --verdict ENTER --score 0.82 --confidence 0.75
+
+# Check outbox for stuck alerts:
+psql postgresql://aegis_app:aegis_app_dev_pw@localhost:5433/aegis \
+  -c "SELECT status, COUNT(*) FROM alert_outbox GROUP BY 1;"
+
+# Restart drain worker if alerts are stuck:
+docker compose restart execute-drain
+```
+
+### 3.6 Phase 5 — Swarm Intelligence
+
+```bash
+# Full 30-adapter swarm harvest + DB persist:
+uv run aegis swarm run
+
+# Dry-run (scrape only, no DB write):
+uv run aegis swarm run --dry-run
+
+# Limit signals per adapter:
+uv run aegis swarm run --limit 20
+
+# View swarm agent health table:
+uv run aegis swarm agents
+
+# Daily run with swarm:
+uv run aegis daily --swarm
+
+# Single swarm adapter:
+uv run aegis scrape --source flipkart --limit 50
+uv run aegis scrape --source nse-bse --limit 30
+```
+
+### 3.7 Phase 6 — Capital Execution Engine
+
+```bash
+# Check engine status and daily drawdown position:
+curl -s http://localhost:8200/capital/status | python3 -m json.tool
+
+# Submit a plan manually (advisory mode — no capital at risk):
+curl -s -X POST http://localhost:8200/capital/plan \
+  -H "Content-Type: application/json" \
+  -d '{"trend_id":"test-1","score":0.80,"confidence":0.75,"sku":"DEMO-001","unit_cost":9.99}'
+
+# Trigger EOD settlement manually:
+curl -s -X POST http://localhost:8200/capital/settle | python3 -m json.tool
+
+# Query execution plans from DB:
+psql postgresql://aegis_app:aegis_app_dev_pw@localhost:5433/aegis \
+  -c "SELECT trend_id, status, quantity, total_capital_usd, created_at FROM execution_plans ORDER BY created_at DESC LIMIT 10;"
+
+# Query daily settlement PnL:
+psql postgresql://aegis_app:aegis_app_dev_pw@localhost:5433/aegis \
+  -c "SELECT settle_date, realised_pnl_usd, plan_count FROM settlements ORDER BY settle_date DESC LIMIT 7;"
+```
+
+**Modes**: `advisory` (default, no capital), `staging` (paper trades), `live` (real orders — set `AEGIS_EXECUTE_MODE=live` only in production).  
+**Circuit breaker**: if daily loss ≥ `AEGIS_CAPITAL_DAILY_LOSS_LIMIT_USD`, all new plans are rejected until next UTC midnight.
+
+### 3.8 Phase 7 — Geospatial Intelligence
+
+```bash
+# Find cross-market arbitrage opportunities (no DB / no API key needed):
+uv run aegis geo analyze "TSHIRT-001" "Classic Cotton T-Shirt" --category apparel --top-n 5
+uv run aegis geo analyze "PHONE-001" "Budget Smartphone" --category smartphones --json-out
+
+# Live FX rates from ECB (no API key):
+uv run aegis geo fx
+uv run aegis geo fx --json-out
+
+# WTO MFN tariff lookup:
+uv run aegis geo tariff 610910 IN --value 100      # cotton T-shirt → India
+uv run aegis geo tariff 851712 US --value 500      # smartphone → US (0%)
+uv run aegis geo tariff 640411 EU --value 80       # sneakers → EU
+
+# Shipping cost quote:
+uv run aegis geo shipping US IN                    # US → India, 0.5 kg
+uv run aegis geo shipping CN US --weight 1.0       # China → US, 1 kg
+
+# List supported regions:
+uv run aegis geo regions
+```
+
+### 3.9 Phase 8 — Compliance Engine
+
+```bash
+# Full compliance risk assessment:
+uv run aegis compliance assess "SKU-001" "Classic Cotton T-Shirt" \
+  --category apparel --origin CN --dest US --price 15.00
+
+# JSON output:
+uv run aegis compliance assess "SKU-001" "Louis Vuitton Inspired Bag" \
+  --category luxury --origin CN --dest US --json-out
+
+# Trademark lookup (USPTO + EUIPO live APIs):
+uv run aegis compliance trademark "Nike"
+uv run aegis compliance trademark "Cotton T-Shirt" --description "athletic apparel"
+
+# OFAC / FATF sanctions check:
+uv run aegis compliance sanctions IR      # Iran — BLOCKED
+uv run aegis compliance sanctions NG      # Nigeria — FATF grey list
+uv run aegis compliance sanctions US      # USA — clear
+
+# FTC advertising rule engine (instant, no API call):
+uv run aegis compliance ftc \
+  --title "Miracle Weight Loss Supplement" \
+  --description "FDA-Approved! Guaranteed to cure cancer!"
+
+# Batch assessment from JSON file:
+uv run aegis compliance batch products.json
+uv run aegis compliance batch products.json --json-out
+```
+
+### 3.10 Phase 9 — Autonomous Self-Evolution
+
+```bash
+# Aggregated evolve health snapshot:
+uv run aegis evolve status
+uv run aegis evolve status --json-out
+
+# Trigger manual model retraining:
+uv run aegis evolve retrain
+uv run aegis evolve retrain --json-out
+
+# Run drift check on recent prediction outcomes:
+uv run aegis evolve drift
+uv run aegis evolve drift --json-out
+
+# Show current RL pricing policy weights:
+uv run aegis evolve policy
+uv run aegis evolve policy --json-out
+
+# Count recent trade outcomes:
+uv run aegis evolve outcomes
+uv run aegis evolve outcomes --days 7
+
+# Record a trade outcome from the CLI:
+uv run aegis evolve record \
+  --plan-id "plan-001" --trend-id "trend-abc" \
+  --score 0.82 --confidence 0.91 \
+  --roi 45.0 --pnl 450.0 --units 10 \
+  --status successful
+```
+
+### 3.11 Phase 10 — Data Lake
+
+```bash
+# Health check:
+uv run aegis datalake doctor --json-out
+
+# Apply catalog schema migrations (run once after install):
+uv run aegis datalake migrate
+
+# Ingest Phase 1 signals → Bronze (last 7 days):
+uv run aegis datalake ingest-postgres-signals \
+  --dsn postgresql://aegis_app:aegis_app_dev_pw@localhost:5433/aegis
+
+# Ingest Phase 3 predictions → Bronze:
+uv run aegis datalake ingest-postgres-predictions \
+  --dsn postgresql://aegis_app:aegis_app_dev_pw@localhost:5433/aegis
+
+# Ingest Phase 4 alerts → Bronze:
+uv run aegis datalake ingest-postgres-alerts \
+  --dsn postgresql://aegis_app:aegis_app_dev_pw@localhost:5433/aegis
+
+# Drain Phase 2 Redis stream → Bronze:
+uv run aegis datalake ingest-redis
+
+# Build Silver + Gold for today:
+uv run aegis datalake build-silver --date today
+uv run aegis datalake build-gold --date today
+
+# Full daily run (Bronze ingest → Silver → Gold):
+uv run aegis datalake daily \
+  --dsn postgresql://aegis_app:aegis_app_dev_pw@localhost:5433/aegis
+
+# Query the lake with DuckDB:
+uv run aegis datalake query "SELECT platform, COUNT(*) FROM signals GROUP BY 1 ORDER BY 2 DESC"
+
+# List registered tables:
+uv run aegis datalake list-tables
+uv run aegis datalake list-tables --layer bronze
+
+# Retention management (dry-run by default):
+uv run aegis datalake retention silver
+uv run aegis datalake retention silver --apply
+uv run aegis datalake retention bronze --apply
+
+# Local filesystem mode (for testing, no MinIO needed):
+uv run aegis datalake doctor --local-root /tmp/aegis-lake --json-out
+```
+
+### 3.12 Phase 11 — LLM Gateway
+
+```bash
+# Provider health check (latency + circuit state for all configured providers):
+uv run aegis llm health
+uv run aegis llm health --json-out
+
+# One-shot completion (uses gateway fallback chain):
+uv run aegis llm complete "Summarise the latest AI chip news in 3 bullets"
+uv run aegis llm complete "..." --provider groq --model llama-3.3-70b-versatile
+
+# Embedding:
+uv run aegis llm embed "text to embed"
+
+# List all registered models:
+uv run aegis llm models
+uv run aegis llm models --provider ollama
+
+# Pull Ollama model:
+uv run aegis llm pull llama3.2:3b
+uv run aegis llm pull bge-m3
+
+# Cost summary (estimated USD spend):
+uv run aegis llm cost
+
+# Nightly eval against golden-answer fixtures:
+uv run aegis llm eval
+```
+
+**All providers failing**: check `docker compose logs ollama`, then verify `GROQ_API_KEY`, `OPENROUTER_API_KEY`, `GEMINI_API_KEY` in `.env`. Use `--no-llm` as immediate fallback.
+
+### 3.13 Phase 14 — Observability
+
+Requires the `logging` profile to be active.
+
+```bash
+# Start the logging stack first:
+docker compose --profile logging up -d
+
+# Verify Prometheus is scraping AEGIS metrics:
+curl -s 'http://localhost:9091/api/v1/query?query=aegis_obs_ingest_signals_total' \
+  | python3 -m json.tool | grep value
+
+# Check Loki is receiving logs:
+curl -s 'http://localhost:3100/loki/api/v1/query_range' \
+  --data-urlencode 'query={job="docker"}' \
+  --data-urlencode 'limit=1'
+
+# Check Promtail is shipping logs:
+docker compose logs promtail --since 5m | grep -i error
+
+# Restart log stack if logs not appearing in Grafana:
+docker compose restart loki
+sleep 10
+docker compose restart promtail
+```
+
+**OTel traces not appearing in Jaeger**: verify `OTEL_ENABLED=true` in the service env, and that `OTEL_EXPORTER_OTLP_ENDPOINT=http://aegis-jaeger:4317` (container name) inside Docker.
+
+### 3.14 Phase 15 — Disaster Recovery
+
+```bash
+# SLA status (RPO 15 min / RTO 60 min targets):
+cd aegis-phase15 && uv run aegis dr status
+
+# Backup all targets:
+cd aegis-phase15 && uv run aegis dr backup
+
+# Backup specific target:
+cd aegis-phase15 && uv run aegis dr backup --target postgres
+cd aegis-phase15 && uv run aegis dr backup --target redis
+cd aegis-phase15 && uv run aegis dr backup --target models
+cd aegis-phase15 && uv run aegis dr backup --target restic
+
+# Validate backup integrity (dry-run — SAFE, no data touched):
+cd aegis-phase15 && uv run aegis dr drill --dry-run
+
+# Full restore drill (creates aegis_drill DB — NOT prod):
+cd aegis-phase15 && uv run aegis dr drill
+
+# Monitor backup health continuously:
+cd aegis-phase15 && uv run aegis dr health --watch
+
+# Print failure-mode runbook:
+cd aegis-phase15 && uv run aegis dr runbook pg_corruption
+cd aegis-phase15 && uv run aegis dr runbook redis_oom
+cd aegis-phase15 && uv run aegis dr runbook disk_full
+# Available: pg_corruption, redis_oom, disk_full, docker_dead, laptop_stolen, network_outage, wsl_crash
+```
+
+### 3.15 One daily command (runs everything)
+
+```bash
+uv run aegis daily
+# or with swarm:
+uv run aegis daily --swarm
+```
+
+---
+
+## 4. Stack Lifecycle
+
+```bash
+uv run aegis up               # start all services (detached)
+uv run aegis up --build       # rebuild Docker images first
+uv run aegis down             # stop (data preserved)
+uv run aegis down --volumes   # stop + WIPE all data (irreversible)
+uv run aegis reset            # same as down --volumes (asks for confirmation)
+uv run aegis tail             # follow logs for all services
+uv run aegis tail predict     # follow logs for one service
+uv run aegis doctor           # health check all components
+uv run aegis status           # show Docker service status
+uv run aegis support-bundle   # collect diagnostic zip for debugging
+```
+
+---
+
+## 5. Failure Scenarios
+
+### 5.1 Docker image pull fails (TLS timeout, WSL2)
+
+**Symptoms**: `docker compose up` fails with `TLS handshake timeout` on Loki/Promtail pull.
+
+```bash
+# These are optional services — start the core stack without them:
+docker compose up -d
+# Then start logging profile separately when network is stable:
+docker compose --profile logging up -d
+
+# To manually pre-pull problematic images and retry:
+docker pull grafana/loki:3.1.0
+docker pull grafana/promtail:3.1.0
+docker compose --profile logging up -d
+
+# WSL2 DNS fix if Docker Hub is intermittently unreachable:
+sudo sh -c 'echo "nameserver 8.8.8.8\nnameserver 8.8.4.4" > /etc/resolv.conf'
+sudo service docker restart
+```
+
+### 5.2 Postgres unresponsive / corrupted
+
+**Symptoms**: services show `unhealthy`; `psql` hangs or returns `Connection refused`.
+
+```bash
+# Check what's happening:
+docker compose logs postgres --since 10m | tail -50
+
+# If OOM or lock contention, restart:
+docker compose restart postgres
+# Wait 30s, then verify:
+curl -s http://localhost:8200/readyz
+
+# If data is corrupted, restore from backup:
+cd aegis-phase15
+uv run aegis dr runbook pg_corruption   # read the procedure first
+uv run aegis dr restore --target postgres --dry-run
+# If dry-run looks correct:
+uv run aegis dr restore --target postgres
+```
+
+### 5.3 Redis OOM / all data lost
+
+**Symptoms**: `XREADGROUP` errors; agent pipeline hangs; Phase 4 `IntakeWorker` logs `connection refused`.
+
+```bash
+docker compose logs redis --since 10m | tail -30
+
+# Check memory usage:
+redis-cli -h localhost -p 6380 INFO memory
+
+# Restart Redis (stream state recoverable — Phase 2 republishes on next analyze run):
+docker compose restart redis
+
+# If RDB corrupt:
+cd aegis-phase15
+uv run aegis dr runbook redis_oom
+uv run aegis dr restore --target redis --dry-run
+```
+
+### 5.4 MinIO object store unreachable
+
+**Symptoms**: Phase 10 lake writes fail; Phase 12 WORM audit uploads fail.
+
+```bash
+docker compose logs minio --since 10m
+curl -s http://localhost:9002/minio/health/live
+
+# Restart MinIO:
+docker compose restart minio
+
+# If data volumes corrupted (very rare):
+docker exec aegis-minio mc ls local/   # list buckets before stopping
+```
+
+### 5.5 Dashboard not loading
+
+**Symptoms**: `http://localhost:8300` returns "connection refused" or blank page.
+
+**Recommended: run on host (no Docker rebuild, live code changes):**
+```bash
+# Ensure Docker dashboard is stopped first (frees port 8300):
+docker compose stop dashboard
+
+# Start host-mode dashboard (reads .env directly):
+uv run aegis dashboard serve
+# → http://127.0.0.1:8300
+```
+
+**If using Docker dashboard mode (`--profile dashboard`):**
+```bash
+docker compose logs dashboard --since 5m | tail -30
+
+# Common causes:
+# a) Postgres or Redis not yet healthy → wait or restart deps
+# b) Port 8300 already in use by host-mode dashboard → kill it first
+#    lsof -i :8300   then   kill <pid>
+# c) Stale AEGIS_ENV in container → force-recreate:
+docker compose --profile dashboard up -d --force-recreate dashboard
+```
+
+> Note: `AEGIS_ENV` is now hardcoded to `dev` in docker-compose.yml so the
+> `"development"` ValidationError cannot recur on fresh containers.
+
+### 5.6 Alerts not being delivered
+
+**Symptoms**: ENTER verdicts in stream, no Discord/ntfy/Telegram messages.
+
+```bash
+# Check if killswitch is tripped:
+uv run --package aegis-execute aegis-execute killswitch state
+
+# Check outbox for stuck rows:
+psql postgresql://aegis_app:aegis_app_dev_pw@localhost:5433/aegis \
+  -c "SELECT id, status, attempt_count, last_error FROM alert_outbox ORDER BY created_at DESC LIMIT 10;"
+
+# Restart the drain worker:
+docker compose restart execute-drain
+
+# Verify notifier config:
+grep -E "DISCORD|NTFY|TELEGRAM" .env
+```
+
+**Stuck outbox rows**: if `alert_outbox` has rows in `claimed` state for > 10 minutes, the drain worker crashed. Restart: `docker compose restart execute-drain`.
+
+### 5.7 LLM gateway — all providers failing
+
+**Symptoms**: `aegis analyze` runs but all verdicts are heuristic-only; `aegis llm health` shows all providers DOWN.
+
+```bash
+uv run aegis llm health --json-out
+
+# Verify at least one provider key is set:
+grep -E "GROQ_API_KEY|OPENROUTER_API_KEY|GEMINI_API_KEY" .env
+
+# Test Ollama (if running):
+curl -s http://localhost:11434/api/tags | python3 -m json.tool
+
+# Check circuit breaker state:
+docker compose logs dashboard --since 5m | grep "circuit"
+
+# Fallback (always works, no API keys needed):
+uv run aegis analyze --limit 20 --no-llm
+```
+
+### 5.8 Loki / Promtail not collecting logs
+
+**Symptoms**: Grafana Explore → Loki shows "No data".
+
+```bash
+# Ensure logging profile is running:
+docker compose --profile logging ps
+
+# Check Promtail can reach Loki:
+docker compose logs promtail --since 5m
+
+# Check Loki is healthy:
+curl -s http://localhost:3100/ready
+docker compose logs loki --since 5m | grep -v "^level=info"
+
+# Verify docker.sock mount (needed for Promtail container discovery):
+docker compose config | grep -A3 promtail | grep sock
+
+# Restart log stack:
+docker compose restart loki
+sleep 10
+docker compose restart promtail
+```
+
+**Note**: Loki service is named `loki` (not `aegis-loki`) in docker-compose. Container name is `aegis-loki`.
+
+### 5.9 Capital execution circuit breaker tripped
+
+**Symptoms**: `/capital/plan` returns `{"status":"rejected","reason":"daily_loss_limit_exceeded"}`.
+
+```bash
+# Check circuit breaker state:
+curl -s http://localhost:8200/capital/status | python3 -m json.tool | grep -E "mode|daily_loss|circuit"
+
+# View today's PnL:
+psql postgresql://aegis_app:aegis_app_dev_pw@localhost:5433/aegis \
+  -c "SELECT SUM(realised_pnl_usd) FROM settlements WHERE settle_date = CURRENT_DATE;"
+
+# Circuit breaker auto-resets at next UTC midnight.
+# Emergency override (advisory mode disables all capital risk):
+# Edit .env: AEGIS_EXECUTE_MODE=advisory
+docker compose restart execute-api
+```
+
+### 5.10 Disk full
+
+**Symptoms**: Postgres write errors; MinIO returns 500; Docker logs stop.
+
+```bash
+df -h ~   # WSL2
+
+# Free space:
+uv run aegis datalake retention bronze --apply
+uv run aegis datalake retention silver --apply
+docker system prune -f
+
+# Check MinIO bucket sizes:
+docker exec aegis-minio mc du local/
+
+# Full runbook:
+cd aegis-phase15 && uv run aegis dr runbook disk_full
+```
+
+---
+
+## 6. Maintenance Procedures
+
+### 6.1 Apply database migrations
+
+```bash
+# Check current migration version:
+psql postgresql://aegis_app:aegis_app_dev_pw@localhost:5433/aegis \
+  -c "SELECT version FROM schema_version ORDER BY applied_at DESC LIMIT 1;" 2>/dev/null || \
+  echo "schema_version table not present — migrations apply at Postgres init time"
+
+# Migrations run automatically at Postgres container first start
+# (via /docker-entrypoint-initdb.d/migrations/).
+
+# Datalake catalog migrations (SQLite, run after install):
+uv run aegis datalake migrate
+```
+
+### 6.2 Adding a new LLM provider key
+
+```bash
+# 1. Add to .env:
+echo "GROQ_API_KEY=gsk_..." >> .env
+
+# 2. Restart services that use the gateway:
+docker compose restart dashboard execute-api
+
+# 3. Verify:
+uv run aegis llm health
+```
+
+### 6.3 Rotating secrets
+
+```bash
+# Manually update .env and restart affected services:
+docker compose restart execute-api execute-drain dashboard
+```
+
+### 6.4 Clearing Redis streams when overfull
+
+```bash
+# Check stream lengths:
+redis-cli -h localhost -p 6380 XLEN aegis:phase2:graph_results
+redis-cli -h localhost -p 6380 XLEN aegis:swarm:results
+
+# Trim to last 1000 entries (safe — Phase 4 IntakeWorker uses XREADGROUP with ACK):
+redis-cli -h localhost -p 6380 XTRIM aegis:phase2:graph_results MAXLEN 1000
+redis-cli -h localhost -p 6380 XTRIM aegis:swarm:results MAXLEN 1000
+```
+
+### 6.5 Triggering a manual DR backup
+
+```bash
+cd aegis-phase15
+
+# Backup everything:
+uv run aegis dr backup
+
+# Verify the backup appeared in MinIO:
+docker exec aegis-minio mc ls local/aegis-dr/ --recursive | grep "$(date +%Y-%m-%d)"
+```
+
+### 6.6 Weekly restore drill
+
+```bash
+# Normally automated by DrOrchestrator. To run manually:
+cd aegis-phase15
+
+# Create the drill database (only needed once):
+psql postgresql://aegis_app:aegis_app_dev_pw@localhost:5433/postgres \
+  -c "CREATE DATABASE aegis_drill OWNER aegis_app;" 2>/dev/null || echo "already exists"
+
+# Dry-run (validates manifest + checksum, no actual restore):
+uv run aegis dr drill --dry-run
+
+# Full drill (restores to aegis_drill, validates row counts):
+uv run aegis dr drill
+```
+
+### 6.7 Scale Ollama context / model limits
+
+```bash
+# Edit docker-compose.yml:
+# OLLAMA_NUM_CTX: "8192"          → increase for longer conversations
+# OLLAMA_MAX_LOADED_MODELS: "1"   → increase if switching models frequently
+
+docker compose up -d ollama   # apply new env
+```
+
+### 6.8 Pull a new Ollama model
+
+```bash
+# Via aegis CLI:
+uv run aegis llm pull qwen2.5:14b
+
+# Or direct API call:
+curl -X POST http://localhost:11434/api/pull \
+  -H "Content-Type: application/json" \
+  -d '{"name":"qwen2.5:14b"}'
+
+# Re-run the one-shot init if models were wiped:
+docker compose run --rm ollama-init
+```
+
+### 6.9 Setting up Langfuse (LLM tracing)
+
+```bash
+# 1. Create the langfuse database (Postgres must be running):
+#    On a fresh deploy the postgres init script handles this automatically.
+#    For an already-running instance:
+docker exec aegis-postgres psql -U aegis_app -d aegis \
+  -c "CREATE DATABASE langfuse OWNER aegis_app;"
+
+# 2. Start Langfuse:
+docker compose --profile tracing up -d langfuse
+
+# 3. Open http://localhost:3002 and sign in
+#    Default org/project: aegis / aegis-pulse
+#    API keys: pk-lf-aegis-dev / sk-lf-aegis-dev
+
+# 4. Configure AEGIS to send traces:
+#    Add to .env:
+#    LANGFUSE_HOST=http://localhost:3002
+#    LANGFUSE_PUBLIC_KEY=pk-lf-aegis-dev
+#    LANGFUSE_SECRET_KEY=sk-lf-aegis-dev
+```
+
+### 6.10 Run the test suite
+
+```bash
+# Phases 0-14 unit tests (quick, no infra):
+uv run python -m pytest tests/unit/ -q -p no:hypothesis
+
+# With coverage report (floor: 78%):
+uv run python -m pytest tests/unit/ -p no:hypothesis
+
+# Phase 3 integration tests (requires running postgres + redis):
+uv run python -m pytest tests/integration/predict/ -v -p no:hypothesis
+
+# Phase 4 unit tests:
+uv run python -m pytest aegis-phase4/tests/ -q -p no:hypothesis
+
+# Phase 5 Hardening unit tests (run separately):
+uv run --package aegis-harden python -m pytest aegis-harden/tests/ -q -p no:hypothesis
+
+# Phase 15 DR unit tests (standalone module):
+cd aegis-phase15 && uv sync --extra dev && .venv/bin/python -m pytest tests/ -q -p no:hypothesis
+
+# Ruff linting (zero violations expected):
+uv run ruff check src/ aegis-phase4/src/ tests/
+```
+
+---
+
+## 7. Observability Runbook
+
+### 7.1 Key metrics to watch (Grafana Mission Control — http://localhost:3001)
+
+| Metric | Normal range | Alert threshold |
+|--------|-------------|----------------|
+| `aegis_obs_ingest_signals_total` (rate) | 5–50/min during scrapes | 0 for > 30 min |
+| `aegis_obs_agent_task_duration_ms` (p99) | < 5000ms | > 30000ms |
+| `aegis_obs_llm_cost_usd` (cumulative) | < $1/day (dev) | > $5/day |
+| `aegis_obs_alert_delivered_total` (rate) | 1–20/hour | 0 for > 2 hours after analyze |
+| `aegis_obs_model_inference_latency_ms` (p99) | < 12ms (heuristic) | > 500ms |
+| `aegis_obs_database_query_duration_ms` (p99) | < 100ms | > 1000ms |
+| `aegis_obs_cache_hit_ratio` | > 0.7 | < 0.3 |
+
+### 7.2 Log queries (Grafana Explore → Loki → LogQL)
+
+```logql
+# All errors across all services:
+{container_name=~"aegis-.*"} |= "error" | json | level = "error"
+
+# Agent pipeline errors:
+{container_name="aegis-dashboard"} |= "aegis.agents" | json | level = "error"
+
+# Phase 4 alert failures:
+{container_name="aegis-execute-drain"} | json | level = "error"
+
+# LLM provider failures:
+{container_name=~"aegis-.*"} |= "AllProvidersFailed" | json
+
+# Killswitch events:
+{container_name="aegis-execute-api"} |= "killswitch" | json
+
+# Phase 15 backup failures:
+{container_name=~"aegis-.*"} |= "AEGIS-DR-" | json
+```
+
+### 7.3 Tracing a slow request (Jaeger — http://localhost:16687)
+
+1. Open `http://localhost:16687`.
+2. Select Service: `aegis-dashboard` (or `aegis-predict`, `aegis-execute-api`).
+3. Set time range → "Find Traces".
+4. Click a slow trace to see the span waterfall.
+5. The `trend_id` and `correlation_id` span attributes link a Jaeger trace to a structlog log line.
+
+### 7.4 Prometheus queries (http://localhost:9091)
+
+```promql
+# Signal ingest rate over last 5 minutes:
+rate(aegis_obs_ingest_signals_total[5m])
+
+# Agent pipeline p99 latency:
+histogram_quantile(0.99, rate(aegis_obs_agent_task_duration_ms_bucket[5m]))
+
+# LLM cumulative cost today:
+aegis_obs_llm_cost_usd
+
+# DB query p99:
+histogram_quantile(0.99, rate(aegis_obs_database_query_duration_ms_bucket[5m]))
+```
+
+---
+
+## 8. Environment Variables Quick Reference
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `AEGIS_ENV` | `dev` | Must be `dev`/`staging`/`prod`/`test` — NOT `development` |
+| `AEGIS_PG_DSN` | `postgresql://aegis_app:aegis_app_dev_pw@localhost:5433/aegis` | Primary Postgres DSN |
+| `AEGIS_REDIS_URL` | `redis://localhost:6380/0` | Redis connection URL (port **6380** on host) |
+| `AEGIS_DISABLE_OLLAMA` | `0` | Set to `1` to skip Ollama in tests/CI |
+| `OTEL_ENABLED` | `true` | Set to `false` to disable OTel tracing |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://localhost:4317` | Jaeger OTLP gRPC endpoint |
+| `SENTRY_DSN` | (empty) | Sentry project DSN; empty = Sentry disabled |
+| `AEGIS_EXECUTE_MODE` | `advisory` | `advisory`/`staging`/`live` — `live` only in production |
+| `AEGIS_EXECUTE_HMAC_KEY` | `dev-hmac-key-not-for-prod` | Must match between execute-api and execute-drain |
+| `AEGIS_DEFAULT_TENANT_ID` | `00000000-0000-0000-0000-000000000001` | Default tenant UUID |
+| `AEGIS_EXECUTE_VYAPAR_WEBHOOK_URL` | (empty) | B2B Vyapar webhook (empty = disabled) |
+| `AEGIS_CAPITAL_MAX_RISK_USD` | `500.0` | Maximum single-plan capital exposure |
+| `AEGIS_CAPITAL_DAILY_LOSS_LIMIT_USD` | `200.0` | Daily drawdown circuit-breaker threshold |
+| `AEGIS_CAPITAL_KELLY_FRACTION` | `0.25` | Fractional-Kelly position sizing multiplier |
+| `AEGIS_TELEGRAM_BOT_TOKEN` | (empty) | Telegram bot token for P0/P1 approval workflow |
+| `AEGIS_TELEGRAM_APPROVAL_CHAT_ID` | (empty) | Chat/group ID for approval notifications |
+| `AEGIS_PRINTFUL_API_KEY` | (empty) | Printful POD fulfillment (empty = degraded) |
+| `AEGIS_CJ_API_KEY` | (empty) | CJ Dropshipping API key (empty = degraded) |
+| `AEGIS_SHOPIFY_SHOP_DOMAIN` | (empty) | Shopify store domain |
+| `AEGIS_SHOPIFY_ACCESS_TOKEN` | (empty) | Shopify Admin API access token |
+| `AEGIS_SEC_VAULT_TOKEN` | `dev-root-token` | HashiCorp Vault auth token |
+| `AEGIS_BACKUP_PGBACKREST_STANZA` | `aegis-prod` | pgBackRest stanza name |
+| `AEGIS_BACKUP_RESTIC_REPOSITORY` | `local:/var/lib/restic` | restic repo URL |
+| `AEGIS_BACKUP_RESTIC_PASSWORD` | (empty) | restic encryption password (must set before init) |
+| `AEGIS_DR_PG_DSN` | (matches AEGIS_PG_DSN) | DR module Postgres DSN |
+| `AEGIS_DR_DRILL_PG_DSN` | `...@localhost:5433/aegis_drill` | Must differ from prod DSN |
+| `AEGIS_DR_RPO_TARGET_S` | `900` | RPO target in seconds (15 min) |
+| `AEGIS_DR_RTO_TARGET_S` | `3600` | RTO target in seconds (60 min) |
+| `GROQ_API_KEY` | (empty) | Groq LLM provider key |
+| `OPENROUTER_API_KEY` | (empty) | OpenRouter LLM provider key |
+| `GEMINI_API_KEY` | (empty) | Gemini LLM provider key |
+| `DOCKER_GID` | `1001` | Docker group GID for dashboard docker.sock access |
+| `LANGFUSE_HOST` | (empty) | Langfuse server URL (set if using tracing profile) |
+
+---
+
+## 9. Web UIs
+
+| URL | Service | Notes |
+|-----|---------|-------|
+| http://localhost:8300 | AEGIS Command Center (dashboard) | Main UI: signals, agents, ops console |
+| http://localhost:8200/dashboard/ | Phase 4 Execute dashboard | Alerts, killswitch, SSE |
+| http://localhost:3001 | Grafana | AEGIS Mission Control (admin / aegis_dev_admin_pw) |
+| http://localhost:9091 | Prometheus | Raw metrics |
+| http://localhost:16687 | Jaeger | Distributed traces (OTel) |
+| http://localhost:3100 | Loki | Log API (query via Grafana; logging profile) |
+| http://localhost:9003 | MinIO console | Object store (aegis-dev-key / aegis-dev-secret-please-change) |
+| http://localhost:11434 | Ollama | Local LLM runtime |
+| http://localhost:4200 | Prefect | Orchestration UI (orchestration profile) |
+| http://localhost:3002 | Langfuse | LLM tracing (tracing profile) |
+
+---
+
+## 10. Alert Escalation
+
+| Severity | Condition | Action |
+|----------|-----------|--------|
+| P0 — Capital circuit | Daily loss > `AEGIS_CAPITAL_DAILY_LOSS_LIMIT_USD` | Check `/capital/status`, switch to `advisory` mode |
+| P0 — Data loss | Postgres down > 15 min AND last backup > RPO | `aegis dr runbook pg_corruption` |
+| P0 — Silent | No alerts generated for > 2 hours when signals exist | Check killswitch; `docker compose restart execute-drain` |
+| P1 — Degraded | All LLM providers down (heuristic-only mode) | Check provider keys; restart gateway services |
+| P1 — Lake stale | No Bronze ingest for > 24 hours | `uv run aegis datalake ingest-postgres-signals --dsn ...` |
+| P2 — Observability | Loki not receiving logs for > 30 min | `docker compose restart loki && docker compose restart promtail` |
+| P2 — Backup stale | Last backup > `HEALTH_STALE_BACKUP_CRIT_S` (3600s) | `cd aegis-phase15 && uv run aegis dr backup --target postgres` |
+| P3 — Performance | p99 agent latency > 30s | Check for blocking I/O; `docker compose restart dashboard` |

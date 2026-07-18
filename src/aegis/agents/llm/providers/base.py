@@ -11,6 +11,7 @@ key, bad URL). The router treats these classes differently:
 
 Author: AEGIS Pulse core team
 """
+
 from __future__ import annotations
 
 import abc
@@ -69,5 +70,6 @@ class LLMProvider(abc.ABC):
     async def health(self) -> bool:
         """Cheap reachability check — does not consume tokens."""
 
-    async def close(self) -> None:  # noqa: B027 — intentional no-op default; subclasses override
-        """Release any HTTP clients, sockets, etc. No-op by default."""
+    @abc.abstractmethod
+    async def close(self) -> None:
+        """Release any HTTP clients, sockets, etc."""

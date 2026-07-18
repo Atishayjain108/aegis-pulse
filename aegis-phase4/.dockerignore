@@ -1,0 +1,48 @@
+# --- VCS ---
+.git
+.gitignore
+.gitattributes
+
+# --- Python build artefacts ---
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.egg-info
+.eggs
+build
+dist
+.tox
+.nox
+.pytest_cache
+.ruff_cache
+.mypy_cache
+.coverage
+.coverage.*
+htmlcov
+coverage.xml
+
+# --- Virtualenvs ---
+.venv
+venv
+env
+
+# --- Editor/IDE ---
+.idea
+.vscode
+*.swp
+*.swo
+.DS_Store
+
+# --- Tests + dev-only ---
+tests
+docs/errors/*.md
+.envrc
+*.local.env
+
+# --- Self-references ---
+docker/*.yml
+config
+
+# --- The zip we ship ---
+*.zip

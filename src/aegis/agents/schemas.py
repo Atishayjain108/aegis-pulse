@@ -18,6 +18,7 @@ every message.
 
 Author: AEGIS Pulse core team
 """
+
 from __future__ import annotations
 
 import uuid
@@ -272,6 +273,34 @@ class GraphResult(BaseModel):
         "exception",
         "timeout",
     ]
+
+    # Causal explanation layer — populated by aegis.predict.causal.explainer
+    explanation: str = ""
+    counterfactual: str = ""
+    primary_drivers: list[str] = Field(default_factory=list)
+
+    # Provenance (HALLU-1): did real LLM reasoning back this verdict, or did the
+    # pipeline silently degrade to heuristic-only text? Lets the dashboard badge a
+    # result so a confident-looking heuristic fallback is not mistaken for analysis.
+    llm_used: bool = False
+    reasoning_source: Literal["llm", "heuristic", "mixed"] = "heuristic"
+
+    # PASS2-2D: accuracy weights (0.5-1.5 per agent) used by the supervisor's
+    # feedback-weighted ensemble for THIS result; empty dict = neutral 1.0
+    # weighting (no outcome history loaded). weight_update_ts records when
+    # the nightly job last refreshed the weights.
+    agent_weights: dict[str, float] = Field(default_factory=dict)
+    weight_update_ts: datetime | None = None
+
+    # PASS6-6A: second-pass deep verification of P0 results (score >= 0.85).
+    # deep_verified=True means all independent checks (temporal consistency,
+    # cross-source confirmation, red-team review) passed; on any failure the
+    # score is reduced and the failed check names are recorded here.
+    # trend_data carries the raw signal metadata (velocities, platforms) the
+    # verification checks need — populated by the runner from the candidate.
+    deep_verified: bool = False
+    deep_verify_failures: list[str] = Field(default_factory=list)
+    trend_data: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("started_at", "finished_at")
     @classmethod

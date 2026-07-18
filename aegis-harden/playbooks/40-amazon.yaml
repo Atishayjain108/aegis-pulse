@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=./_schema.json
+name: amazon
+version: 1
+match:
+  source: amazon
+  domain: "*.amazon.com"
+delay_ms: 2000
+jitter_ms: 1000
+rate_per_min: 20
+retries: 4
+profile: stealth
+honor_robots: false
+use_flaresolverr: true
+rotate_every: 5
+notes: |
+  Amazon bestseller scrape. High-friction; rotate proxies aggressively.
+  honor_robots=false is documented in Phase 1 — Amazon's robots.txt forbids
+  commerce scraping, but bestseller rankings are public ranking data.

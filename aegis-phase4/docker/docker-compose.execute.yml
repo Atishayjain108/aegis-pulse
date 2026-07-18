@@ -1,0 +1,150 @@
+# AEGIS Pulse — Phase 4 local dev stack.
+# -------------------------------------------------------------------------
+# Brings up Postgres (TimescaleDB), Redis, the API, the drainer, Prometheus,
+# Grafana, and (optionally) a Loki + Promtail logs pipeline.
+#
+#   docker compose -f docker/docker-compose.execute.yml up -d
+#
+# Ports:
+#   API           → http://localhost:8200
+#   Dashboard     → http://localhost:8200/dashboard/
+#   Grafana       → http://localhost:3100  (admin / aegis_dev_admin_pw)
+#   Prometheus    → http://localhost:9190
+#   Postgres      → localhost:5544          (postgres / aegis_dev_pw)
+#   Redis         → localhost:6480
+#
+# Phase 4 ports are deliberately offset by +100 from the Phase 1 stack
+# so both can run side-by-side.
+# -------------------------------------------------------------------------
+
+name: aegis-execute
+
+services:
+  postgres:
+    image: timescale/timescaledb-ha:pg16
+    container_name: aegis-execute-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: aegis
+      POSTGRES_PASSWORD: aegis_dev_pw
+      POSTGRES_DB: aegis_execute
+    ports:
+      - "5544:5432"
+    volumes:
+      - execute-pgdata:/home/postgres/pgdata/data
+      - ../db/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aegis -d aegis_execute"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [execute]
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: aegis-execute-redis
+    restart: unless-stopped
+    command: ["redis-server", "--save", "60", "1", "--appendonly", "yes"]
+    ports:
+      - "6480:6379"
+    volumes:
+      - execute-redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [execute]
+
+  api:
+    image: aegis/execute-api:0.4.0
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.api
+    container_name: aegis-execute-api
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_healthy }
+    environment:
+      AEGIS_EXECUTE_MODE: advisory
+      AEGIS_EXECUTE_API_HOST: 0.0.0.0
+      AEGIS_EXECUTE_API_PORT: "8200"
+      AEGIS_EXECUTE_API_BEARER_TOKEN: ""   # set in production
+      AEGIS_EXECUTE_HMAC_KEY: "dev-hmac-key-not-for-prod"
+      AEGIS_EXECUTE_KILLSWITCH_KEY: "aegis:execute:killswitch"
+      AEGIS_EXECUTE_WAIT_FOR_DEPS_S: "30"
+      AEGIS_PG_DSN: "postgresql://aegis:aegis_dev_pw@postgres:5432/aegis_execute"
+      AEGIS_REDIS_URL: "redis://redis:6379/0"
+    ports:
+      - "8200:8200"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; urllib.request.urlopen('http://127.0.0.1:8200/healthz', timeout=2); sys.exit(0)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks: [execute]
+
+  drain:
+    image: aegis/execute-drain:0.4.0
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.drain
+    container_name: aegis-execute-drain
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_healthy }
+    environment:
+      # The drainer is per-tenant in v1; set this to your tenant UUID.
+      AEGIS_EXECUTE_TENANT_ID: "00000000-0000-0000-0000-000000000000"
+      AEGIS_EXECUTE_HMAC_KEY: "dev-hmac-key-not-for-prod"
+      AEGIS_EXECUTE_KILLSWITCH_KEY: "aegis:execute:killswitch"
+      AEGIS_EXECUTE_WAIT_FOR_DEPS_S: "30"
+      AEGIS_PG_DSN: "postgresql://aegis:aegis_dev_pw@postgres:5432/aegis_execute"
+      AEGIS_REDIS_URL: "redis://redis:6379/0"
+    networks: [execute]
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: aegis-execute-prometheus
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=7d
+      - --storage.tsdb.path=/prometheus
+    ports:
+      - "9190:9090"
+    volumes:
+      - ../config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - execute-promdata:/prometheus
+    networks: [execute]
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: aegis-execute-grafana
+    restart: unless-stopped
+    depends_on: [prometheus]
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: aegis_dev_admin_pw
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_INSTALL_PLUGINS: ""
+    ports:
+      - "3100:3000"
+    volumes:
+      - ../config/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../config/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - execute-grafanadata:/var/lib/grafana
+    networks: [execute]
+
+volumes:
+  execute-pgdata:
+  execute-redisdata:
+  execute-promdata:
+  execute-grafanadata:
+
+networks:
+  execute:
+    driver: bridge

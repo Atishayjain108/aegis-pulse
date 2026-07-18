@@ -33,9 +33,12 @@ trade than be wrong.
 
 Author: AEGIS Pulse core team
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
+
+import structlog
 
 from ..llm import prompts
 from ..schemas import AgentDecision, AgentVerdict, TrendCandidate
@@ -44,6 +47,8 @@ from .base import AgentNode
 
 if TYPE_CHECKING:
     from ..state import GraphState
+
+_log = structlog.get_logger("aegis.agents.nodes.red_team")
 
 
 class RedTeamAgent(AgentNode):
@@ -119,9 +124,7 @@ class RedTeamAgent(AgentNode):
         confidence = 0.6 + 0.4 * min(1.0, candidate.signal_count / 50.0)
         confidence = max(0.0, min(1.0, confidence))
 
-        reasoning = (
-            f"falsifiers={n_falsifiers}: {', '.join(falsifiers) if falsifiers else 'none'}"
-        )
+        reasoning = f"falsifiers={n_falsifiers}: {', '.join(falsifiers) if falsifiers else 'none'}"
 
         details: dict[str, Any] = {
             "red_team_passed": passed,
@@ -163,7 +166,8 @@ class RedTeamAgent(AgentNode):
                 falsifiers=", ".join(heuristic.details.get("red_team_falsifiers", [])),
                 scout_score=heuristic.details.get("scout_score_used", 0.0),
             )
-        except Exception:
+        except Exception as exc:
+            _log.debug("red_team.llm_input_build_failed", error=str(exc))
             return None
         system_text = (
             "You are RED_TEAM. Hunt for additional falsifiers. Reply JSON only: "
@@ -176,7 +180,5 @@ class RedTeamAgent(AgentNode):
     def _extra_state(self, decision: AgentDecision) -> dict[str, Any]:
         return {
             "red_team_passed": bool(decision.details.get("red_team_passed", False)),
-            "red_team_falsifiers": list(
-                decision.details.get("red_team_falsifiers", []) or []
-            ),
+            "red_team_falsifiers": list(decision.details.get("red_team_falsifiers", []) or []),
         }

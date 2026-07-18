@@ -1,0 +1,17 @@
+# AEGIS Pulse — Phase 4 Grafana datasource provisioning.
+#
+# Auto-wires the in-stack Prometheus as the default Grafana datasource
+# so the dashboard loads with no manual setup.
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: "15s"
+      httpMethod: POST

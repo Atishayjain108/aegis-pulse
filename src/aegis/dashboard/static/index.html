@@ -1,0 +1,2429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>AEGIS Pulse — Intelligence Command Center</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet"/>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<style>
+:root{
+  /* obsidian-violet base */
+  --bg:#080313;--bg2:#100823;--bg3:#180c33;--bg4:#22134a;
+  --border:#2a1c4d;--border2:#3d2a6e;
+  --text:#ece8ff;--muted:#8b7fb0;--dim:#4a3d6b;
+  /* aurora accents (names kept for inline-style JS compatibility) */
+  --cyan:#4dd6ff;--cyan2:#2aa8e6;
+  --green:#3df5b4;--green2:#1fc98e;
+  --amber:#ffc14d;--amber2:#e09a1f;
+  --red:#ff5a7a;--red2:#e0314f;
+  --purple:#b387ff;
+  --enter:#3df5b4;--hold:#ffc14d;--block:#ff5a7a;
+  /* signature plasma gradient */
+  --plasma:linear-gradient(120deg,#4dd6ff 0%,#b387ff 48%,#ff5fc8 100%);
+  --glow-cyan:0 0 24px rgba(77,214,255,.35);
+  --font:'JetBrains Mono','SF Mono','Fira Code',monospace;
+  --font-display:'Space Grotesk','Inter',sans-serif;
+  --font-body:'Inter',system-ui,sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;background:var(--bg);color:var(--text);
+  font-family:var(--font-body);font-size:12px;overflow:hidden;
+  -webkit-font-smoothing:antialiased}
+/* ambient aurora wash behind everything */
+body::before{
+  content:'';position:fixed;inset:0;z-index:-1;pointer-events:none;
+  background:
+    radial-gradient(60vw 50vh at 12% -8%,rgba(77,214,255,.10),transparent 60%),
+    radial-gradient(55vw 55vh at 92% 8%,rgba(179,135,255,.12),transparent 60%),
+    radial-gradient(70vw 60vh at 70% 110%,rgba(255,95,200,.08),transparent 60%);
+  animation:auroraDrift 24s ease-in-out infinite alternate;
+}
+@keyframes auroraDrift{0%{transform:translate3d(0,0,0) scale(1)}100%{transform:translate3d(-2%,1.5%,0) scale(1.08)}}
+@media(prefers-reduced-motion:reduce){
+  *,body::before{animation:none!important;transition:none!important}
+}
+
+/* ── TOPBAR ── */
+.topbar{
+  height:54px;display:flex;align-items:center;justify-content:space-between;
+  padding:0 20px;background:linear-gradient(180deg,rgba(24,12,51,.92),rgba(16,8,35,.92));
+  border-bottom:1px solid var(--border);position:relative;z-index:100;
+  backdrop-filter:blur(8px);
+}
+.topbar::after{content:'';position:absolute;left:0;right:0;bottom:-1px;height:1px;
+  background:var(--plasma);opacity:.55}
+.topbar-brand{display:flex;align-items:center;gap:14px}
+.brand-logo{font-family:var(--font-display);font-size:18px;font-weight:700;letter-spacing:4px;
+  background:var(--plasma);-webkit-background-clip:text;background-clip:text;
+  -webkit-text-fill-color:transparent;background-size:200% auto;animation:plasmaShift 6s linear infinite}
+@keyframes plasmaShift{to{background-position:200% center}}
+.brand-ver{font-family:var(--font);color:var(--muted);font-size:10px;border:1px solid var(--border2);
+  padding:1px 7px;border-radius:20px}
+.topbar-center{display:flex;gap:10px;align-items:center}
+.sys-pill{display:flex;align-items:center;gap:6px;padding:4px 12px;
+  border:1px solid var(--border);border-radius:20px;font-size:10px;color:var(--muted);
+  background:rgba(255,255,255,.02)}
+.sys-pill .dot{width:7px;height:7px;border-radius:50%}
+.dot-ok{background:var(--green);box-shadow:0 0 8px var(--green)}
+.dot-warn{background:var(--amber);box-shadow:0 0 8px var(--amber)}
+.dot-err{background:var(--red);box-shadow:0 0 8px var(--red)}
+.dot-pulse{animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+.topbar-right{display:flex;align-items:center;gap:12px}
+.ks-btn{
+  padding:5px 16px;border-radius:20px;cursor:pointer;font-family:var(--font);
+  font-size:10px;font-weight:700;letter-spacing:1px;transition:all .2s;border:1px solid;
+}
+.ks-armed{border-color:var(--green);color:var(--green);background:rgba(61,245,180,.06)}
+.ks-armed:hover{background:rgba(61,245,180,.16);box-shadow:0 0 16px rgba(61,245,180,.25)}
+.ks-tripped{border-color:var(--red);color:var(--red);background:rgba(255,90,122,.12);animation:blink 1s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.55}}
+.time-display{font-family:var(--font);color:var(--muted);font-size:11px;min-width:84px;text-align:right;
+  font-variant-numeric:tabular-nums}
+
+/* ── LAYOUT ── */
+.layout{display:flex;height:calc(100vh - 54px);overflow:hidden}
+
+/* ── SIDEBAR ── */
+.sidebar{
+  width:204px;background:linear-gradient(180deg,rgba(16,8,35,.6),rgba(8,3,19,.6));
+  border-right:1px solid var(--border);
+  display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto;padding:10px 0;
+}
+.nav-sect{
+  color:var(--dim);font-size:9px;letter-spacing:2.5px;text-transform:uppercase;
+  padding:14px 16px 5px;font-weight:600;
+}
+.nav-item{
+  position:relative;display:flex;align-items:center;gap:10px;padding:9px 16px;cursor:pointer;
+  color:var(--muted);transition:all .18s;font-size:12px;font-weight:500;
+}
+.nav-item::before{content:'';position:absolute;left:0;top:50%;transform:translateY(-50%);
+  height:0;width:3px;border-radius:0 3px 3px 0;background:var(--plasma);transition:height .2s}
+.nav-item:hover{color:var(--text);background:rgba(179,135,255,.06)}
+.nav-item.active{color:#fff;background:rgba(179,135,255,.10)}
+.nav-item.active::before{height:60%}
+.nav-icon{font-size:15px;width:20px;text-align:center;flex-shrink:0}
+.nav-badge{
+  margin-left:auto;background:rgba(77,214,255,.16);color:var(--cyan);
+  border:1px solid rgba(77,214,255,.3);
+  border-radius:20px;padding:1px 7px;font-size:9px;font-weight:700;min-width:22px;text-align:center;
+  font-family:var(--font)}
+.nav-badge.red{background:rgba(255,90,122,.16);color:var(--red);border-color:rgba(255,90,122,.3)}
+.nav-badge.amber{background:rgba(255,193,77,.16);color:var(--amber);border-color:rgba(255,193,77,.3)}
+.nav-badge.green{background:rgba(61,245,180,.16);color:var(--green);border-color:rgba(61,245,180,.3)}
+
+/* ── MAIN ── */
+.main{flex:1;overflow-y:auto;padding:18px;background:transparent}
+.page{display:none;animation:pageIn .35s ease}
+.page.active{display:block}
+@keyframes pageIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+/* ── SECTION HEADING ── */
+.section-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.section-title{font-family:var(--font-display);font-size:13px;letter-spacing:1px;color:var(--text);font-weight:600}
+.section-meta{font-size:10px;color:var(--muted)}
+
+/* ── STAT CARDS ── */
+.stat-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:12px;margin-bottom:16px}
+.stat-card{
+  position:relative;background:linear-gradient(160deg,rgba(34,19,74,.5),rgba(16,8,35,.6));
+  border:1px solid var(--border);border-radius:12px;
+  padding:15px 17px;transition:transform .2s,border-color .2s,box-shadow .2s;overflow:hidden;
+}
+.stat-card::after{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--plasma);opacity:.45}
+.stat-card:hover{transform:translateY(-3px);border-color:var(--border2);box-shadow:0 12px 30px rgba(0,0,0,.45)}
+.sc-label{color:var(--muted);font-size:9px;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px}
+.sc-val{font-family:var(--font-display);font-size:30px;font-weight:700;line-height:1;color:var(--text);
+  font-variant-numeric:tabular-nums}
+.sc-sub{color:var(--muted);font-size:9px;margin-top:6px}
+.sc-cyan .sc-val{color:var(--cyan)}
+.sc-green .sc-val{color:var(--green)}
+.sc-amber .sc-val{color:var(--amber)}
+.sc-red .sc-val{color:var(--red)}
+.sc-purple .sc-val{color:var(--purple)}
+
+/* ── PANELS ── */
+.panel{background:linear-gradient(160deg,rgba(24,12,51,.42),rgba(12,6,28,.5));
+  border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:14px}
+.panel-head{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:11px 16px;background:rgba(255,255,255,.02);border-bottom:1px solid var(--border);
+}
+.ph-title{font-family:var(--font-display);font-size:11px;letter-spacing:.6px;color:var(--text);
+  text-transform:uppercase;font-weight:600}
+.ph-meta{font-size:9px;color:var(--muted);font-family:var(--font)}
+.panel-body{padding:15px}
+
+/* ── PULSE SIGNATURE ── */
+.pulse-hero{
+  position:relative;border:1px solid var(--border);border-radius:14px;overflow:hidden;
+  margin-bottom:16px;background:linear-gradient(135deg,rgba(34,19,74,.55),rgba(12,6,28,.6));
+}
+.pulse-hero canvas{display:block;width:100%;height:120px}
+.pulse-overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;
+  padding:0 24px;pointer-events:none}
+.pulse-label{font-family:var(--font-display);font-weight:600}
+.pulse-label b{display:block;font-size:15px;letter-spacing:2px;
+  background:var(--plasma);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.pulse-label span{font-size:10px;color:var(--muted);letter-spacing:1px}
+.pulse-bpm{text-align:right;font-family:var(--font-display)}
+.pulse-bpm b{font-size:34px;color:var(--green);font-variant-numeric:tabular-nums}
+.pulse-bpm span{display:block;font-size:9px;color:var(--muted);letter-spacing:1.5px;text-transform:uppercase}
+
+/* ── CAPABILITY GRID ── */
+.cap-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.cap-card{border:1px solid var(--border);border-radius:12px;padding:15px 16px;
+  background:linear-gradient(160deg,rgba(34,19,74,.4),rgba(12,6,28,.5));transition:transform .2s,border-color .2s}
+.cap-card:hover{transform:translateY(-3px);border-color:var(--border2)}
+.cap-icon{font-size:20px;margin-bottom:8px}
+.cap-name{font-family:var(--font-display);font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px}
+.cap-phase{font-family:var(--font);font-size:8px;color:var(--cyan);letter-spacing:1px;text-transform:uppercase;margin-bottom:8px}
+.cap-desc{font-size:11px;line-height:1.6;color:var(--muted)}
+
+/* ── GRID ── */
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px}
+.g21{display:grid;grid-template-columns:2fr 1fr;gap:12px;margin-bottom:12px}
+.g12{display:grid;grid-template-columns:1fr 2fr;gap:12px;margin-bottom:12px}
+
+/* ── CHARTS ── */
+.chart-wrap{position:relative}
+.ch-160{height:160px}
+.ch-200{height:200px}
+.ch-240{height:240px}
+.ch-280{height:280px}
+
+/* ── LIVE TICKER ── */
+.ticker{
+  max-height:220px;overflow-y:auto;background:var(--bg);
+  border:1px solid var(--border);border-radius:4px;
+}
+.tick{
+  display:flex;align-items:center;gap:9px;padding:8px 12px;
+  border-bottom:1px solid rgba(42,28,77,.5);font-size:10px;font-family:var(--font);
+  animation:fadein .35s ease;transition:background .12s;
+}
+.tick:hover{background:rgba(179,135,255,.06)}
+.tick:last-child{border-bottom:none}
+@keyframes fadein{from{opacity:0;transform:translateX(-6px)}to{opacity:1;transform:none}}
+.tick-ts{color:var(--dim);min-width:50px;flex-shrink:0}
+.tick-plat{color:var(--cyan);min-width:92px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  text-transform:uppercase;font-size:9px;letter-spacing:.5px}
+.tick-title{color:var(--text);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:var(--font-body)}
+.tick-conf{color:var(--green);min-width:38px;text-align:right;flex-shrink:0}
+
+/* ── ALERT FEED ── */
+.alert-feed{max-height:440px;overflow-y:auto}
+.alert-item{
+  display:flex;gap:10px;padding:11px 14px;border-bottom:1px solid var(--border);
+  align-items:flex-start;transition:background .15s;cursor:default;
+}
+.alert-item:hover{background:var(--bg3)}
+.alert-item:last-child{border-bottom:none}
+.vbadge{
+  padding:2px 8px;border-radius:3px;font-size:9px;font-weight:700;
+  letter-spacing:1px;flex-shrink:0;min-width:48px;text-align:center;
+}
+.vb-ENTER{background:rgba(0,230,118,.12);color:var(--enter);border:1px solid rgba(0,230,118,.25)}
+.vb-HOLD{background:rgba(255,179,0,.12);color:var(--hold);border:1px solid rgba(255,179,0,.25)}
+.vb-BLOCK{background:rgba(255,61,85,.12);color:var(--block);border:1px solid rgba(255,61,85,.25)}
+.alert-body{flex:1;min-width:0}
+.alert-trend{font-size:11px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.alert-expl{font-size:9px;color:var(--muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.alert-meta{display:flex;gap:10px;margin-top:4px}
+.alert-score{font-size:9px;color:var(--cyan)}
+.alert-time{font-size:9px;color:var(--muted)}
+
+/* ── DONUT LEGEND ── */
+.donut-wrap{display:flex;align-items:center;gap:16px}
+.donut-canvas{width:120px;height:120px;flex-shrink:0}
+.donut-leg{flex:1}
+.leg-row{display:flex;align-items:center;gap:8px;margin-bottom:7px;font-size:10px}
+.leg-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+
+/* ── HEATMAP ── */
+.heatmap-row{display:flex;align-items:center;gap:6px;margin-bottom:5px}
+.hm-label{width:130px;color:var(--muted);font-size:9px;text-align:right;flex-shrink:0}
+.hm-cells{display:flex;gap:2px;align-items:center}
+.hm-cell{width:16px;height:16px;border-radius:3px;background:rgba(42,28,77,.5);flex-shrink:0;transition:transform .1s}
+.hm-cell:hover{transform:scale(1.25)}
+.hm-l1{background:rgba(77,214,255,.22)}
+.hm-l2{background:rgba(120,170,255,.45)}
+.hm-l3{background:rgba(179,135,255,.7);box-shadow:0 0 6px rgba(179,135,255,.4)}
+.hm-l4{background:rgba(255,95,200,.85);box-shadow:0 0 8px rgba(255,95,200,.5)}
+.hm-count{color:var(--muted);font-size:9px;margin-left:6px;font-family:var(--font)}
+
+/* ── PIPELINE FLOW ── */
+.pipe-flow{
+  display:flex;align-items:center;padding:14px 8px;gap:0;overflow-x:auto;
+}
+.pipe-stage{
+  display:flex;flex-direction:column;align-items:center;min-width:90px;flex-shrink:0;
+}
+.pipe-icon{font-size:22px;margin-bottom:3px}
+.pipe-name{font-size:9px;color:var(--muted);letter-spacing:.5px;margin-bottom:2px}
+.pipe-metric{font-size:10px;color:var(--cyan);font-weight:700}
+.pipe-sdot{width:7px;height:7px;border-radius:50%;margin-top:4px}
+.psd-ok{background:var(--green);box-shadow:0 0 5px var(--green)}
+.psd-warn{background:var(--amber)}
+.psd-err{background:var(--red)}
+.pipe-arr{color:var(--dim);font-size:18px;padding-bottom:18px;flex-shrink:0;margin:0 2px}
+
+/* ── ADAPTER GRID ── */
+.adap-grid{
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));
+  gap:7px;max-height:450px;overflow-y:auto;
+}
+.prod-grid{
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));
+  gap:12px;margin-top:12px;
+}
+.prod-card{
+  background:var(--bg3);border:1px solid var(--border);border-radius:10px;
+  overflow:hidden;display:flex;flex-direction:column;
+  transition:border-color .15s,transform .15s,box-shadow .15s;
+}
+.prod-card:hover{border-color:var(--border2);transform:translateY(-3px);
+  box-shadow:0 8px 24px rgba(0,0,0,.45)}
+.prod-img{width:100%;aspect-ratio:1/1;object-fit:cover;background:var(--bg4);display:block}
+.prod-noimg{width:100%;aspect-ratio:1/1;background:var(--bg4);display:flex;
+  align-items:center;justify-content:center;color:var(--dim);font-size:28px}
+.prod-body{padding:9px 11px;display:flex;flex-direction:column;gap:5px;flex:1}
+.prod-title{font-size:11px;line-height:1.35;color:var(--text);
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.prod-meta{display:flex;justify-content:space-between;align-items:center;margin-top:auto}
+.prod-price{font-size:14px;font-weight:700;color:#5eead4}
+.prod-disc{font-size:9px;color:#fb7185;background:rgba(251,113,133,.12);
+  padding:1px 5px;border-radius:4px}
+.prod-foot{display:flex;justify-content:space-between;align-items:center;font-size:9px;color:var(--muted)}
+.prod-plat{text-transform:uppercase;letter-spacing:.4px}
+.prod-rating{color:#fbbf24}
+.prod-card a{color:inherit;text-decoration:none}
+.adap-card{
+  background:var(--bg3);border:1px solid var(--border);border-radius:5px;
+  padding:9px 11px;transition:border-color .15s;
+}
+.adap-card:hover{border-color:var(--border2)}
+.adap-name{font-size:10px;color:var(--text);margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.adap-st{font-size:9px;font-weight:700}
+.adap-st.working{color:var(--green)}
+.adap-st.idle{color:var(--amber)}
+.adap-st.dead{color:var(--red)}
+.adap-cnt{color:var(--muted);font-size:9px;margin-top:2px}
+
+/* ── CONF BARS ── */
+.cbar-wrap{margin-bottom:9px}
+.cbar-head{display:flex;justify-content:space-between;margin-bottom:2px;font-size:9px}
+.cbar-name{color:var(--muted)}
+.cbar-val{color:var(--text)}
+.cbar-bg{height:5px;background:var(--bg4);border-radius:3px;overflow:hidden}
+.cbar-fill{height:100%;border-radius:3px;transition:width .5s ease}
+
+/* ── TABLE ── */
+.data-table{width:100%;border-collapse:collapse;font-size:10.5px}
+.data-table th{
+  color:var(--muted);text-align:left;padding:7px 9px;font-size:9px;
+  letter-spacing:1px;text-transform:uppercase;border-bottom:1px solid var(--border);
+  position:sticky;top:0;background:var(--bg2);z-index:1;
+}
+.data-table td{padding:9px;border-bottom:1px solid rgba(42,28,77,.6);vertical-align:middle}
+.data-table tr:last-child td{border-bottom:none}
+.data-table tbody tr{transition:background .12s}
+.data-table tr:hover td{background:rgba(179,135,255,.07)}
+td.num{text-align:right;color:var(--cyan);font-family:var(--font);font-variant-numeric:tabular-nums}
+td.muted{color:var(--muted);font-family:var(--font);font-size:9.5px}
+
+/* ── STATUS ROWS ── */
+.stat-kv{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-size:10px}
+.stat-kv:last-child{border-bottom:none}
+.stat-kv .key{color:var(--muted)}
+.stat-kv .val{color:var(--text);font-weight:700}
+.val-green{color:var(--green)!important}
+.val-amber{color:var(--amber)!important}
+.val-red{color:var(--red)!important}
+.val-cyan{color:var(--cyan)!important}
+
+/* ── EXPLANATION BOX ── */
+.expl-box{
+  background:var(--bg);border:1px solid var(--border);
+  border-left:2px solid var(--cyan);border-radius:3px;
+  padding:8px 12px;font-size:9px;line-height:1.7;color:var(--muted);
+  margin-top:7px;max-height:80px;overflow-y:auto;
+}
+
+/* ── CONSOLE ── */
+.console-out{
+  background:#000;border:1px solid var(--border);border-radius:4px;
+  padding:10px;height:220px;overflow-y:auto;font-size:10px;line-height:1.7;
+}
+.cl{color:#4ade80}
+.cl.err{color:var(--red)}
+.cl.warn{color:var(--amber)}
+.cl.info{color:var(--cyan)}
+.con-row{display:flex;gap:8px;margin-top:8px}
+.con-inp{
+  flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:3px;
+  padding:5px 9px;color:var(--text);font-family:var(--font);font-size:11px;
+}
+.con-inp:focus{outline:none;border-color:var(--cyan)}
+.con-btn{
+  padding:5px 14px;background:var(--cyan);color:var(--bg);border:none;
+  border-radius:3px;cursor:pointer;font-family:var(--font);font-size:10px;font-weight:700;
+}
+.con-btn:hover{background:var(--cyan2)}
+.qa-grid{display:flex;flex-wrap:wrap;gap:6px}
+.qa-btn{
+  padding:4px 12px;border:1px solid var(--border2);border-radius:3px;
+  background:var(--bg3);color:var(--muted);cursor:pointer;font-family:var(--font);
+  font-size:9px;transition:all .15s;
+}
+.qa-btn:hover{color:var(--cyan);border-color:var(--cyan)}
+
+/* ── LOADING / EMPTY ── */
+.loading{color:var(--muted);font-size:10px;text-align:center;padding:20px}
+.errm{color:var(--red);font-size:10px;padding:8px}
+
+/* ── SCROLLBAR ── */
+::-webkit-scrollbar{width:7px;height:7px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:20px;border:2px solid transparent;background-clip:padding-box}
+::-webkit-scrollbar-thumb:hover{background:var(--purple);background-clip:padding-box}
+
+/* ── CONSOLE / INPUT FONTS ── */
+.console-out,.con-inp,.cl{font-family:var(--font)}
+.con-btn,.qa-btn,.ks-btn{font-family:var(--font)}
+
+/* ── RESPONSIVE ── */
+@media(max-width:900px){
+  .g2,.g3,.g21,.g12{grid-template-columns:1fr}
+  .sidebar{width:50px}
+  .nav-item>span:not(.nav-icon){display:none}
+  .nav-badge{display:none}
+  .topbar-center{display:none}
+  .pulse-overlay{padding:0 12px}
+  .pulse-bpm b{font-size:24px}
+}
+</style>
+</head>
+<body>
+
+<!-- TOPBAR -->
+<div class="topbar">
+  <div class="topbar-brand">
+    <span class="brand-logo">⚡ AEGIS</span>
+    <span class="brand-ver">v0.3.0</span>
+    <div class="sys-pill"><div class="dot dot-ok dot-pulse"></div><span id="db-pill">DB</span></div>
+    <div class="sys-pill"><div class="dot dot-ok dot-pulse" id="redis-dot"></div><span>Redis</span></div>
+    <div class="sys-pill" id="ks-pill"><div class="dot dot-ok"></div><span id="ks-state-text">ARMED</span></div>
+  </div>
+  <div class="topbar-center" id="topbar-stats">
+    <div class="sys-pill"><span id="tb-signals">— signals</span></div>
+    <div class="sys-pill"><span id="tb-alerts">— alerts</span></div>
+    <div class="sys-pill"><span id="tb-adapters">— active</span></div>
+  </div>
+  <div class="topbar-right">
+    <button class="ks-btn ks-armed" id="ks-btn" onclick="toggleKillswitch()">■ ARMED</button>
+    <div class="time-display" id="clock">--:--:--</div>
+  </div>
+</div>
+
+<div class="layout">
+
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <div class="nav-sect">Monitor</div>
+    <div class="nav-item active" onclick="showPage('overview')">
+      <span class="nav-icon">◈</span><span>Overview</span>
+    </div>
+    <div class="nav-item" onclick="showPage('signals')">
+      <span class="nav-icon">〜</span><span>Signals</span>
+      <span class="nav-badge" id="badge-signals">0</span>
+    </div>
+    <div class="nav-item" onclick="showPage('alerts')">
+      <span class="nav-icon">🔔</span><span>Alerts</span>
+      <span class="nav-badge red" id="badge-alerts">0</span>
+    </div>
+    <div class="nav-sect">Operator</div>
+    <div class="nav-item" onclick="showPage('market')">
+      <span class="nav-icon">◆</span><span>Market Analyst</span>
+    </div>
+    <div class="nav-sect">System</div>
+    <div class="nav-item" onclick="showPage('pipeline')">
+      <span class="nav-icon">⟳</span><span>Pipeline</span>
+    </div>
+    <div class="nav-item" onclick="showPage('adapters')">
+      <span class="nav-icon">⚡</span><span>Adapters</span>
+      <span class="nav-badge green" id="badge-adapters">0</span>
+    </div>
+    <div class="nav-item" onclick="showPage('intelligence')">
+      <span class="nav-icon">◎</span><span>Intelligence</span>
+    </div>
+    <div class="nav-item" onclick="showPage('markets')">
+      <span class="nav-icon">⊕</span><span>Markets</span>
+    </div>
+    <div class="nav-item" onclick="showPage('swarm')">
+      <span class="nav-icon">🐝</span><span>Swarm</span>
+    </div>
+    <div class="nav-item" onclick="showPage('sentinel')">
+      <span class="nav-icon">🛰️</span><span>Sentinel</span>
+    </div>
+    <div class="nav-item" onclick="showPage('products')">
+      <span class="nav-icon">🛍️</span><span>Products</span>
+    </div>
+    <div class="nav-item" onclick="showPage('containers')">
+      <span class="nav-icon">⬡</span><span>Containers</span>
+    </div>
+    <div class="nav-sect">Ops</div>
+    <div class="nav-item" onclick="showPage('console')">
+      <span class="nav-icon">$_</span><span>Console</span>
+    </div>
+    <div class="nav-item" onclick="showPage('research')">
+      <span class="nav-icon">🔍</span><span>Research</span>
+    </div>
+    <div class="nav-item" onclick="showPage('capabilities')">
+      <span class="nav-icon">✦</span><span>Capabilities</span>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <div class="main" id="main-scroll">
+
+    <!-- ── OVERVIEW ── -->
+    <div class="page active" id="page-overview">
+      <!-- ── PULSE SIGNATURE ── -->
+      <div class="pulse-hero">
+        <canvas id="pulse-canvas"></canvas>
+        <div class="pulse-overlay">
+          <div class="pulse-label">
+            <b>SYSTEM PULSE</b>
+            <span id="pulse-status">reading live signal flow…</span>
+          </div>
+          <div class="pulse-bpm">
+            <b id="pulse-rate">—</b>
+            <span>signals / hr</span>
+          </div>
+        </div>
+      </div>
+      <div class="stat-row" id="stat-row">
+        <div class="stat-card sc-cyan">
+          <div class="sc-label">Total Signals</div>
+          <div class="sc-val" id="s-total">—</div>
+          <div class="sc-sub" id="s-24h">loading...</div>
+        </div>
+        <div class="stat-card sc-green">
+          <div class="sc-label">Alerts</div>
+          <div class="sc-val" id="s-alerts">—</div>
+          <div class="sc-sub" id="s-alerts-24h">loading...</div>
+        </div>
+        <div class="stat-card sc-amber">
+          <div class="sc-label">Avg Confidence</div>
+          <div class="sc-val" id="s-conf">—</div>
+          <div class="sc-sub">signal quality</div>
+        </div>
+        <div class="stat-card sc-cyan">
+          <div class="sc-label">Active Adapters</div>
+          <div class="sc-val" id="s-adap">—</div>
+          <div class="sc-sub">data sources live</div>
+        </div>
+        <div class="stat-card sc-green">
+          <div class="sc-label">Pipeline Latency</div>
+          <div class="sc-val" id="s-lat">52.5s</div>
+          <div class="sc-sub">end-to-end p95</div>
+        </div>
+        <div class="stat-card sc-purple">
+          <div class="sc-label">Outcomes Recorded</div>
+          <div class="sc-val" id="s-outcomes">—</div>
+          <div class="sc-sub">training labels</div>
+        </div>
+      </div>
+
+      <div class="g21">
+        <!-- Live feed -->
+        <div class="panel">
+          <div class="panel-head">
+            <span class="ph-title">⚡ Live Signal Feed</span>
+            <span class="ph-meta" id="feed-meta">polling 30s</span>
+          </div>
+          <div class="panel-body" style="padding:0">
+            <div class="ticker" id="live-feed">
+              <div class="loading">Connecting...</div>
+            </div>
+          </div>
+        </div>
+        <!-- Verdict donut -->
+        <div class="panel">
+          <div class="panel-head"><span class="ph-title">Verdict Split</span></div>
+          <div class="panel-body">
+            <div class="donut-wrap">
+              <canvas class="donut-canvas" id="donut-canvas"></canvas>
+              <div class="donut-leg" id="donut-leg"><div class="loading">loading...</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="g2">
+        <!-- Velocity chart -->
+        <div class="panel">
+          <div class="panel-head">
+            <span class="ph-title">Signal Velocity (24h)</span>
+            <span class="ph-meta">hourly, all platforms</span>
+          </div>
+          <div class="panel-body">
+            <div class="chart-wrap ch-200"><canvas id="vel-chart"></canvas></div>
+          </div>
+        </div>
+        <!-- Latest alert -->
+        <div class="panel">
+          <div class="panel-head"><span class="ph-title">Latest Alert</span></div>
+          <div class="panel-body" id="latest-alert-panel">
+            <div class="loading">loading...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Platform heatmap -->
+      <div class="panel">
+        <div class="panel-head">
+          <span class="ph-title">Platform Activity</span>
+          <span class="ph-meta">signal volume intensity</span>
+        </div>
+        <div class="panel-body" id="heatmap-panel">
+          <div class="loading">loading...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── SIGNALS ── -->
+    <div class="page" id="page-signals">
+      <div class="g2" style="margin-bottom:12px">
+        <div class="panel">
+          <div class="panel-head"><span class="ph-title">By Platform</span></div>
+          <div class="panel-body" style="padding:0;overflow:auto;max-height:340px">
+            <div id="plat-table"><div class="loading">loading...</div></div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><span class="ph-title">Confidence by Platform</span></div>
+          <div class="panel-body" id="conf-bars"><div class="loading">loading...</div></div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head">
+          <span class="ph-title">Recent Signals</span>
+          <span class="ph-meta" id="recent-sig-meta">loading...</span>
+        </div>
+        <!-- DASH-3: signal search (/api/search) -->
+        <div style="display:flex;gap:8px;padding:8px 10px 0">
+          <input class="con-inp" id="sig-search" placeholder="Search signals… (empty = recent)" style="flex:1"
+            onkeydown="if(event.key==='Enter')loadSignals()"/>
+          <button class="con-btn" onclick="loadSignals()">🔍</button>
+        </div>
+        <div style="overflow:auto;max-height:380px" id="recent-sig-table">
+          <div class="loading">loading...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── ALERTS ── -->
+    <div class="page" id="page-alerts">
+      <div class="stat-row" style="margin-bottom:12px">
+        <div class="stat-card sc-green">
+          <div class="sc-label">ENTER</div>
+          <div class="sc-val" id="av-enter">—</div>
+        </div>
+        <div class="stat-card sc-amber">
+          <div class="sc-label">HOLD</div>
+          <div class="sc-val" id="av-hold">—</div>
+        </div>
+        <div class="stat-card sc-red">
+          <div class="sc-label">BLOCK</div>
+          <div class="sc-val" id="av-block">—</div>
+        </div>
+        <div class="stat-card sc-cyan">
+          <div class="sc-label">Avg Score</div>
+          <div class="sc-val" id="av-score">—</div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head">
+          <span class="ph-title">Alert Feed</span>
+          <span class="ph-meta" id="alert-feed-meta">loading...</span>
+        </div>
+        <div class="alert-feed" id="alert-feed">
+          <div class="loading">loading...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── PIPELINE ── -->
+    <div class="page" id="page-pipeline">
+      <div class="panel" style="margin-bottom:12px">
+        <div class="panel-head">
+          <span class="ph-title">Data Flow</span>
+          <span class="ph-meta">live system topology</span>
+        </div>
+        <div class="pipe-flow" id="pipe-flow">
+          <div class="loading">loading...</div>
+        </div>
+      </div>
+      <div class="g2">
+        <div class="panel">
+          <div class="panel-head"><span class="ph-title">Stream State</span></div>
+          <div class="panel-body" id="stream-stats"><div class="loading">loading...</div></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><span class="ph-title">Service Health</span></div>
+          <div class="panel-body" id="svc-health"><div class="loading">loading...</div></div>
+        </div>
+      </div>
+      <!-- DASH-2: stream health traffic lights + DR / Data Lake status -->
+      <div class="g2" style="margin-top:12px">
+        <div class="panel">
+          <div class="panel-head">
+            <span class="ph-title">📡 Stream Health</span>
+            <span class="ph-meta">canonical event-bus streams</span>
+          </div>
+          <div class="panel-body" id="stream-health"><div class="loading">loading...</div></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head">
+            <span class="ph-title">🩺 DR &amp; Data Lake</span>
+            <span class="ph-meta">phase 15 / phase 10</span>
+          </div>
+          <div class="panel-body" id="dr-lake"><div class="loading">loading...</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── ADAPTERS ── -->
+    <div class="page" id="page-adapters">
+      <div class="stat-row" style="margin-bottom:12px">
+        <div class="stat-card sc-green">
+          <div class="sc-label">Working</div>
+          <div class="sc-val" id="adap-working">—</div>
+          <div class="sc-sub">signals in 24h</div>
+        </div>
+        <div class="stat-card sc-amber">
+          <div class="sc-label">Idle</div>
+          <div class="sc-val" id="adap-idle">—</div>
+          <div class="sc-sub">no signals &gt;24h</div>
+        </div>
+        <div class="stat-card sc-red">
+          <div class="sc-label">Dead</div>
+          <div class="sc-val" id="adap-dead">—</div>
+          <div class="sc-sub">never or &gt;7 days</div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head">
+          <span class="ph-title">All Adapters</span>
+          <span class="ph-meta" id="adap-meta">loading...</span>
+        </div>
+        <div class="panel-body">
+          <div class="adap-grid" id="adap-grid">
+            <div class="loading">loading...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── MARKETS (Phase 7/8/9 event bus) ── -->
+    <div class="page" id="page-markets">
+      <div class="g2">
+        <div class="panel">
+          <div class="panel-head">
+            <span class="ph-title">Geo Arbitrage Opportunities</span>
+            <span class="ph-meta" id="geo-meta">phase 7</span>
+          </div>
+          <div style="overflow:auto;max-height:340px" id="geo-feed">
+            <div class="loading">loading...</div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head">
+            <span class="ph-title">Compliance Assessments</span>
+            <span class="ph-meta" id="comply-meta">phase 8</span>
+          </div>
+          <div style="overflow:auto;max-height:340px" id="comply-feed">
+            <div class="loading">loading...</div>
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head">
+          <span class="ph-title">Self-Evolution Events</span>
+          <span class="ph-meta" id="evolve-meta">phase 9</span>
+        </div>
+        <div style="overflow:auto;max-height:300px" id="evolve-feed">
+          <div class="loading">loading...</div>
+        </div>
+      </div>
+      <!-- DASH-2: Capital + Anomalies panels -->
+      <div class="g2" style="margin-top:12px">
+        <div class="panel">
+          <div class="panel-head">
+            <span class="ph-title">💰 Capital Plans</span>
+            <span class="ph-meta" id="capital-meta">phase 6</span>
+          </div>
+          <div style="overflow:auto;max-height:300px" id="capital-feed">
+            <div class="loading">loading...</div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head">
+            <span class="ph-title">🔥 Anomalies</span>
+            <span class="ph-meta" id="anomaly-meta">scrape stream</span>
+          </div>
+          <div style="overflow:auto;max-height:300px" id="anomaly-feed">
+            <div class="loading">loading...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── SWARM (DASH-2/3) ── -->
+    <div class="page" id="page-swarm">
+      <div class="panel">
+        <div class="panel-head">
+          <span class="ph-title">🚀 Harvest Control</span>
+          <span class="ph-meta" id="swarm-run-meta">fires all working adapters</span>
+        </div>
+        <div class="panel-body" style="display:flex;align-items:center;gap:12px">
+          <button class="con-btn" id="swarm-run-btn" onclick="runSwarmNow()">▶ Run Swarm Now</button>
+          <span style="font-size:11px;color:var(--muted)">Launches a full multi-source harvest in the background. Watch the live feed for the result.</span>
+        </div>
+      </div>
+      <div class="g2">
+        <div class="panel">
+          <div class="panel-head">
+            <span class="ph-title">🐝 Swarm Runs (stream)</span>
+            <span class="ph-meta" id="swarm-runs-meta">live</span>
+          </div>
+          <div style="overflow:auto;max-height:300px" id="swarm-runs">
+            <div class="loading">loading...</div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head">
+            <span class="ph-title">Run History (24h)</span>
+            <span class="ph-meta">from DB</span>
+          </div>
+          <div style="overflow:auto;max-height:300px" id="swarm-history">
+            <div class="loading">loading...</div>
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head">
+          <span class="ph-title">Agent Health Grid</span>
+          <span class="ph-meta" id="swarm-agents-meta">loading...</span>
+        </div>
+        <div class="panel-body">
+          <div class="adap-grid" id="swarm-agents-grid">
+            <div class="loading">loading...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── SENTINEL (autonomous market discovery) ── -->
+    <div class="page" id="page-sentinel">
+      <div class="panel">
+        <div class="panel-head">
+          <span class="ph-title">🛰️ Autonomous Market Sentinel</span>
+          <span class="ph-meta" id="sentinel-meta">scans every 45 min</span>
+        </div>
+        <div class="panel-body" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <button class="con-btn" id="sentinel-scan-btn" onclick="runSentinelScan()">▶ Scan Now</button>
+          <span style="font-size:11px;color:var(--muted)">
+            Sweeps the global radar (GDELT world news, Wikipedia demand, multi-region Google Trends),
+            detects velocity breakouts, and auto-runs a full market report on each — no query needed.
+          </span>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head">
+          <span class="ph-title">🔭 Self-Discovered Opportunities</span>
+          <span class="ph-meta" id="sentinel-list-meta">live</span>
+        </div>
+        <div style="overflow:auto;max-height:560px" id="sentinel-list">
+          <div class="loading">loading...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── PRODUCTS (product intelligence cards w/ images) ── -->
+    <div class="page" id="page-products">
+      <div class="panel">
+        <div class="panel-head">
+          <span class="ph-title">🛍️ Product Intelligence</span>
+          <span class="ph-meta" id="products-meta">loading...</span>
+        </div>
+        <div class="panel-body" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <select id="products-platform" onchange="loadProducts()"
+            style="background:var(--bg2,#111);color:inherit;border:1px solid var(--border,#333);border-radius:6px;padding:5px 8px;font-size:12px">
+            <option value="all">All platforms</option>
+            <option value="flipkart">Flipkart</option>
+            <option value="meesho">Meesho</option>
+            <option value="nykaa">Nykaa</option>
+            <option value="myntra">Myntra</option>
+            <option value="amazon_in">Amazon IN</option>
+            <option value="snapdeal">Snapdeal</option>
+          </select>
+          <button class="con-btn" onclick="loadProducts()">⟳ Refresh</button>
+          <span style="font-size:11px;color:var(--muted)">Live products with images captured from e-commerce adapters.</span>
+        </div>
+      </div>
+      <div class="prod-grid" id="products-grid">
+        <div class="loading">loading...</div>
+      </div>
+    </div>
+
+    <!-- ── INTELLIGENCE ── -->
+    <div class="page" id="page-intelligence">
+      <div class="g2">
+        <div class="panel">
+          <div class="panel-head"><span class="ph-title">Agent Verdicts (stream)</span></div>
+          <div style="overflow:auto;max-height:300px" id="agent-hist">
+            <div class="loading">loading...</div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><span class="ph-title">LLM Provider Health</span></div>
+          <div class="panel-body" id="llm-health">
+            <div class="loading">loading...</div>
+          </div>
+        </div>
+      </div>
+      <div class="g2">
+        <div class="panel">
+          <div class="panel-head"><span class="ph-title">Prediction Stats</span></div>
+          <div class="panel-body" id="pred-stats"><div class="loading">loading...</div></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><span class="ph-title">Swarm Status</span></div>
+          <div class="panel-body" id="swarm-status"><div class="loading">loading...</div></div>
+        </div>
+      </div>
+      <!-- DASH-3: prediction feed (/api/predictions/recent) + per-agent decisions (/api/agents/recent) -->
+      <div class="g2" style="margin-top:12px">
+        <div class="panel">
+          <div class="panel-head">
+            <span class="ph-title">🔮 Recent Predictions</span>
+            <span class="ph-meta">phase 3</span>
+          </div>
+          <div style="overflow:auto;max-height:300px" id="pred-feed">
+            <div class="loading">loading...</div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head">
+            <span class="ph-title">Agent Decisions (latest run)</span>
+            <span class="ph-meta">per-node breakdown</span>
+          </div>
+          <div style="overflow:auto;max-height:300px" id="agent-decisions">
+            <div class="loading">loading...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── CONTAINERS ── -->
+    <div class="page" id="page-containers">
+      <div class="panel">
+        <div class="panel-head">
+          <span class="ph-title">Docker Containers</span>
+          <span class="ph-meta" id="cont-meta">loading...</span>
+        </div>
+        <div style="overflow:auto;max-height:600px" id="cont-table">
+          <div class="loading">loading...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── CONSOLE ── -->
+    <div class="page" id="page-console">
+      <div class="g2" style="margin-bottom:12px">
+        <div class="panel">
+          <div class="panel-head"><span class="ph-title">Quick Actions</span></div>
+          <div class="panel-body">
+            <div class="qa-grid">
+              <button class="qa-btn" onclick="runQuick('aegis scrape --source hacker-news --limit 30')">🔍 Scrape HN</button>
+              <button class="qa-btn" onclick="runQuick('aegis scrape --source reddit-rss --subreddit MachineLearning --limit 30')">📱 Scrape Reddit</button>
+              <button class="qa-btn" onclick="runQuick('aegis analyze --limit 30 --no-llm')">🤖 Analyze</button>
+              <button class="qa-btn" onclick="runQuick('aegis swarm run --limit 10')">🌐 Swarm</button>
+              <button class="qa-btn" onclick="runQuick('uv run python scripts/validate_data_flow.py')">✅ Validate</button>
+              <button class="qa-btn" onclick="runQuick('aegis evolve status')">📈 Evolve</button>
+              <button class="qa-btn" onclick="runQuick('aegis evolve drift')">📊 Drift</button>
+              <button class="qa-btn" onclick="runQuick('aegis signals tail --limit 10')">📡 Tail Signals</button>
+              <button class="qa-btn" onclick="runQuick('aegis doctor')">🩺 Doctor</button>
+              <button class="qa-btn" onclick="topicPrompt()">🧠 Run Topic…</button>
+            </div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><span class="ph-title">System Metrics</span></div>
+          <div class="panel-body" id="sys-metrics"><div class="loading">loading...</div></div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head">
+          <span class="ph-title">Operations Console</span>
+          <span class="ph-meta">Allowed: aegis · uv · python · docker</span>
+        </div>
+        <div class="panel-body">
+          <div class="console-out" id="console-out">
+            <div class="cl info">AEGIS Pulse Operations Console</div>
+            <div class="cl">Type a command and press Run or Enter.</div>
+            <div class="cl" style="color:var(--dim)">─────────────────────────────────</div>
+          </div>
+          <div class="con-row">
+            <input class="con-inp" id="con-inp" placeholder="e.g. aegis analyze --no-llm --limit 20"
+              onkeydown="if(event.key==='Enter')runConsole()"/>
+            <button class="con-btn" onclick="runConsole()">▶ RUN</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── RESEARCH ── -->
+    <div class="page" id="page-research">
+      <div class="g2" style="margin-bottom:12px">
+        <div class="panel">
+          <div class="panel-head"><span class="ph-title">Topic Research</span></div>
+          <div class="panel-body">
+            <div style="display:flex;gap:8px;margin-bottom:10px">
+              <input class="con-inp" id="research-inp" placeholder="Enter topic e.g. 'AI chips'" style="flex:1"/>
+              <button class="con-btn" onclick="startResearch()">▶ Research</button>
+            </div>
+            <div style="font-size:9px;color:var(--muted)">Scrapes 6+ sources, runs AI analysis, produces verdict</div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><span class="ph-title">Watchlist</span></div>
+          <div class="panel-body">
+            <!-- DASH-3: watchlist add/remove (/api/watchlist/add, /api/watchlist/remove) -->
+            <div style="display:flex;gap:8px;margin-bottom:8px">
+              <input class="con-inp" id="watch-inp" placeholder="Add topic to watchlist" style="flex:1"
+                onkeydown="if(event.key==='Enter')addWatch()"/>
+              <button class="con-btn" onclick="addWatch()">＋</button>
+            </div>
+            <div id="watchlist-panel"><div class="loading">loading...</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><span class="ph-title">Research Output</span></div>
+        <div class="panel-body">
+          <div class="console-out" id="research-out" style="height:280px">
+            <div class="cl">Start a research job above to see live output.</div>
+          </div>
+        </div>
+      </div>
+      <div class="panel" style="margin-top:12px">
+        <div class="panel-head"><span class="ph-title">Research History</span></div>
+        <div style="overflow:auto;max-height:200px" id="research-hist">
+          <div class="loading">loading...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── MARKET ANALYST ── -->
+    <div class="page" id="page-market">
+      <div class="panel">
+        <div class="panel-head">
+          <span class="ph-title">◆ Market Analyst</span>
+          <span class="ph-meta">type any product — AEGIS finds it, compares it, ranks it</span>
+        </div>
+        <div class="panel-body">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <input class="con-inp" id="market-inp" style="flex:1;min-width:240px"
+              placeholder="e.g. men's trimmer · wireless earbuds · air fryer"
+              onkeydown="if(event.key==='Enter')runMarket()"/>
+            <select id="market-depth" class="con-inp" style="flex:0 0 130px">
+              <option value="surface">Surface · fast</option>
+              <option value="standard">Standard</option>
+              <option value="deep">Deep · wide</option>
+            </select>
+            <button class="con-btn" id="market-btn" onclick="runMarket()">◆ Analyze Market</button>
+          </div>
+          <div style="font-size:10px;color:var(--muted);margin-top:8px">
+            Live harvest across marketplaces — analysis runs in real time and may take 30–90s.
+            No default query; type what you want.
+          </div>
+        </div>
+      </div>
+      <div id="market-result"></div>
+    </div>
+
+    <!-- ── CAPABILITIES ── -->
+    <div class="page" id="page-capabilities">
+      <div class="panel">
+        <div class="panel-head">
+          <span class="ph-title">✦ What AEGIS Pulse Does</span>
+          <span class="ph-meta">autonomous market arbitrage intelligence engine</span>
+        </div>
+        <div class="panel-body" style="font-size:12px;line-height:1.7;color:var(--muted)">
+          AEGIS scrapes signals from 30+ free sources, scores them through a 10-agent
+          reasoning pipeline, predicts breakouts with a heuristic-first ML core, and gates
+          every opportunity through compliance, geo-arbitrage, and capital-execution layers —
+          continuously retraining itself from settled outcomes. Each card below maps to a live
+          system you can open from the sidebar.
+        </div>
+      </div>
+      <div class="cap-grid" id="cap-grid"></div>
+    </div>
+
+  </div><!-- /main -->
+</div><!-- /layout -->
+
+<script>
+'use strict';
+
+// ─────────────────────────────────────────────
+// Globals
+// ─────────────────────────────────────────────
+const CHARTS = {};
+// Global Chart.js theme — aurora palette + display/mono fonts
+if (window.Chart) {
+  Chart.defaults.color = '#8b7fb0';
+  Chart.defaults.font.family = "'JetBrains Mono','SF Mono',monospace";
+  Chart.defaults.font.size = 9;
+  Chart.defaults.borderColor = 'rgba(42,28,77,.7)';
+}
+// Build a vertical gradient fill for charts
+function _grad(ctx, h, rgb) {
+  const g = ctx.createLinearGradient(0, 0, 0, h);
+  g.addColorStop(0, `rgba(${rgb},.55)`);
+  g.addColorStop(1, `rgba(${rgb},.02)`);
+  return g;
+}
+let _ksArmed = true;
+let _activePage = 'overview';
+let _pollTimer = null;
+let _sseSource = null;
+let _startedAt = Date.now();
+
+// ─────────────────────────────────────────────
+// Clock
+// ─────────────────────────────────────────────
+function _clockTick() {
+  document.getElementById('clock').textContent = new Date().toLocaleTimeString('en-GB');
+}
+setInterval(_clockTick, 1000);
+_clockTick();
+
+// ─────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const fmt = (n, d=0) => n == null ? '—' : Number(n).toLocaleString('en', {maximumFractionDigits:d});
+const fmtF = (v, d=3) => v == null ? '—' : Number(v).toFixed(d);
+function relTime(iso) {
+  if (!iso) return '—';
+  const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 60) return `${s}s ago`;
+  if (s < 3600) return `${Math.floor(s/60)}m ago`;
+  if (s < 86400) return `${Math.floor(s/3600)}h ago`;
+  return `${Math.floor(s/86400)}d ago`;
+}
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  if (!r.ok) throw new Error(`HTTP ${r.status} ${path}`);
+  return r.json();
+}
+
+// ─────────────────────────────────────────────
+// Navigation
+// ─────────────────────────────────────────────
+function showPage(name) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  const pg = $('page-' + name);
+  if (pg) pg.classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(n => {
+    if ((n.getAttribute('onclick')||'').includes(`'${name}'`)) n.classList.add('active');
+  });
+  _activePage = name;
+  // load page data on first show
+  const loaders = {
+    signals: loadSignals, alerts: loadAlerts, pipeline: loadPipeline,
+    adapters: loadAdapters, intelligence: loadIntelligence, markets: loadMarkets,
+    swarm: loadSwarm, sentinel: loadSentinel, containers: loadContainers, console: loadSysMetrics,
+    research: loadResearch, products: loadProducts, capabilities: loadCapabilities,
+  };
+  if (loaders[name]) loaders[name]();
+}
+
+// ─────────────────────────────────────────────
+// Overview data
+// ─────────────────────────────────────────────
+async function loadOverview() {
+  try {
+    const [stats, vel, alerts, sigStats] = await Promise.all([
+      api('/api/stats'),
+      api('/api/signals/velocity'),
+      api('/api/alerts/recent?limit=3'),
+      api('/api/signals/stats'),
+    ]);
+    // stat cards
+    $('s-total').textContent = fmt(stats.total_signals);
+    $('s-24h').textContent = `+${fmt(stats.signals_24h)} last 24h`;
+    // DASH-3: /api/signals/stats — velocity/hr + top platform in the stats bar
+    if (sigStats && sigStats.last_1h != null)
+      $('s-24h').textContent += ` · ${fmt(sigStats.last_1h)}/hr`;
+    const byPlat = (sigStats && sigStats.by_platform) || {};
+    const topPlat = Object.entries(byPlat).sort((a,b)=>b[1]-a[1])[0];
+    if (topPlat) {
+      const adapSub = $('s-adap')?.parentElement?.querySelector('.sc-sub');
+      if (adapSub) adapSub.textContent = `top: ${topPlat[0].replace(/_/g,' ')}`;
+    }
+    $('s-alerts').textContent = fmt(stats.total_alerts);
+    $('s-alerts-24h').textContent = `+${fmt(stats.alerts_24h)} last 24h`;
+    $('s-conf').textContent = fmtF(stats.avg_signal_confidence, 3);
+    $('s-adap').textContent = fmt(stats.working_adapters);
+    $('s-outcomes').textContent = fmt(stats.prediction_outcomes);
+    if (stats.pipeline_latency_s != null)
+      $('s-lat').textContent = `${Number(stats.pipeline_latency_s).toFixed(1)}s`;
+    // topbar
+    $('tb-signals').textContent = `${fmt(stats.signals_24h)} signals/24h`;
+    $('tb-alerts').textContent = `${fmt(stats.total_alerts)} alerts`;
+    $('tb-adapters').textContent = `${fmt(stats.working_adapters)} active`;
+    // badges
+    $('badge-signals').textContent = fmt(stats.signals_24h) || '0';
+    $('badge-alerts').textContent = fmt(stats.alerts_24h) || '0';
+    // killswitch
+    _ksArmed = stats.verdict_distribution ? true : true;
+    // pulse signature — prefer measured last-hour rate, else 24h average
+    setPulse(sigStats && sigStats.last_1h != null
+      ? sigStats.last_1h
+      : (stats.signals_24h || 0) / 24);
+    // verdict donut
+    buildDonut(stats.verdict_distribution || {});
+    // velocity chart — flatten all platforms into hourly buckets
+    buildVelocity(vel);
+    // latest alert
+    buildLatestAlert(alerts[0]);
+  } catch(e) { console.error('overview', e); }
+}
+
+async function loadHeatmap() {
+  try {
+    const plats = await api('/api/signals/platforms');
+    const panel = $('heatmap-panel');
+    if (!plats.length) { panel.innerHTML = '<div class="loading">No data</div>'; return; }
+    const mx = Math.max(...plats.map(p=>p.count));
+    panel.innerHTML = plats.slice(0,14).map(p => {
+      const pct = p.count/mx;
+      const lv = pct>.75?'hm-l4':pct>.5?'hm-l3':pct>.25?'hm-l2':'hm-l1';
+      const cells = Array.from({length:24},(_,i)=>
+        `<div class="hm-cell ${i<Math.ceil(pct*24)?lv:''}" title="${p.platform}: ${p.count}"></div>`
+      ).join('');
+      return `<div class="heatmap-row">
+        <div class="hm-label">${p.platform.replace(/_/g,' ')}</div>
+        <div class="hm-cells">${cells}<span class="hm-count">${fmt(p.count)}</span></div>
+      </div>`;
+    }).join('');
+  } catch(e) { $('heatmap-panel').innerHTML = `<div class="errm">${e.message}</div>`; }
+}
+
+async function loadLiveFeed() {
+  try {
+    const data = await api('/api/signals/recent?limit=25');
+    const sigs = Array.isArray(data) ? data : [];
+    if (!sigs.length) { $('live-feed').innerHTML='<div class="loading">No signals yet</div>'; return; }
+    $('live-feed').innerHTML = sigs.map(s=>`
+      <div class="tick">
+        <span class="tick-ts">${relTime(s.scraped_at||s.created_at)}</span>
+        <span class="tick-plat">${(s.platform||'').replace(/_/g,' ')}</span>
+        <span class="tick-title">${(s.title||'').substring(0,80)}</span>
+        <span class="tick-conf">${fmtF(s.source_confidence,2)}</span>
+      </div>`).join('');
+    $('feed-meta').textContent = `${sigs.length} recent`;
+  } catch(e) { $('live-feed').innerHTML=`<div class="errm">${e.message}</div>`; }
+}
+
+function buildDonut(vd) {
+  const enter = vd.ENTER||0, hold = vd.HOLD||0, block = vd.BLOCK||0;
+  const total = enter+hold+block||1;
+  if (CHARTS.donut) CHARTS.donut.destroy();
+  const ctx = $('donut-canvas').getContext('2d');
+  CHARTS.donut = new Chart(ctx, {
+    type:'doughnut',
+    data:{
+      labels:['ENTER','HOLD','BLOCK'],
+      datasets:[{
+        data:[enter,hold,block],
+        backgroundColor:['rgba(61,245,180,.8)','rgba(255,193,77,.8)','rgba(255,90,122,.8)'],
+        borderColor:'#0c061c',
+        borderWidth:3,hoverOffset:6,
+      }]
+    },
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},cutout:'68%'}
+  });
+  $('donut-leg').innerHTML = [
+    ['ENTER',enter,'#3df5b4'],['HOLD',hold,'#ffc14d'],['BLOCK',block,'#ff5a7a']
+  ].map(([lbl,cnt,col])=>`
+    <div class="leg-row">
+      <div class="leg-dot" style="background:${col}"></div>
+      <span style="color:${col};font-weight:700">${lbl}</span>
+      <span style="color:var(--muted);margin-left:auto">${cnt} · ${(cnt/total*100).toFixed(0)}%</span>
+    </div>`).join('');
+}
+
+function buildVelocity(vel) {
+  // vel is {status, velocity:{platform:[{hour, count}...]}, current_rates:{...}}
+  const byHour = {};
+  const velocity = vel.velocity || {};
+  for (const [, pts] of Object.entries(velocity)) {
+    for (const p of pts) {
+      byHour[p.hour] = (byHour[p.hour]||0) + p.count;
+    }
+  }
+  const sorted = Object.entries(byHour).sort((a,b)=>a[0].localeCompare(b[0]));
+  const labels = sorted.map(([h])=>{ const d=new Date(h); return `${d.getHours()}:00`; });
+  const counts = sorted.map(([,c])=>c);
+  if (CHARTS.vel) CHARTS.vel.destroy();
+  const cv = $('vel-chart');
+  const ctx = cv.getContext('2d');
+  CHARTS.vel = new Chart(ctx, {
+    type:'line',
+    data:{
+      labels,
+      datasets:[{
+        label:'Signals',data:counts,
+        backgroundColor:_grad(ctx, cv.height||200, '77,214,255'),
+        borderColor:'#4dd6ff',borderWidth:2,
+        fill:true,tension:.4,pointRadius:0,pointHoverRadius:4,
+        pointHoverBackgroundColor:'#b387ff',
+      }]
+    },
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{
+        backgroundColor:'#180c33',borderColor:'#3d2a6e',borderWidth:1,
+        titleColor:'#ece8ff',bodyColor:'#4dd6ff'}},
+      scales:{
+        x:{grid:{display:false},ticks:{color:'#8b7fb0',font:{size:8},maxRotation:0}},
+        y:{grid:{color:'rgba(42,28,77,.5)'},ticks:{color:'#8b7fb0',font:{size:8}},beginAtZero:true},
+      }
+    }
+  });
+}
+
+function buildLatestAlert(a) {
+  const panel = $('latest-alert-panel');
+  if (!a) { panel.innerHTML='<div class="loading">No alerts yet</div>'; return; }
+  const vc = `vb-${a.verdict||'HOLD'}`;
+  panel.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+      <span class="vbadge ${vc}">${a.verdict||'—'}</span>
+      <span style="font-size:11px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+        ${a.trend_id||'—'}
+      </span>
+    </div>
+    <div style="display:flex;gap:16px;margin-bottom:8px">
+      <div><div style="color:var(--muted);font-size:9px;margin-bottom:2px">SCORE</div>
+        <div style="color:var(--cyan);font-weight:700">${fmtF(a.score,3)}</div></div>
+      <div><div style="color:var(--muted);font-size:9px;margin-bottom:2px">CONFIDENCE</div>
+        <div style="color:var(--cyan);font-weight:700">${fmtF(a.confidence,3)}</div></div>
+      <div><div style="color:var(--muted);font-size:9px;margin-bottom:2px">WHEN</div>
+        <div style="color:var(--muted);font-size:10px">${relTime(a.created_at)}</div></div>
+    </div>
+    ${a.explanation ? `<div class="expl-box">${a.explanation.substring(0,300)}</div>` : ''}`;
+}
+
+// ─────────────────────────────────────────────
+// Pulse signature — live EKG waveform driven by signal rate
+// ─────────────────────────────────────────────
+let _pulseRate = 0;     // signals/hr → drives beat frequency + amplitude
+let _pulsePhase = 0;
+let _pulseStarted = false;
+function setPulse(ratePerHr) {
+  _pulseRate = Math.max(0, ratePerHr || 0);
+  const r = $('pulse-rate'); if (r) r.textContent = Math.round(_pulseRate);
+  const st = $('pulse-status');
+  if (st) st.textContent = _pulseRate > 0 ? 'live signal flow — system nominal' : 'idle — awaiting next harvest';
+}
+function _pulseLoop() {
+  const cv = $('pulse-canvas');
+  if (!cv) { requestAnimationFrame(_pulseLoop); return; }
+  const ctx = cv.getContext('2d');
+  const W = cv.width = cv.clientWidth, H = cv.height = cv.clientHeight || 120;
+  ctx.clearRect(0, 0, W, H);
+  // beat density scales with rate (clamped to a pleasant range)
+  const beats = 1 + Math.min(_pulseRate / 40, 6);
+  const amp = (H * 0.30) * (0.45 + Math.min(_pulseRate / 120, 1) * 0.55);
+  const mid = H / 2;
+  const grad = ctx.createLinearGradient(0, 0, W, 0);
+  grad.addColorStop(0, '#4dd6ff'); grad.addColorStop(0.5, '#b387ff'); grad.addColorStop(1, '#ff5fc8');
+  ctx.lineWidth = 2; ctx.strokeStyle = grad; ctx.shadowColor = 'rgba(179,135,255,.6)'; ctx.shadowBlur = 12;
+  ctx.beginPath();
+  for (let x = 0; x <= W; x++) {
+    const t = (x / W) * Math.PI * 2 * beats + _pulsePhase;
+    // EKG-ish: gentle sine + sharp spike near each beat crest
+    const base = Math.sin(t) * amp * 0.35;
+    const spike = Math.exp(-Math.pow(((t % (Math.PI * 2)) - Math.PI) * 2.4, 2)) * amp;
+    const y = mid - base - spike + Math.sin(t * 7) * 1.5;
+    x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+  _pulsePhase += 0.03 + Math.min(_pulseRate / 600, 0.05);
+  requestAnimationFrame(_pulseLoop);
+}
+function startPulse() { if (!_pulseStarted) { _pulseStarted = true; _pulseLoop(); } }
+
+// ─────────────────────────────────────────────
+// Capabilities — live map of AEGIS subsystems
+// ─────────────────────────────────────────────
+const _CAPS = [
+  ['🌐','Multi-Source Harvest','Phase 0 · 5','30+ free adapters across news, social & e-commerce, run in 4 parallel waves with bot-hardening.','swarm'],
+  ['〜','Signal Intelligence','Phase 1','TimescaleDB-backed signals with semantic dedup, velocity tracking & confidence scoring.','signals'],
+  ['🤖','10-Agent Reasoning','Phase 2','LangGraph DAG — scout, sentinel, historian, compliance & more — produces an auditable verdict.','intelligence'],
+  ['🧠','Predictive Apex','Phase 3','Heuristic-first ML core predicts breakout/decline probabilities with fractional-Kelly sizing.','intelligence'],
+  ['🔔','Execution & Alerts','Phase 4','Alert pipeline, killswitch & SSE streaming with transactional outbox delivery.','alerts'],
+  ['💰','Capital Execution','Phase 6','Three-tier advisory/staging/live model, Kelly sizing & supplier-verified fulfillment.','markets'],
+  ['⊕','Geo Arbitrage','Phase 7','Cross-market opportunities ranked on real WTO tariffs, ECB FX & EMS shipping.','markets'],
+  ['🛡️','Compliance Engine','Phase 8','7-dimension risk matrix — trademark, FDA, sanctions, FTC, privacy — gates every plan.','markets'],
+  ['♻️','Self-Evolution','Phase 9','Weekly retraining, Optuna HPO, drift detection & online RL pricing from settled outcomes.','markets'],
+  ['🗄️','Data Lake','Phase 10','Bronze/Silver/Gold medallion over Parquet with a DuckDB query engine.','pipeline'],
+  ['✨','LLM Orchestration','Phase 11','Gateway with circuit breaker & fallback chain: Ollama → Groq → OpenRouter → Gemini.','intelligence'],
+  ['🩺','DR & Continuity','Phase 15','pgBackRest + restic backups, RPO 15m / RTO 60m with automated restore drills.','pipeline'],
+];
+function loadCapabilities() {
+  const g = $('cap-grid'); if (!g) return;
+  g.innerHTML = _CAPS.map(([icon,name,phase,desc,page])=>`
+    <div class="cap-card" onclick="showPage('${page}')" style="cursor:pointer">
+      <div class="cap-icon">${icon}</div>
+      <div class="cap-phase">${phase}</div>
+      <div class="cap-name">${name}</div>
+      <div class="cap-desc">${desc}</div>
+    </div>`).join('');
+}
+
+// ─────────────────────────────────────────────
+// Killswitch
+// ─────────────────────────────────────────────
+async function loadKillswitch() {
+  try {
+    const d = await api('/api/execute/killswitch');
+    _ksArmed = !d.tripped;
+    const btn = $('ks-btn');
+    const txt = $('ks-state-text');
+    if (_ksArmed) {
+      btn.className='ks-btn ks-armed'; btn.textContent='■ ARMED';
+      txt.textContent='ARMED';
+    } else {
+      btn.className='ks-btn ks-tripped'; btn.textContent='⚠ TRIPPED';
+      txt.textContent='TRIPPED';
+    }
+  } catch(e) {}
+}
+async function toggleKillswitch() {
+  const path = _ksArmed ? '/api/execute/killswitch/trip' : '/api/execute/killswitch/arm';
+  const reason = _ksArmed ? 'manual trip from dashboard' : 'manual arm from dashboard';
+  try {
+    await fetch(path, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reason})});
+    await loadKillswitch();
+  } catch(e) { alert('Killswitch error: ' + e.message); }
+}
+
+// ─────────────────────────────────────────────
+// Signals page
+// ─────────────────────────────────────────────
+async function loadSignals() {
+  try {
+    // DASH-3: when the search box has a query, use /api/search instead of recent
+    const q = ($('sig-search') ? $('sig-search').value : '').trim();
+    const recentPath = q ? `/api/search?q=${encodeURIComponent(q)}&limit=40` : '/api/signals/recent?limit=40';
+    const [plats, recent] = await Promise.all([
+      api('/api/signals/platforms'),
+      api(recentPath),
+    ]);
+    // Platform table
+    $('plat-table').innerHTML = `
+      <table class="data-table">
+        <thead><tr>
+          <th>Platform</th><th style="text-align:right">Signals</th>
+          <th style="text-align:right">Avg Conf</th><th>Latest</th><th>Status</th>
+        </tr></thead>
+        <tbody>${plats.map(p=>{
+          const age = p.latest?(Date.now()-new Date(p.latest).getTime())/3600000:999;
+          const [st,sc] = age<1?['LIVE','val-green']:age<24?['RECENT','val-cyan']:['STALE','val-amber'];
+          return `<tr>
+            <td>${p.platform.replace(/_/g,' ')}</td>
+            <td class="num">${fmt(p.count)}</td>
+            <td class="num">${fmtF(p.avg_confidence,3)}</td>
+            <td class="muted">${relTime(p.latest)}</td>
+            <td><span class="${sc}" style="font-size:9px;font-weight:700">${st}</span></td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>`;
+    // Confidence bars
+    $('conf-bars').innerHTML = plats.slice(0,10).map(p=>{
+      const pct = Math.min((p.avg_confidence||0)*100,100);
+      const col = pct>80?'var(--green)':pct>60?'var(--amber)':'var(--red)';
+      return `<div class="cbar-wrap">
+        <div class="cbar-head"><span class="cbar-name">${p.platform.replace(/_/g,' ')}</span>
+          <span class="cbar-val">${fmtF(p.avg_confidence,3)}</span></div>
+        <div class="cbar-bg"><div class="cbar-fill" style="width:${pct}%;background:${col}"></div></div>
+      </div>`;
+    }).join('');
+    // Recent table
+    const sigs = Array.isArray(recent) ? recent : [];
+    $('recent-sig-meta').textContent = `${sigs.length} signals`;
+    $('recent-sig-table').innerHTML = `
+      <table class="data-table">
+        <thead><tr>
+          <th>Title</th><th>Platform</th>
+          <th style="text-align:right">Confidence</th><th>Scraped</th>
+        </tr></thead>
+        <tbody>${sigs.slice(0,30).map(s=>`
+          <tr>
+            <td style="max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.title||'—'}</td>
+            <td class="muted">${(s.platform||'').replace(/_/g,' ')}</td>
+            <td class="num">${fmtF(s.source_confidence ?? s.sentiment,3)}</td>
+            <td class="muted">${relTime(s.scraped_at)}</td>
+          </tr>`).join('')}</tbody>
+      </table>`;
+  } catch(e) { $('plat-table').innerHTML=`<div class="errm">${e.message}</div>`; }
+}
+
+// ─────────────────────────────────────────────
+// Alerts page
+// ─────────────────────────────────────────────
+async function loadAlerts() {
+  try {
+    const [astats, alerts] = await Promise.all([
+      api('/api/execute/alerts/stats'),
+      api('/api/alerts/recent?limit=30'),
+    ]);
+    const vd = astats.by_verdict||{};
+    $('av-enter').textContent = fmt(vd.ENTER||0);
+    $('av-hold').textContent = fmt(vd.HOLD||0);
+    $('av-block').textContent = fmt(vd.BLOCK||0);
+    $('av-score').textContent = fmtF(astats.avg_score,3);
+    $('alert-feed-meta').textContent = `${alerts.length} alerts`;
+    $('alert-feed').innerHTML = alerts.map(a=>`
+      <div class="alert-item">
+        <span class="vbadge vb-${a.verdict||'HOLD'}">${a.verdict||'?'}</span>
+        <div class="alert-body">
+          <div class="alert-trend">${a.trend_id||'—'}</div>
+          ${a.explanation?`<div class="alert-expl">${a.explanation.substring(0,120)}</div>`:''}
+          <div class="alert-meta">
+            <span class="alert-score">score ${fmtF(a.score,3)} · conf ${fmtF(a.confidence,3)}</span>
+            <span class="alert-time">${relTime(a.created_at)}</span>
+          </div>
+        </div>
+      </div>`).join('')||'<div class="loading">No alerts yet</div>';
+  } catch(e) { $('alert-feed').innerHTML=`<div class="errm">${e.message}</div>`; }
+}
+
+// ─────────────────────────────────────────────
+// Pipeline page
+// ─────────────────────────────────────────────
+async function loadPipeline() {
+  try {
+    const d = await api('/api/pipeline/live');
+    const svc = d.services || {};
+    const adapMetric = (d.active_adapters!=null?d.active_adapters:'?') + ' live / 24h';
+    const dbMetric = (d.db_signal_count!=null?Number(d.db_signal_count).toLocaleString():'?') + ' signals';
+    const predMetric = d.recent_pipeline_ms!=null ? `${(d.recent_pipeline_ms/1000).toFixed(1)}s pipeline` : 'idle';
+    const stages = [
+      {icon:'🌐',name:'Scrapers',metric:adapMetric,st:d.active_adapters>0?'ok':'warn'},
+      {arrow:true},
+      {icon:'🗄️',name:'TimescaleDB',metric:dbMetric,st:svc.postgres?'ok':'warn'},
+      {arrow:true},
+      {icon:'⚡',name:'Redis Stream',metric:`${d.stream_length} entries`,st:d.stream_length>0?'ok':'warn'},
+      {arrow:true},
+      {icon:'🤖',name:'Agents',metric:'10 LangGraph',st:'ok'},
+      {arrow:true},
+      {icon:'🧠',name:'ML Predict',metric:predMetric,st:svc.predict?'ok':'warn'},
+      {arrow:true},
+      {icon:'🔔',name:'Alert API',metric:d.drain_running?'draining':(svc.execute_api?'ready':'down'),st:svc.execute_api?'ok':'warn'},
+    ];
+    $('pipe-flow').innerHTML = stages.map(s=>
+      s.arrow ? `<div class="pipe-arr">→</div>` :
+      `<div class="pipe-stage">
+        <div class="pipe-icon">${s.icon}</div>
+        <div class="pipe-name">${s.name}</div>
+        <div class="pipe-metric">${s.metric}</div>
+        <div class="pipe-sdot psd-${s.st}"></div>
+      </div>`
+    ).join('');
+    $('stream-stats').innerHTML = [
+      ['Stream entries', d.stream_length, 'val-cyan'],
+      ['Last processed', relTime(d.last_processed_at), ''],
+      ['Killswitch', d.killswitch_armed?'ARMED':'TRIPPED', d.killswitch_armed?'val-green':'val-red'],
+      ['Drain worker', d.drain_running?'RUNNING':'IDLE', d.drain_running?'val-green':'val-amber'],
+      ['Intake worker', d.intake_running?'RUNNING':'IDLE', d.intake_running?'val-green':'val-amber'],
+    ].map(([k,v,c])=>`<div class="stat-kv"><span class="key">${k}</span><span class="val ${c}">${v}</span></div>`).join('');
+    $('svc-health').innerHTML = [
+      ['Dashboard :8300', svc.dashboard],
+      ['Execute API :8200', svc.execute_api],
+      ['Predict :8100', svc.predict],
+      ['Postgres :5433', svc.postgres],
+      ['Redis :6380', svc.redis],
+    ].map(([s,up])=>`<div class="stat-kv"><span class="key">${s}</span>
+      <span class="val ${up?'val-green':'val-red'}">${up?'● UP':'✕ DOWN'}</span></div>`).join('');
+    // DASH-2: stream health traffic lights + DR / Data Lake status
+    loadStreamHealth();
+  } catch(e) { $('pipe-flow').innerHTML=`<div class="errm">${e.message}</div>`; }
+}
+
+async function loadStreamHealth() {
+  try {
+    const [streams, dr, lake] = await Promise.all([
+      api('/api/health/streams'),
+      api('/api/dr/status'),
+      api('/api/datalake/status'),
+    ]);
+    $('stream-health').innerHTML = Object.entries(streams).map(([name, s]) => {
+      const short = name.replace('aegis:','');
+      const light = s.status==='healthy'?['●','var(--green)']:
+                    s.status==='empty'?['○','var(--muted)']:
+                    s.status==='stale'?['●','var(--amber)']:['✕','var(--red)'];
+      const age = s.last_entry_age_seconds!=null ? relTime(new Date(Date.now()-s.last_entry_age_seconds*1000).toISOString()) : '—';
+      return `<div class="stat-kv">
+        <span class="key" style="font-size:9px">${short}</span>
+        <span class="val" style="font-size:9px">
+          <span style="color:${light[1]}">${light[0]} ${s.status.toUpperCase()}</span>
+          · ${fmt(s.length)} · ${age}
+        </span></div>`;
+    }).join('');
+    const drRows = [];
+    if (dr.status === 'ok' && dr.snapshot) {
+      const sn = dr.snapshot;
+      drRows.push(['DR status', sn.status || 'ok', 'val-green']);
+      if (sn.rpo_age_s != null) drRows.push(['RPO age', `${Math.round(sn.rpo_age_s/60)}m`, sn.rpo_age_s<=900?'val-green':'val-red']);
+      if (sn.last_drill_at) drRows.push(['Last drill', relTime(sn.last_drill_at), '']);
+    } else {
+      drRows.push(['DR module', dr.status || 'unavailable', 'val-amber']);
+    }
+    drRows.push(['Data lake', lake.status || 'unknown', lake.status==='ok'?'val-green':'val-amber']);
+    if (lake.tables != null) drRows.push(['Lake tables', fmt(lake.tables.length ?? lake.tables), '']);
+    $('dr-lake').innerHTML = drRows.map(([k,v,c])=>
+      `<div class="stat-kv"><span class="key">${k}</span><span class="val ${c}">${v}</span></div>`).join('');
+  } catch(e) { $('stream-health').innerHTML=`<div class="errm">${e.message}</div>`; }
+}
+
+// ─────────────────────────────────────────────
+// Adapters page
+// ─────────────────────────────────────────────
+async function loadAdapters() {
+  try {
+    const data = await api('/api/adapters/status');
+    const w=data.filter(a=>a.status==='working').length;
+    const id=data.filter(a=>a.status==='idle').length;
+    const d=data.filter(a=>a.status==='dead').length;
+    $('adap-working').textContent=w;
+    $('adap-idle').textContent=id;
+    $('adap-dead').textContent=d;
+    $('badge-adapters').textContent=w;
+    $('adap-meta').textContent=`${data.length} adapters`;
+    $('adap-grid').innerHTML = data.map(a=>`
+      <div class="adap-card">
+        <div class="adap-name">${a.name.replace(/_/g,' ')}</div>
+        <div class="adap-st ${a.status}">${a.status.toUpperCase()}</div>
+        <div class="adap-cnt">${a.signals_24h} signals/24h · ${relTime(a.last_signal_at)}</div>
+      </div>`).join('');
+  } catch(e) { $('adap-grid').innerHTML=`<div class="errm">${e.message}</div>`; }
+}
+
+// ─────────────────────────────────────────────
+// Intelligence page
+// ─────────────────────────────────────────────
+async function loadIntelligence() {
+  try {
+    const [hist, llm, pstats, swarm] = await Promise.all([
+      api('/api/agents/trend-history?limit=20'),
+      api('/api/llm/health'),
+      api('/api/predictions/stats'),
+      api('/api/swarm/latest'),
+    ]);
+    // Agent history
+    $('agent-hist').innerHTML = `
+      <table class="data-table">
+        <thead><tr><th>Trend</th><th>Verdict</th><th>Source</th><th style="text-align:right">Score</th>
+          <th style="text-align:right">Conf</th><th style="text-align:right">ms</th><th>When</th></tr></thead>
+        <tbody>${hist.map(h=>{
+          const v=(h.final_verdict||'').toUpperCase();
+          const vc=v==='PROCEED'||v==='ENTER'?'var(--green)':v==='HOLD'?'var(--amber)':'var(--red)';
+          const rs=(h.reasoning_source||'heuristic');
+          const sb=rs==='llm'?['LLM','var(--green)']:rs==='mixed'?['MIXED','var(--amber)']:['HEURISTIC','var(--muted)'];
+          return `<tr>
+            <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${h.trend_id||'—'}</td>
+            <td><span style="color:${vc};font-weight:700;font-size:9px">${v||'?'}</span></td>
+            <td><span title="reasoning provenance" style="color:${sb[1]};font-weight:600;font-size:8px;border:1px solid ${sb[1]};border-radius:3px;padding:1px 4px">${sb[0]}</span></td>
+            <td class="num">${fmtF(h.final_score,3)}</td>
+            <td class="num">${fmtF(h.final_confidence,3)}</td>
+            <td class="num">${h.duration_ms?Math.round(h.duration_ms):'—'}</td>
+            <td class="muted">${relTime(h.finished_at||h.started_at)}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>`;
+    // LLM health
+    const providers = llm.providers||{};
+    $('llm-health').innerHTML = Object.entries(providers).length ?
+      Object.entries(providers).map(([name,info])=>`
+        <div class="stat-kv">
+          <span class="key">${name}</span>
+          <span class="val ${info.healthy?'val-green':'val-red'}">${info.healthy?'● HEALTHY':'✗ DOWN'}</span>
+        </div>`).join('') :
+      `<div class="stat-kv"><span class="key">Status</span>
+        <span class="val val-amber">${llm.status||'unknown'}</span></div>`;
+    // Prediction stats
+    $('pred-stats').innerHTML = [
+      ['Total predictions', fmt(pstats.total), 'val-cyan'],
+      ['Last 24h', fmt(pstats.last_24h), ''],
+      ['Avg confidence', fmtF(pstats.avg_confidence,3), 'val-cyan'],
+    ].map(([k,v,c])=>`<div class="stat-kv"><span class="key">${k}</span><span class="val ${c}">${v}</span></div>`).join('');
+    // Swarm
+    $('swarm-status').innerHTML = `<div class="stat-kv">
+      <span class="key">Status</span><span class="val">${swarm.status||'—'}</span></div>
+      <div class="stat-kv"><span class="key">Message</span>
+      <span class="val val-muted" style="font-size:9px;color:var(--muted)">${(swarm.message||'').substring(0,60)}</span></div>`;
+    // DASH-3: prediction feed + per-agent decisions
+    loadPredFeed();
+  } catch(e) { $('agent-hist').innerHTML=`<div class="errm">${e.message}</div>`; }
+}
+
+async function loadPredFeed() {
+  try {
+    const [preds, agents] = await Promise.all([
+      api('/api/predictions/recent?limit=20'),
+      api('/api/agents/recent?limit=1'),
+    ]);
+    $('pred-feed').innerHTML = (preds||[]).length ? `
+      <table class="data-table">
+        <thead><tr><th>Trend</th><th style="text-align:right">Horizon</th>
+          <th style="text-align:right">p↑</th><th style="text-align:right">p↓</th>
+          <th style="text-align:right">Kelly</th><th style="text-align:right">Conf</th><th>When</th></tr></thead>
+        <tbody>${preds.map(p=>`<tr>
+          <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.trend_id||'—'}</td>
+          <td class="num">${p.horizon_h||'—'}h</td>
+          <td class="num" style="color:${(p.p_breakout||0)>=0.55?'var(--green)':'inherit'}">${fmtF(p.p_breakout,3)}</td>
+          <td class="num" style="color:${(p.p_decline||0)>=0.55?'var(--red)':'inherit'}">${fmtF(p.p_decline,3)}</td>
+          <td class="num">${fmtF(p.kelly_fraction,3)}</td>
+          <td class="num">${fmtF(p.confidence,3)}</td>
+          <td class="muted">${relTime(p.finished_at)}</td>
+        </tr>`).join('')}</tbody>
+      </table>` : `<div class="loading">no predictions yet — run <code>aegis analyze</code></div>`;
+    const latest = (agents||[])[0];
+    const decs = latest ? (latest.decisions||[]) : [];
+    $('agent-decisions').innerHTML = decs.length ? `
+      <div style="padding:6px 10px;font-size:9px;color:var(--muted)">trend: ${latest.trend_id||'—'} · ${(latest.final_verdict||'').toUpperCase()}</div>
+      <table class="data-table">
+        <thead><tr><th>Agent</th><th>Verdict</th><th style="text-align:right">Conf</th><th style="text-align:right">ms</th></tr></thead>
+        <tbody>${decs.map(d=>{
+          const v=(d.verdict||'').toUpperCase();
+          const vc=v==='PROCEED'||v==='ADVANCE'?'var(--green)':v==='HOLD'?'var(--amber)':'var(--red)';
+          return `<tr>
+            <td>${d.agent||d.agent_name||'—'}</td>
+            <td><span style="color:${vc};font-weight:700;font-size:9px">${v||'?'}</span></td>
+            <td class="num">${fmtF(d.confidence,3)}</td>
+            <td class="num">${d.duration_ms?Math.round(d.duration_ms):'—'}</td>
+          </tr>`;}).join('')}</tbody>
+      </table>` : `<div class="loading">no agent runs yet — run <code>aegis analyze</code></div>`;
+  } catch(e) { $('pred-feed').innerHTML=`<div class="errm">${e.message}</div>`; }
+}
+
+// ─────────────────────────────────────────────
+// Products page (product intelligence cards w/ images)
+// ─────────────────────────────────────────────
+function _escHtml(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>(
+  {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+async function loadProducts() {
+  const grid = $('products-grid');
+  const meta = $('products-meta');
+  try {
+    const plat = ($('products-platform')||{}).value || 'all';
+    const items = await api(`/api/products/recent?limit=48&platform=${encodeURIComponent(plat)}`);
+    meta.textContent = `${items.length} products`;
+    if (!items.length) {
+      grid.innerHTML = `<div class="loading">no products with images yet — run <code>aegis swarm run</code> to harvest e-commerce sources</div>`;
+      return;
+    }
+    grid.innerHTML = items.map(p => {
+      const img = p.image_url
+        ? `<img class="prod-img" loading="lazy" src="${_escHtml(p.image_url)}" alt=""
+             onerror="this.outerHTML='<div class=\\'prod-noimg\\'>🛍️</div>'">`
+        : `<div class="prod-noimg">🛍️</div>`;
+      const price = (p.price != null)
+        ? `<span class="prod-price">${p.currency==='INR'?'₹':''}${Number(p.price).toLocaleString()}</span>` : '<span class="prod-price" style="color:var(--muted)">—</span>';
+      const disc = (p.discount_pct && p.discount_pct > 0)
+        ? `<span class="prod-disc">-${Math.round(p.discount_pct)}%</span>` : '';
+      const rating = (p.rating != null)
+        ? `<span class="prod-rating">★ ${p.rating}${p.review_count?` (${p.review_count})`:''}</span>` : '<span></span>';
+      const inner = `${img}
+        <div class="prod-body">
+          <div class="prod-title">${_escHtml(p.title)}</div>
+          <div class="prod-meta">${price}${disc}</div>
+          <div class="prod-foot"><span class="prod-plat">${_escHtml(p.platform)}</span>${rating}</div>
+        </div>`;
+      return `<div class="prod-card">${p.url?`<a href="${_escHtml(p.url)}" target="_blank" rel="noopener">${inner}</a>`:inner}</div>`;
+    }).join('');
+  } catch(e) {
+    grid.innerHTML = `<div class="errm">${e.message}</div>`;
+    meta.textContent = 'error';
+  }
+}
+
+// ─────────────────────────────────────────────
+// Market Analyst — on-demand product-market intelligence
+// ─────────────────────────────────────────────
+async function runMarket() {
+  const q = $('market-inp').value.trim();
+  const res = $('market-result');
+  if (!q) { res.innerHTML = '<div class="errm">Type a product query first — there is no default.</div>'; return; }
+  const btn = $('market-btn');
+  btn.disabled = true; btn.textContent = '⏳ Analyzing…';
+  res.innerHTML = `<div class="panel"><div class="panel-body"><div class="loading">
+    Harvesting live marketplaces for “${_escHtml(q)}” — comparing prices, brands & ratings…</div></div></div>`;
+  try {
+    const r = await fetch('/api/market/analyze', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({query:q, depth:$('market-depth').value, max_products:200}),
+    });
+    const d = await r.json();
+    if (!r.ok) { res.innerHTML = `<div class="errm">${d.detail||('HTTP '+r.status)}</div>`; return; }
+    renderMarket(d);
+  } catch(e) { res.innerHTML = `<div class="errm">${e.message}</div>`; }
+  finally { btn.disabled = false; btn.textContent = '◆ Analyze Market'; }
+}
+
+function _prodCard(p) {
+  if (!p) return '';
+  const img = p.image_url
+    ? `<img class="prod-img" loading="lazy" src="${_escHtml(p.image_url)}" alt="" onerror="this.outerHTML='<div class=\\'prod-noimg\\'>📦</div>'">`
+    : `<div class="prod-noimg">📦</div>`;
+  const price = p.price!=null ? `<span class="prod-price">${p.currency==='INR'?'₹':''}${Number(p.price).toLocaleString()}</span>` : '<span class="prod-price" style="color:var(--muted)">—</span>';
+  const rating = p.rating!=null ? `<span class="prod-rating">★ ${p.rating}${p.review_count?` (${fmt(p.review_count)})`:''}</span>` : '<span></span>';
+  const inner = `${img}<div class="prod-body">
+      <div class="prod-title">${_escHtml(p.title)}</div>
+      <div class="prod-meta">${price}${p.discount_pct?`<span class="prod-disc">-${Math.round(p.discount_pct)}%</span>`:''}</div>
+      <div class="prod-foot"><span class="prod-plat">${_escHtml(p.platform)}</span>${rating}</div>
+    </div>`;
+  return `<div class="prod-card">${p.url?`<a href="${_escHtml(p.url)}" target="_blank" rel="noopener">${inner}</a>`:inner}</div>`;
+}
+
+function renderMarket(d) {
+  const res = $('market-result');
+  if (!d.product_count) {
+    res.innerHTML = `<div class="panel"><div class="panel-body">
+      <div style="font-size:12px;color:var(--text);margin-bottom:6px">${_escHtml(d.executive_summary||'No products found.')}</div>
+      <div class="loading">No structured listings captured. Marketplaces may be rate-limited — retry or broaden the query.</div>
+    </div></div>`;
+    return;
+  }
+  const ps = d.price_summary||{}, mo = d.momentum||{}, bands = d.price_bands||{};
+  const mc = mo.label==='hot'?'sc-green':mo.label==='warming'?'sc-amber':'sc-cyan';
+  const cur = (d.best_value[0]||d.most_popular[0]||{}).currency==='INR'?'₹':'';
+  // stat cards
+  let html = `<div class="stat-row">
+    <div class="stat-card sc-cyan"><div class="sc-label">Products Found</div><div class="sc-val">${fmt(d.product_count)}</div><div class="sc-sub">${d.platforms.length} marketplaces</div></div>
+    <div class="stat-card sc-purple"><div class="sc-label">Median Price</div><div class="sc-val">${ps.available?cur+fmt(ps.median):'—'}</div><div class="sc-sub">${ps.available?`${cur}${fmt(ps.min)} – ${cur}${fmt(ps.max)}`:'no price data'}</div></div>
+    <div class="stat-card ${mc}"><div class="sc-label">Momentum</div><div class="sc-val">${(mo.label||'—').toUpperCase()}</div><div class="sc-sub">${fmt(mo.total_reviews)} reviews · ★${mo.avg_rating??'—'}</div></div>
+    <div class="stat-card sc-amber"><div class="sc-label">Competitors</div><div class="sc-val">${d.competitors.length}</div><div class="sc-sub">${d.arbitrage.length} arbitrage gaps</div></div>
+  </div>`;
+  // summary + actions
+  html += `<div class="panel"><div class="panel-head"><span class="ph-title">Executive Summary</span>
+      <span class="ph-meta">data quality ${fmtF(d.data_quality,2)}</span></div>
+    <div class="panel-body"><div style="font-size:12px;line-height:1.7;color:var(--text)">${_escHtml(d.executive_summary)}</div>
+    ${(d.recommended_actions||[]).length?`<div style="margin-top:10px">${d.recommended_actions.map(a=>`<div class="expl-box" style="border-left-color:var(--green);max-height:none">→ ${_escHtml(a)}</div>`).join('')}</div>`:''}
+    </div></div>`;
+  // Evidence — each fact backed by counts + sources + examples
+  if ((d.evidence||[]).length) {
+    html += `<div class="panel"><div class="panel-head"><span class="ph-title">🔎 Evidence</span>
+        <span class="ph-meta">facts backed by sources — ${(d.sources_consulted||d.platforms||[]).join(', ')}</span></div>
+      <div class="panel-body">${d.evidence.map(e=>`
+        <div style="border-left:2px solid var(--cyan);padding:6px 0 6px 12px;margin-bottom:10px">
+          <div style="font-size:12px;color:var(--text);font-weight:500">${_escHtml(e.claim)}</div>
+          <div style="font-size:9px;color:var(--cyan);margin:3px 0">BASIS: ${_escHtml(e.basis||'')}</div>
+          ${(e.examples||[]).map(x=>`<div style="font-size:10px;color:var(--muted)">· ${_escHtml(x)}</div>`).join('')}
+        </div>`).join('')}</div></div>`;
+  }
+  // LLM operator verdict (heuristic numbers above stay authoritative)
+  if (d.llm_narrative) {
+    html += `<div class="panel" style="border-color:var(--border2)">
+      <div class="panel-head"><span class="ph-title">✨ AEGIS Operator Verdict</span>
+        <span class="ph-meta">LLM + heuristic · numbers are deterministic</span></div>
+      <div class="panel-body"><div style="font-size:12.5px;line-height:1.75;color:var(--text);white-space:pre-wrap">${_escHtml(d.llm_narrative)}</div></div></div>`;
+  }
+  // gated pick — compliance + geo + capital advisory
+  const gp = d.gated_pick||{};
+  if (gp.product) {
+    const c = gp.compliance||{}, geo = gp.geo||{}, cap = gp.capital||{};
+    const cc = c.recommendation==='PROCEED'?'var(--green)':c.recommendation==='ESCALATE'?'var(--amber)':c.recommendation==='BLOCK'?'var(--red)':'var(--muted)';
+    html += `<div class="panel"><div class="panel-head"><span class="ph-title">🛡️ Gated Best Pick</span>
+        <span class="ph-meta">compliance → geo → capital</span></div>
+      <div class="panel-body">
+        <div style="font-size:12px;color:var(--text);margin-bottom:10px">${_escHtml(gp.product)} <span class="prod-plat" style="color:var(--muted)">[${_escHtml(gp.platform||'?')}]</span></div>
+        <div class="g3">
+          <div><div class="sc-label">Compliance</div><div style="font-size:18px;font-weight:700;color:${cc}">${c.recommendation||'—'}</div><div class="sc-sub">risk ${c.risk_score??'—'}</div></div>
+          <div><div class="sc-label">Geo Arbitrage</div><div style="font-size:18px;font-weight:700;color:var(--cyan)">${geo.gross_margin_pct!=null?geo.gross_margin_pct+'%':'—'}</div><div class="sc-sub">${geo.route||'no route'}</div></div>
+          <div><div class="sc-label">Capital (${cap.mode||'advisory'})</div><div style="font-size:18px;font-weight:700;color:var(--green)">kelly ${cap.kelly_fraction??'—'}</div><div class="sc-sub">${_escHtml((cap.rationale||'').substring(0,60))}</div></div>
+        </div>
+      </div></div>`;
+  }
+  // picks
+  const pk = d.picks||{};
+  if (pk.budget||pk.best_value||pk.premium) {
+    html += `<div class="g3">
+      ${_pickPanel('💸 Budget pick', pk.budget)}
+      ${_pickPanel('◆ Best value', pk.best_value)}
+      ${_pickPanel('👑 Premium pick', pk.premium)}
+    </div>`;
+  }
+  // competitor table
+  html += `<div class="panel"><div class="panel-head"><span class="ph-title">Competitor Landscape</span>
+      <span class="ph-meta">by listing volume</span></div>
+    <div style="overflow:auto;max-height:320px"><table class="data-table">
+      <thead><tr><th>Brand</th><th style="text-align:right">Listings</th><th style="text-align:right">Share</th>
+        <th style="text-align:right">Avg Price</th><th style="text-align:right">Avg ★</th><th style="text-align:right">Reviews</th><th>Platforms</th></tr></thead>
+      <tbody>${d.competitors.map(c=>`<tr>
+        <td style="font-weight:600">${_escHtml(c.brand)}</td>
+        <td class="num">${fmt(c.listings)}</td>
+        <td class="num">${fmtF(c.share_pct,1)}%</td>
+        <td class="num">${c.avg_price!=null?cur+fmt(c.avg_price):'—'}</td>
+        <td class="num">${c.avg_rating??'—'}</td>
+        <td class="num">${fmt(c.total_reviews)}</td>
+        <td class="muted">${(c.platforms||[]).join(', ')}</td>
+      </tr>`).join('')}</tbody></table></div></div>`;
+  // best value grid
+  if ((d.best_value||[]).length) {
+    html += `<div class="panel"><div class="panel-head"><span class="ph-title">◆ Best Value Products</span>
+        <span class="ph-meta">rating × popularity ÷ price</span></div>
+      <div class="panel-body"><div class="prod-grid">${d.best_value.map(_prodCard).join('')}</div></div></div>`;
+  }
+  // arbitrage
+  if ((d.arbitrage||[]).length) {
+    html += `<div class="panel"><div class="panel-head"><span class="ph-title">↔ Cross-Platform Arbitrage</span>
+        <span class="ph-meta">same product, different price</span></div>
+      <div style="overflow:auto"><table class="data-table">
+        <thead><tr><th>Product</th><th>Buy on</th><th style="text-align:right">Low</th><th>Sells on</th><th style="text-align:right">High</th><th style="text-align:right">Gap</th></tr></thead>
+        <tbody>${d.arbitrage.map(a=>`<tr>
+          <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_escHtml(a.product)}</td>
+          <td><span class="prod-plat" style="color:var(--green)">${_escHtml(a.cheapest.platform)}</span></td>
+          <td class="num">${cur}${fmt(a.cheapest.price)}</td>
+          <td><span class="prod-plat">${_escHtml(a.dearest.platform)}</span></td>
+          <td class="num">${cur}${fmt(a.dearest.price)}</td>
+          <td class="num" style="color:var(--green);font-weight:700">+${fmtF(a.gap_pct,1)}%</td>
+        </tr>`).join('')}</tbody></table></div></div>`;
+  }
+  res.innerHTML = html;
+}
+
+function _pickPanel(label, p) {
+  if (!p) return `<div class="panel"><div class="panel-head"><span class="ph-title">${label}</span></div>
+    <div class="panel-body"><div class="loading">no priced match</div></div></div>`;
+  return `<div class="panel"><div class="panel-head"><span class="ph-title">${label}</span></div>
+    <div class="panel-body"><div class="prod-grid" style="grid-template-columns:1fr;margin-top:0">${_prodCard(p)}</div></div></div>`;
+}
+
+// ─────────────────────────────────────────────
+// Swarm page (DASH-2/3 — runs stream + history + agent health)
+// ─────────────────────────────────────────────
+async function loadSwarm() {
+  try {
+    const [runs, hist, agents] = await Promise.all([
+      api('/api/swarm/recent?limit=10'),
+      api('/api/swarm/history?limit=10'),
+      api('/api/swarm/agents'),
+    ]);
+    $('swarm-runs-meta').textContent = `${(runs||[]).length} runs`;
+    $('swarm-runs').innerHTML = (runs||[]).length ? `
+      <table class="data-table">
+        <thead><tr><th>Run</th><th style="text-align:right">Signals</th>
+          <th style="text-align:right">Waves</th><th style="text-align:right">ms</th><th>When</th></tr></thead>
+        <tbody>${runs.map(r=>`<tr>
+          <td style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${(r.run_id||r.stream_id||'—').toString().substring(0,12)}</td>
+          <td class="num">${fmt(r.total_signals ?? r.unique_signals)}</td>
+          <td class="num">${fmt(r.wave_count ?? (r.wave_stats||[]).length)}</td>
+          <td class="num">${r.duration_ms?Math.round(r.duration_ms):'—'}</td>
+          <td class="muted">${relTime(r.finished_at||r.started_at)}</td>
+        </tr>`).join('')}</tbody>
+      </table>` : `<div class="loading">no swarm runs in stream — run <code>aegis swarm run</code></div>`;
+    const hrows = hist.runs || [];
+    $('swarm-history').innerHTML = hrows.length ? `
+      <table class="data-table">
+        <thead><tr><th>Started</th><th style="text-align:right">Total</th>
+          <th style="text-align:right">Unique</th><th style="text-align:right">Conf</th><th>Pulse</th></tr></thead>
+        <tbody>${hrows.map(r=>`<tr>
+          <td class="muted">${relTime(r.started_at)}</td>
+          <td class="num">${fmt(r.total_signals)}</td>
+          <td class="num">${fmt(r.unique_signals)}</td>
+          <td class="num">${fmtF(r.batch_confidence,2)}</td>
+          <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:9px">${r.market_pulse||'—'}</td>
+        </tr>`).join('')}</tbody>
+      </table>` : `<div class="loading">no swarm runs in DB (24h)</div>`;
+    const ag = agents.agents || {};
+    const names = Object.keys(ag).sort();
+    $('swarm-agents-meta').textContent = `${names.length} agents`;
+    $('swarm-agents-grid').innerHTML = names.length ? names.map(n=>{
+      const a = ag[n] || {};
+      const st = (a.status||a.state||'unknown').toString().toLowerCase();
+      const c = st==='healthy'||st==='up'||st==='ok'?'var(--green)':
+                st==='empty'||st==='cooldown'?'var(--amber)':
+                st==='down'||st==='quarantined'?'var(--red)':'var(--muted)';
+      return `<div class="adap-card" style="border-left:2px solid ${c}">
+        <div style="font-size:10px;font-weight:600">${n.replace(/_/g,' ')}</div>
+        <div style="font-size:9px;color:${c}">${st.toUpperCase()}</div>
+        <div style="font-size:8px;color:var(--muted)">${a.consecutive_failures!=null?`fails: ${a.consecutive_failures}`:''}</div>
+      </div>`;
+    }).join('') : `<div class="loading">no agent health recorded — run <code>aegis swarm run</code></div>`;
+  } catch(e) { $('swarm-runs').innerHTML=`<div class="errm">${e.message}</div>`; }
+}
+
+// ─────────────────────────────────────────────
+// Sentinel page (autonomous market discovery)
+// ─────────────────────────────────────────────
+function _sentinelCard(r) {
+  const t = r.trigger || {};
+  const pick = r.gated_pick || {};
+  const prods = r.product_count ?? (r.products ? r.products.length : 0);
+  const plats = (r.platforms || []).length;
+  const ptype = (t.pattern_type || '').toString().toUpperCase();
+  const ptypeC = ptype==='ACCELERATING'?'var(--green)':ptype==='PEAKING'?'var(--amber)':'var(--muted)';
+  const narrative = (r.llm_narrative || '').toString().substring(0, 280);
+  return `<div class="adap-card" style="border-left:2px solid ${ptypeC};margin-bottom:10px;padding:12px">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
+      <div style="font-size:13px;font-weight:700">${(r.query||t.label||'—').toString()}</div>
+      <span style="font-size:9px;color:${ptypeC}">${ptype||'—'}</span>
+    </div>
+    <div style="font-size:9px;color:var(--muted);margin:4px 0">
+      ⚡ slope ${fmtF(t.velocity_slope,2)} · accel ${fmtF(t.acceleration,2)} · conf ${fmtF(t.confidence,2)}
+      · 🛰️ ${(t.platforms||[]).join(', ')||'radar'}
+    </div>
+    <div style="font-size:10px;display:flex;gap:14px;margin:6px 0">
+      <span>🛍️ <b>${fmt(prods)}</b> products</span>
+      <span>🌐 <b>${fmt(plats)}</b> platforms</span>
+      ${pick.recommendation?`<span>🛡️ ${pick.recommendation}</span>`:''}
+    </div>
+    ${narrative?`<div style="font-size:10px;color:var(--text);line-height:1.5;margin-top:6px;border-top:1px solid var(--border);padding-top:6px">${narrative}${r.llm_narrative&&r.llm_narrative.length>280?'…':''}</div>`:''}
+    <div style="font-size:8px;color:var(--muted);margin-top:6px">${relTime(r.started_at||r.generated_at)}</div>
+  </div>`;
+}
+
+async function loadSentinel() {
+  try {
+    const reports = await api('/api/sentinel/recent?limit=15');
+    $('sentinel-list-meta').textContent = `${(reports||[]).length} discoveries`;
+    $('sentinel-list').innerHTML = (reports||[]).length
+      ? reports.map(_sentinelCard).join('')
+      : `<div class="loading">no discoveries yet — the Sentinel runs every 45 min, or hit <b>Scan Now</b>. Needs the autonomous scheduler running.</div>`;
+  } catch(e) { $('sentinel-list').innerHTML=`<div class="errm">${e.message}</div>`; }
+}
+
+async function runSentinelScan() {
+  const btn = $('sentinel-scan-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Scanning radar…'; }
+  $('sentinel-meta').textContent = 'sweeping global radar + detecting breakouts…';
+  try {
+    const res = await api('/api/sentinel/scan', { method: 'POST' });
+    if (res.ok) {
+      $('sentinel-meta').textContent =
+        `${fmt(res.radar_signals)} radar signals · ${fmt(res.breakouts)} breakouts · ${fmt(res.report_count)} reports`;
+    } else {
+      $('sentinel-meta').textContent = `scan failed: ${(res.error||'error').substring(0,80)}`;
+    }
+    await loadSentinel();
+  } catch(e) {
+    $('sentinel-meta').textContent = `scan failed: ${e.message}`;
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '▶ Scan Now'; }
+  }
+}
+
+// ─────────────────────────────────────────────
+// Markets page (Phase 7/8/9 event bus — CONN-1 / DASH-2)
+// ─────────────────────────────────────────────
+async function loadMarkets() {
+  try {
+    const [geo, comply, evolve, capital, anomalies] = await Promise.all([
+      api('/api/geo/recent?limit=15'),
+      api('/api/compliance/recent?limit=15'),
+      api('/api/evolve/recent?limit=15'),
+      api('/api/capital/recent?limit=20'),
+      api('/api/anomalies/recent?limit=20'),
+    ]);
+    // DASH-2: capital plans (phase 6)
+    const plans = capital.plans || [];
+    $('capital-meta').textContent = capital.status === 'ok' ? `${plans.length} plans` : capital.status;
+    $('capital-feed').innerHTML = plans.length ? `
+      <table class="data-table">
+        <thead><tr><th>Trend</th><th>Mode</th><th style="text-align:right">Capital$</th>
+          <th style="text-align:right">Est.Profit$</th><th>Status</th><th>When</th></tr></thead>
+        <tbody>${plans.map(p=>{
+          const sc=p.plan_status==='fulfilled'||p.plan_status==='executed'?'var(--green)':
+                   p.plan_status==='failed'||p.plan_status==='rejected'?'var(--red)':'var(--amber)';
+          return `<tr>
+            <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.trend_id||'—'}</td>
+            <td><span style="font-size:9px">${p.execution_mode}</span></td>
+            <td class="num">${fmtF(p.total_capital_usd,2)}</td>
+            <td class="num">${fmtF(p.estimated_profit_usd,2)}</td>
+            <td><span style="color:${sc};font-weight:700;font-size:9px">${(p.plan_status||'?').toUpperCase()}</span></td>
+            <td class="muted">${relTime(p.created_at)}</td>
+          </tr>`;}).join('')}</tbody>
+      </table>` : `<div class="loading">no execution plans yet — phase 6 advisory mode</div>`;
+    // DASH-2: anomalies
+    $('anomaly-feed').innerHTML = (anomalies||[]).length ? `
+      <table class="data-table">
+        <thead><tr><th>Source</th><th>Type</th><th style="text-align:right">Severity</th><th>When</th></tr></thead>
+        <tbody>${anomalies.map(a=>`<tr>
+          <td>${a.source||a.platform||'—'}</td>
+          <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${a.signal_type||a.reason||a.event||'anomaly'}</td>
+          <td class="num" style="color:${(a.severity||a.anomaly_score||0)>=0.7?'var(--red)':'var(--amber)'}">${fmtF(a.severity ?? a.anomaly_score,2)}</td>
+          <td class="muted">${relTime(a.detected_at||a.timestamp||a.created_at)}</td>
+        </tr>`).join('')}</tbody>
+      </table>` : `<div class="loading">no anomalies recorded — stream is quiet (good)</div>`;
+    // Geo arbitrage — flatten each report's top opportunities.
+    const grows = [];
+    (geo||[]).forEach(rep => {
+      (rep.opportunities||[]).slice(0,3).forEach(o => grows.push({
+        sku: rep.product_sku || rep.product_title || '—',
+        route: `${o.origin_region||o.origin||'?'}→${o.destination_region||o.destination||'?'}`,
+        margin: o.gross_margin_pct, src: o.demand_source||'—',
+      }));
+    });
+    $('geo-feed').innerHTML = grows.length ? `
+      <table class="data-table">
+        <thead><tr><th>Product</th><th>Route</th><th style="text-align:right">Margin%</th><th>Demand</th></tr></thead>
+        <tbody>${grows.map(r=>{
+          const ds=r.src==='db'?['DB','var(--green)']:['SYNTH','var(--muted)'];
+          return `<tr>
+            <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.sku}</td>
+            <td>${r.route}</td>
+            <td class="num" style="color:${(r.margin||0)>=20?'var(--green)':'var(--amber)'}">${fmtF(r.margin,1)}</td>
+            <td><span title="demand provenance" style="color:${ds[1]};font-size:8px;border:1px solid ${ds[1]};border-radius:3px;padding:1px 4px">${ds[0]}</span></td>
+          </tr>`;}).join('')}</tbody>
+      </table>` : `<div class="loading">no geo opportunities yet — run <code>aegis geo analyze</code></div>`;
+    // Compliance assessments
+    $('comply-feed').innerHTML = (comply||[]).length ? `
+      <table class="data-table">
+        <thead><tr><th>Product</th><th>Recommendation</th><th style="text-align:right">Risk</th></tr></thead>
+        <tbody>${comply.map(c=>{
+          const rec=(c.recommendation||c.verdict||'?').toUpperCase();
+          const rc=rec==='PROCEED'?'var(--green)':rec==='ESCALATE'?'var(--amber)':'var(--red)';
+          return `<tr>
+            <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.product_title||c.product_sku||'—'}</td>
+            <td><span style="color:${rc};font-weight:700;font-size:9px">${rec}</span></td>
+            <td class="num">${fmtF(c.composite_risk_score ?? c.overall_risk,3)}</td>
+          </tr>`;}).join('')}</tbody>
+      </table>` : `<div class="loading">no assessments yet — run <code>aegis comply assess</code></div>`;
+    // Evolve events
+    $('evolve-feed').innerHTML = (evolve||[]).length ? `
+      <table class="data-table">
+        <thead><tr><th>Event</th><th>Status</th><th style="text-align:right">AUC</th><th>When</th></tr></thead>
+        <tbody>${evolve.map(e=>`<tr>
+          <td>${e.event||'retrain'}</td>
+          <td><span style="font-size:9px">${e.status||e.promotion_status||'—'}</span></td>
+          <td class="num">${fmtF(e.champion_auc ?? e.candidate_auc,4)}</td>
+          <td class="muted">${relTime(e.finished_at||e.created_at||e.timestamp)}</td>
+        </tr>`).join('')}</tbody>
+      </table>` : `<div class="loading">no evolution events yet — run <code>aegis evolve retrain</code></div>`;
+  } catch(e) { $('geo-feed').innerHTML=`<div class="errm">${e.message}</div>`; }
+}
+
+// ─────────────────────────────────────────────
+// Containers page
+// ─────────────────────────────────────────────
+async function loadContainers() {
+  try {
+    const data = await api('/api/docker/status');
+    const running = data.filter(c=>c.State==='running').length;
+    $('cont-meta').textContent=`${running}/${data.length} running`;
+    $('cont-table').innerHTML = `
+      <table class="data-table">
+        <thead><tr><th>Container</th><th>Image</th><th>State</th><th>Status</th></tr></thead>
+        <tbody>${data.map(c=>{
+          const sc=c.State==='running'?'val-green':c.State==='exited'?'val-red':'val-amber';
+          return `<tr>
+            <td style="font-size:10px">${c.Name}</td>
+            <td class="muted" style="max-width:200px;overflow:hidden;text-overflow:ellipsis">${c.Image}</td>
+            <td><span class="${sc}" style="font-size:9px;font-weight:700">${c.State}</span></td>
+            <td class="muted" style="font-size:9px">${c.Status}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>`;
+  } catch(e) { $('cont-table').innerHTML=`<div class="errm">${e.message}</div>`; }
+}
+
+// ─────────────────────────────────────────────
+// System metrics
+// ─────────────────────────────────────────────
+async function loadSysMetrics() {
+  try {
+    // DASH-3: /api/system wired here for env + version + DB reachability
+    const [stats, pipe, sys] = await Promise.all([
+      api('/api/stats'), api('/api/pipeline/live'), api('/api/system'),
+    ]);
+    const uptime = Math.floor((Date.now()-_startedAt)/1000);
+    $('sys-metrics').innerHTML = [
+      ['Env / version', `${sys.env||'?'} · v${sys.version||'?'}`, 'val-cyan'],
+      ['Total signals', fmt(stats.total_signals), 'val-cyan'],
+      ['Signals/24h', fmt(stats.signals_24h), ''],
+      ['Total alerts', fmt(stats.total_alerts), 'val-cyan'],
+      ['Stream entries', fmt(pipe.stream_length), ''],
+      ['Killswitch', pipe.killswitch_armed?'ARMED':'TRIPPED', pipe.killswitch_armed?'val-green':'val-red'],
+      ['Session uptime', `${Math.floor(uptime/60)}m ${uptime%60}s`, ''],
+    ].map(([k,v,c])=>`<div class="stat-kv"><span class="key">${k}</span><span class="val ${c}">${v}</span></div>`).join('');
+  } catch(e) {}
+}
+
+// ─────────────────────────────────────────────
+// Console
+// ─────────────────────────────────────────────
+let _conAbort = null;
+function conLog(txt, cls='') {
+  const out = $('console-out');
+  const d = document.createElement('div');
+  d.className = 'cl ' + cls;
+  d.textContent = txt;
+  out.appendChild(d);
+  out.scrollTop = out.scrollHeight;
+}
+function runQuick(cmd) {
+  showPage('console');
+  $('con-inp').value = cmd;
+  setTimeout(runConsole, 100);
+}
+// No default topic: stage the exact command for review; the operator runs it.
+function topicPrompt() {
+  const t = (prompt('Topic to research (no default — type a keyword):') || '').trim();
+  showPage('console');
+  if (!t) { conLog('Topic run cancelled — a topic is required.', 'warn'); return; }
+  $('con-inp').value = `aegis topic "${t.replace(/"/g,'')}" --no-llm`;
+  // Stage only; operator presses RUN. Avoids silent scraping on a default.
+  $('con-inp').focus();
+}
+async function runSwarmNow() {
+  const btn = $('swarm-run-btn');
+  const meta = $('swarm-run-meta');
+  btn.disabled = true;
+  btn.textContent = '… launching';
+  try {
+    const _hdrs = {'Content-Type':'application/json'};
+    if (window.AEGIS_OPS_TOKEN) _hdrs['X-Ops-Token'] = window.AEGIS_OPS_TOKEN;
+    const r = await fetch('/api/swarm/run', {method:'POST', headers:_hdrs});
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      meta.textContent = `error: HTTP ${r.status}${j.detail?' — '+j.detail:''}`;
+      btn.textContent = '▶ Run Swarm Now'; btn.disabled = false;
+      return;
+    }
+    meta.textContent = j.status === 'already_running'
+      ? 'already running…' : 'running — results will appear below';
+    btn.textContent = '⏳ Running…';
+    // Poll status until the background run finishes, then refresh the page.
+    const poll = setInterval(async () => {
+      try {
+        const s = await api('/api/swarm/run/status');
+        if (!s.running) {
+          clearInterval(poll);
+          btn.textContent = '▶ Run Swarm Now'; btn.disabled = false;
+          meta.textContent = 'done — refreshed';
+          loadSwarm();
+        }
+      } catch(_) {}
+    }, 4000);
+  } catch(e) {
+    meta.textContent = `error: ${e.message}`;
+    btn.textContent = '▶ Run Swarm Now'; btn.disabled = false;
+  }
+}
+async function runConsole() {
+  const cmd = $('con-inp').value.trim();
+  if (!cmd) return;
+  conLog(`$ ${cmd}`, 'info');
+  $('con-inp').value = '';
+  try {
+    const _hdrs = {'Content-Type':'application/json'};
+    if (window.AEGIS_OPS_TOKEN) _hdrs['X-Ops-Token'] = window.AEGIS_OPS_TOKEN;
+    const r = await fetch('/api/ops/run', {
+      method:'POST',
+      headers:_hdrs,
+      body:JSON.stringify({cmd: cmd.split(/\s+/).filter(Boolean)}),
+    });
+    if (!r.ok) {
+      let detail = '';
+      try { detail = (await r.json()).detail || ''; } catch(_) {}
+      conLog(`Error: HTTP ${r.status}${detail?' — '+detail:''}`, 'err');
+      return;
+    }
+    const reader = r.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
+    while(true) {
+      const {done,value} = await reader.read();
+      if(done) break;
+      buf += dec.decode(value, {stream:true});
+      const lines = buf.split('\n');
+      buf = lines.pop();   // keep last partial line in buffer
+      lines.forEach(line => {
+        if (line.length) conLog(line, /\[error|error:|traceback/i.test(line)?'warn':'');
+      });
+    }
+    if (buf.length) conLog(buf);
+  } catch(e) { conLog(`Error: ${e.message}`, 'err'); }
+}
+
+// ─────────────────────────────────────────────
+// Research
+// ─────────────────────────────────────────────
+let _researchJobId = null;
+async function loadResearch() {
+  try {
+    const [wl, hist] = await Promise.all([api('/api/watchlist'), api('/api/topic/research/history')]);
+    const watchlist = wl.watchlist||[];
+    $('watchlist-panel').innerHTML = watchlist.length ? watchlist.map(t=>`
+      <div class="stat-kv">
+        <span class="key">${t.topic}</span>
+        <span class="val" style="font-size:9px">
+          ${t.last_verdict?`<span style="color:${t.last_verdict==='ENTER'?'var(--green)':t.last_verdict==='HOLD'?'var(--amber)':'var(--red)'}">${t.last_verdict}</span>`:'—'}
+          · ${relTime(t.last_run_at)}
+          <button title="remove from watchlist" onclick="removeWatch('${t.topic.replace(/'/g,"\\'")}')"
+            style="background:none;border:none;color:var(--red);cursor:pointer;font-size:10px">✕</button>
+        </span>
+      </div>`).join('') : '<div class="loading">No topics in watchlist</div>';
+    const history = (hist.history||[]);
+    $('research-hist').innerHTML = history.length ? `
+      <table class="data-table">
+        <thead><tr><th>Topic</th><th>Verdict</th><th>Status</th><th>When</th><th></th></tr></thead>
+        <tbody>${history.map(h=>`<tr>
+          <td>${h.topic||'—'}</td>
+          <td><span style="font-size:9px;color:${h.verdict==='ENTER'?'var(--green)':h.verdict==='HOLD'?'var(--amber)':'var(--muted)'}">${h.verdict||'—'}</span></td>
+          <td><span style="color:${h.status==='done'?'var(--green)':'var(--red)'}">
+            ${h.status}</span></td>
+          <td class="muted">${relTime(h.started_at)}</td>
+          <td>${h.status==='done'?`<button title="push to Phase 4 alert stream" onclick="pushAlert('${h.job_id}')"
+            style="background:none;border:1px solid var(--cyan);color:var(--cyan);cursor:pointer;font-size:8px;border-radius:3px;padding:1px 5px">📤 PUSH</button>`:''}</td>
+        </tr>`).join('')}</tbody>
+      </table>` : '<div class="loading">No research history</div>';
+  } catch(e) {}
+}
+
+// DASH-3: watchlist add/remove + research push-alert wiring
+async function addWatch() {
+  const topic = $('watch-inp').value.trim();
+  if (!topic) return;
+  try {
+    await fetch('/api/watchlist/add', {method:'POST',
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify({topic})});
+    $('watch-inp').value = '';
+    loadResearch();
+  } catch(e) { console.error('watchlist add', e); }
+}
+async function removeWatch(topic) {
+  try {
+    await fetch('/api/watchlist/remove', {method:'POST',
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify({topic})});
+    loadResearch();
+  } catch(e) { console.error('watchlist remove', e); }
+}
+async function pushAlert(jobId) {
+  try {
+    const r = await fetch(`/api/topic/research/${jobId}/push-alert`, {method:'POST'});
+    const d = await r.json();
+    alert(r.ok ? `Pushed to alert stream as ${d.p4_verdict||'OK'} (${d.trend_id||''})` : `Push failed: ${d.detail||r.status}`);
+  } catch(e) { alert(`Push failed: ${e.message}`); }
+}
+async function startResearch() {
+  const topic = $('research-inp').value.trim();
+  if (!topic) return;
+  const out = $('research-out');
+  out.innerHTML = '';
+  function rlog(txt, cls='') {
+    const d = document.createElement('div');
+    d.className='cl '+(cls||''); d.textContent=txt; out.appendChild(d);
+    out.scrollTop=out.scrollHeight;
+  }
+  rlog(`$ aegis topic "${topic}"`, 'info');
+  try {
+    const r = await fetch('/api/topic/research', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({topic, limit:30, use_llm:false}),
+    });
+    const {job_id} = await r.json();
+    rlog(`Job ${job_id} started...`);
+    const stream = await fetch(`/api/topic/research/${job_id}/stream`);
+    const reader = stream.body.getReader(); const dec = new TextDecoder();
+    while(true) {
+      const {done,value} = await reader.read();
+      if(done) break;
+      dec.decode(value).split('\n').forEach(line=>{
+        if(line.startsWith('data:')) {
+          try {
+            const ev=JSON.parse(line.slice(5).trim());
+            if(ev.event==='log'&&ev.message) rlog(ev.message);
+            else if(ev.event==='complete') {
+              rlog(`✓ Done — verdict: ${ev.verdict||'?'} (score: ${ev.score||'?'})`, 'info');
+            } else if(ev.event==='error') rlog(`✗ ${ev.message}`, 'err');
+          } catch(_){}
+        }
+      });
+    }
+  } catch(e) { rlog(`Error: ${e.message}`, 'err'); }
+}
+
+// ─────────────────────────────────────────────
+// SSE live feed
+// ─────────────────────────────────────────────
+function startSSE() {
+  if (_sseSource) return;
+  try {
+    _sseSource = new EventSource('/stream/events');
+    _sseSource.onmessage = (e) => {
+      try {
+        const d = JSON.parse(e.data);
+        if (d.type === 'signal' || d.type === 'signal_added') {
+          if (_activePage === 'overview') loadLiveFeed();
+        }
+      } catch(_) {}
+    };
+    _sseSource.onerror = () => { _sseSource.close(); _sseSource = null; };
+  } catch(_) {}
+}
+
+// ─────────────────────────────────────────────
+// Polling
+// ─────────────────────────────────────────────
+let _tick = 0;
+async function poll() {
+  _tick++;
+  // Always refresh overview stats
+  if (_activePage === 'overview' || _tick % 3 === 0) {
+    await Promise.all([loadOverview(), loadKillswitch()]);
+    if (_activePage === 'overview') {
+      await Promise.all([loadLiveFeed(), loadHeatmap()]);
+    }
+  }
+  // Refresh active page data
+  const refreshers = {
+    signals: loadSignals, alerts: loadAlerts, pipeline: loadPipeline,
+    adapters: loadAdapters, intelligence: loadIntelligence, markets: loadMarkets,
+    swarm: loadSwarm, sentinel: loadSentinel, containers: loadContainers, console: loadSysMetrics,
+    research: loadResearch, products: loadProducts, capabilities: loadCapabilities,
+  };
+  if (refreshers[_activePage]) await refreshers[_activePage]();
+}
+
+// ─────────────────────────────────────────────
+// Boot
+// ─────────────────────────────────────────────
+async function boot() {
+  startPulse();
+  await Promise.all([loadOverview(), loadKillswitch(), loadLiveFeed(), loadHeatmap()]);
+  startSSE();
+  setInterval(poll, 30000);
+}
+boot();
+</script>
+</body>
+</html>
