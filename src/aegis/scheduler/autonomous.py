@@ -344,6 +344,19 @@ async def job_analyze() -> None:
         log.error("scheduler.analyze.fatal", error=str(exc)[:200])
 
 
+async def job_watchdog() -> None:
+    """Stage-2 daily watchdog: pages the operator when the data machine is
+    silently failing (zero ingest in 24h, or zero clean settlements in 24h).
+    ``run_watchdog`` never raises; the guard here is belt-per-pattern."""
+    log.info("scheduler.watchdog.start")
+    try:
+        from aegis.scheduler.watchdog import run_watchdog
+
+        await run_watchdog()
+    except Exception as exc:
+        log.warning("scheduler.watchdog.failed", error=str(exc)[:160])
+
+
 async def job_drift_check() -> None:
     """Run Evidently drift check."""
     log.info("scheduler.drift.start")
@@ -954,6 +967,18 @@ async def main() -> None:
         id="knowledge",
         name="Weekly knowledge refresh + self-audit (Phase C)",
         max_instances=1,
+    )
+    scheduler.add_job(
+        job_watchdog,
+        # 06:30 UTC = midday IST — the machine is most likely awake. The wide
+        # misfire grace matters more than the hour: a laptop that slept through
+        # the slot must still run the missed daily check when it wakes, because
+        # "machine was asleep" is precisely what this job exists to catch.
+        trigger=CronTrigger(hour=6, minute=30),
+        id="watchdog",
+        name="Stage-2 data-machine watchdog (daily)",
+        max_instances=1,
+        misfire_grace_time=6 * 3600,
     )
 
     loop = asyncio.get_event_loop()

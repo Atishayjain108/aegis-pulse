@@ -2579,5 +2579,14 @@ except (ImportError, ModuleNotFoundError):
     pass
 
 
+try:
+    from aegis.scheduler.watchdog import watchdog_cmd as _watchdog_cmd
+
+    if _watchdog_cmd is not None:
+        main.add_command(_watchdog_cmd)
+except (ImportError, ModuleNotFoundError):
+    pass
+
+
 if __name__ == "__main__":  # pragma: no cover
     main()
