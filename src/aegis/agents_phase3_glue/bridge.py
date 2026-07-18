@@ -266,7 +266,13 @@ async def _persist_prediction(result: Any, *, tenant_id: str | None) -> None:
             kwargs["tenant_id"] = str(tenant_id)
         await insert_prediction(pool, bundle, **kwargs)
     except Exception as exc:  # never break inference on a persistence error
-        logger.debug("phase3_glue.persist_skipped", error=str(exc)[:160])
+        # STAGE 1.4: DEBUG here hid an always-empty predictions table for the
+        # project's entire history (set_shared_pool had zero call sites). A
+        # missing pool outside tests is a wiring failure — say so at ERROR.
+        import os
+
+        level = logger.debug if os.environ.get("AEGIS_ENV") == "test" else logger.error
+        level("phase3_glue.persist_skipped", error=str(exc)[:160])
 
 
 async def _enrich(

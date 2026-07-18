@@ -78,8 +78,12 @@ class Calibrator:
         )
 
     @classmethod
-    def from_json(cls, raw: str) -> Calibrator:
-        d = json.loads(raw)
+    def from_json(cls, raw: str | bytes | dict) -> Calibrator:
+        # knots_json is a JSONB column: asyncpg auto-decodes it to a dict.
+        # This method was only ever fed strings by tests — the first REAL
+        # production load (2026-07-18, after set_shared_pool wiring) crashed
+        # with "the JSON object must be str, ... not dict". Accept both.
+        d = raw if isinstance(raw, dict) else json.loads(raw)
         return cls(
             knots=[(float(a), float(b)) for a, b in d.get("knots", [])],
             n_fit=int(d.get("n_fit", 0)),

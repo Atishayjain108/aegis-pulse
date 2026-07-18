@@ -215,7 +215,14 @@ async def fetch_recent_signals(
         f"""
         SELECT
             signal_id, platform, external_id, title, url, ts,
-            scraped_at AS captured_at,
+            -- STAGE 1.5 CLOCK FIX: captured_at is EVENT time (ts), not harvest
+            -- time. The old `scraped_at AS captured_at` made every velocity/
+            -- EMA/OLS/autocorr feature measure the scraper's batch cadence
+            -- (a 15-min batch scrape read as a velocity spike; a scheduler gap
+            -- read as decline) while labels settle on ts — features and labels
+            -- on different clocks. scraped_at stays selected for liveness use.
+            ts AS captured_at,
+            scraped_at,
             intent, author_id, raw_text,
             views, likes, comments, shares, saves
         FROM signals

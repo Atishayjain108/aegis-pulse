@@ -531,7 +531,12 @@ async def _recent_model_skill(tenant_id: str) -> float | None:
         if row is not None and row["brier_skill"] is not None:
             skill = float(row["brier_skill"])
     except Exception as exc:  # fail open — never block on a measurement error
-        _log.debug("runner.skill_unavailable", error=str(exc)[:120])
+        # STAGE 1.4: skill gate silently inert without the shared pool — ERROR
+        # outside tests so a dead gate can never again pass as a quiet gate.
+        import os as _os
+
+        _lvl = _log.debug if _os.environ.get("AEGIS_ENV") == "test" else _log.error
+        _lvl("runner.skill_unavailable", error=str(exc)[:120])
         skill = None
     _skill_cache[tenant_id] = (_time.monotonic(), skill)
     return skill
@@ -561,7 +566,13 @@ async def _calibrate_confidence(
             return raw_confidence, False
         return max(0.0, min(1.0, cal.apply(raw_confidence))), True
     except Exception as exc:  # fail open — confidence is advisory, never blocks
-        _log.debug("runner.calibration_unavailable", error=str(exc)[:120])
+        # STAGE 1.4: DEBUG here let every production verdict ship
+        # confidence_basis="UNVERIFIED_raw" silently while a fitted map sat in
+        # calibration_maps. Outside tests this is a wiring failure — ERROR.
+        import os as _os
+
+        _lvl = _log.debug if _os.environ.get("AEGIS_ENV") == "test" else _log.error
+        _lvl("runner.calibration_unavailable", error=str(exc)[:120])
         return raw_confidence, False
 
 

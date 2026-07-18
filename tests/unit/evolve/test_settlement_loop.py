@@ -83,7 +83,7 @@ def _make_pool(signals=None, anchors=None, pending=None):
 def _window_always_alive(monkeypatch: pytest.MonkeyPatch) -> None:
     """Legacy-test posture: sparse fixture windows count as alive (the
     precondition is exercised explicitly in TestSettlementPrecondition)."""
-    monkeypatch.setenv("AEGIS_INGEST_HEALTH_MAX_AGE_H", "1000000")
+    monkeypatch.setenv("AEGIS_SETTLE_MAX_GAP_H", "1000000")
 
 
 # ---------------------------------------------------------------------------
@@ -238,7 +238,7 @@ class TestSettlementPrecondition:
     ) -> None:
         """A pending claim whose observation window has an ingestion gap larger
         than the threshold must settle to VOID, never to a direction."""
-        monkeypatch.setenv("AEGIS_INGEST_HEALTH_MAX_AGE_H", "2")
+        monkeypatch.setenv("AEGIS_SETTLE_MAX_GAP_H", "2")
         claim_ts = datetime(2026, 6, 1, tzinfo=UTC)
         pending = [{
             "outcome_id": "oid-void",
@@ -264,7 +264,7 @@ class TestSettlementPrecondition:
     ) -> None:
         """Same threshold, gapless window -> settles to a direction (the
         precondition discriminates; it does not blanket-void)."""
-        monkeypatch.setenv("AEGIS_INGEST_HEALTH_MAX_AGE_H", "2")
+        monkeypatch.setenv("AEGIS_SETTLE_MAX_GAP_H", "2")
         claim_ts = datetime(2026, 6, 1, tzinfo=UTC)
         pending = [{
             "outcome_id": "oid-alive",

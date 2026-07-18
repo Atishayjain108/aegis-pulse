@@ -51,16 +51,25 @@ _DEFAULT_TENANT = "00000000-0000-0000-0000-000000000001"
 _FLAT_BAND = 0.10
 
 # STAGE 1.3 settlement precondition: a claim may only settle to a direction
-# if ingestion was continuously alive across its ENTIRE observation window.
-# "Alive" reuses the Block-D container-healthcheck definition — max gap
-# between consecutive signals.scraped_at values (including window edges)
-# must not exceed AEGIS_INGEST_HEALTH_MAX_AGE_H (default 2h). One notion of
-# alive, shared with scripts/healthcheck_ingestion.py — never two.
+# if ingestion was continuously alive across its ENTIRE observation window
+# — max gap between consecutive signals.scraped_at values (edges included)
+# must not exceed AEGIS_SETTLE_MAX_GAP_H.
 # Rationale: 633 claims settled against the dead scraper of 2026-07-03..16
 # read fall=97.1%/rise=16.4% "accuracy" — measurements of an outage, not a
 # market. This precondition is the record whose absence made that possible.
-_INGEST_GAP_ENV = "AEGIS_INGEST_HEALTH_MAX_AGE_H"
-_INGEST_GAP_DEFAULT_H = 2.0
+#
+# DEBT-5 disposition (c), 2026-07-18 — TIERED thresholds, deliberately:
+#   * container-healthcheck ALARM freshness: 2h (AEGIS_INGEST_HEALTH_MAX_AGE_H)
+#   * settlement label VALIDITY (this module): 12h default.
+# The 2h purity standard voids every 72h window that spans a laptop-sleep
+# night; measured retroactively, 0 of 973 historical windows pass it (avg
+# max in-window gap 46.9h). 12h tolerates a nightly sleep while still
+# voiding the multi-day-blackout class that poisoned the labels. An
+# overnight gap deflates counts in baseline and observation windows alike,
+# so the directional label degrades gracefully rather than inverting.
+# Reversible by env; both gap measurements share max_ingest_gap_hours().
+_INGEST_GAP_ENV = "AEGIS_SETTLE_MAX_GAP_H"
+_INGEST_GAP_DEFAULT_H = 12.0
 
 
 def _max_ingest_gap_hours_env() -> float:
@@ -110,7 +119,7 @@ async def max_ingest_gap_hours(
 async def window_scraper_alive(
     pool: Pool | Any, tenant_id: str, lo: datetime, hi: datetime
 ) -> bool:
-    """True when ingestion had no gap larger than the healthcheck window."""
+    """True when ingestion had no gap larger than AEGIS_SETTLE_MAX_GAP_H."""
     return await max_ingest_gap_hours(pool, tenant_id, lo, hi) <= _max_ingest_gap_hours_env()
 
 

@@ -138,6 +138,41 @@ async def _decay_cooldowns(redis: Any) -> None:
         log.debug("scheduler.scrape.decay_failed", error=str(exc)[:120])
 
 
+async def _notify_ops(title: str, message: str, *, priority: str = "5") -> None:
+    """Push an operations alert to the operator's phone via ntfy (zero-key).
+
+    Recovery protocol 1.7: the FIRST message this system must be capable of
+    sending is not a verdict — it is "ingestion is dead". No-op when
+    AEGIS_NTFY_TOPIC is unset; delivery failure logs at WARNING (we cannot
+    notify about failing to notify, but we can refuse to be silent about it).
+    """
+    import os
+
+    topic = os.environ.get("AEGIS_NTFY_TOPIC", "").strip()
+    if not topic:
+        return
+    base = os.environ.get("AEGIS_NTFY_BASE_URL", "https://ntfy.sh").rstrip("/")
+    try:
+        import httpx
+
+        # HTTP header values are latin-1 by spec; an em-dash in the title
+        # crashed the very first live delivery attempt (GATE 1.7 demo).
+        safe_title = title.encode("ascii", "replace").decode("ascii")
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                f"{base}/{topic}",
+                content=message.encode("utf-8"),
+                headers={
+                    "Title": safe_title,
+                    "Priority": priority,
+                    "Tags": "rotating_light",
+                },
+            )
+        log.info("scheduler.ops_notify_sent", title=title, status=resp.status_code)
+    except Exception as exc:
+        log.warning("scheduler.ops_notify_failed", title=title, error=str(exc)[:120])
+
+
 async def job_scrape() -> None:
     """Scrape a rotating batch of topics, skipping dead-yield ones (cooldown)."""
     log.info("scheduler.scrape.start")
@@ -203,6 +238,11 @@ async def job_scrape() -> None:
                 total=total,
                 inserted=0,
                 topics=topics,
+            )
+            await _notify_ops(
+                "AEGIS: scrape cycle DEAD",
+                f"Zero new rows across all topics {topics}. "
+                "Healthy cycles land 2..819 rows/hour; zero is dead, not quiet.",
             )
         log.info("scheduler.scrape.done", total=total, inserted=inserted)
     except Exception as exc:
@@ -276,6 +316,11 @@ async def job_analyze() -> None:
                 "scheduler.analyze.refused_stale_data",
                 staleness_hours=None if age_h is None else round(age_h, 2),
                 max_allowed_hours=max_age_h,
+            )
+            await _notify_ops(
+                "AEGIS: ingestion dead — analysis refused",
+                f"Newest signal is {'unknown' if age_h is None else round(age_h, 1)}h old "
+                f"(ceiling {max_age_h}h). No verdict was emitted.",
             )
             return
 
@@ -915,6 +960,24 @@ async def main() -> None:
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, lambda: _handle_shutdown(scheduler))
 
+    # STAGE 1.4 composition root: install the process-global shared pool BEFORE
+    # any job runs. Three shipped safety mechanisms (Phase-3 prediction
+    # persistence, confidence calibration, the model-skill ENTER gate) read
+    # get_shared_pool() and sat inert for the project's entire history because
+    # no production process ever called set_shared_pool(). A missing pool here
+    # is a startup FAILURE — the process dies loudly, it does not shrug.
+    from aegis.config import settings as _settings
+    from aegis.db.pool import PgPool, set_shared_pool
+
+    try:
+        _shared = PgPool(dsn=_settings().pg_dsn_str)
+        await _shared.connect()
+        set_shared_pool(_shared)
+        log.info("scheduler.shared_pool_installed")
+    except Exception:
+        log.error("scheduler.shared_pool_install_failed_fatal")
+        raise
+
     scheduler.start()
     log.info("scheduler.started", job_count=len(scheduler.get_jobs()))
 
@@ -927,7 +990,12 @@ async def main() -> None:
 
     await job_health_report()
 
-    await _stop_event.wait()
+    try:
+        await _stop_event.wait()
+    finally:
+        set_shared_pool(None)
+        with contextlib.suppress(Exception):
+            await _shared.aclose()
 
 
 if __name__ == "__main__":

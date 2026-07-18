@@ -1064,39 +1064,49 @@ async def _analyze_async(
     tenant_uuid = _uuid.UUID(cfg.default_tenant_id)
     auto_trend_id = trend_id or f"analyze-{_uuid.uuid4().hex[:8]}"
 
+    from aegis.db.pool import set_shared_pool
+
     pool = PgPool(dsn=cfg.pg_dsn_str)
     await pool.start()
+    # STAGE 1.4 composition root: the pool previously CLOSED right after the
+    # fetch, before run_trend even started — so prediction persistence, the
+    # calibration map, and the skill gate (all get_shared_pool() consumers)
+    # were structurally unreachable on this path: predictions table 0 rows,
+    # every published verdict confidence_basis="UNVERIFIED_raw". The pool now
+    # lives for the whole pipeline run and is installed as the shared pool.
+    set_shared_pool(pool)
     try:
         rows = await fetch_recent_signals(
             pool, tenant_id=tenant_uuid, limit=limit, platform=platform
         )
-    finally:
-        await pool.close()
 
-    if not rows:
-        click.echo("No signals found in DB. Run `aegis scrape` first.", err=True)
-        return
+        if not rows:
+            click.echo("No signals found in DB. Run `aegis scrape` first.", err=True)
+            return
 
-    rows_as_dicts = [dict(r) for r in rows]
-    candidate = _candidate_from_rows(rows_as_dicts, trend_id=auto_trend_id, title=title)
+        rows_as_dicts = [dict(r) for r in rows]
+        candidate = _candidate_from_rows(rows_as_dicts, trend_id=auto_trend_id, title=title)
 
-    click.echo(
-        f"Running Phase 2+3 pipeline on {len(rows)} signals "
-        f"({'heuristic' if not use_llm else 'LLM-assisted'}) "
-        f"v1h={candidate.velocity_1h:.2f} v6h={candidate.velocity_6h:.2f} "
-        f"v24h={candidate.velocity_24h:.2f}…",
-        err=True,
-    )
-    redis_client = aioredis.from_url(cfg.redis_url_str, decode_responses=True)
-    try:
-        result = await run_trend(
-            candidate,
-            signals=rows_as_dicts,
-            use_llm=use_llm,
-            stream_client=redis_client,
+        click.echo(
+            f"Running Phase 2+3 pipeline on {len(rows)} signals "
+            f"({'heuristic' if not use_llm else 'LLM-assisted'}) "
+            f"v1h={candidate.velocity_1h:.2f} v6h={candidate.velocity_6h:.2f} "
+            f"v24h={candidate.velocity_24h:.2f}…",
+            err=True,
         )
+        redis_client = aioredis.from_url(cfg.redis_url_str, decode_responses=True)
+        try:
+            result = await run_trend(
+                candidate,
+                signals=rows_as_dicts,
+                use_llm=use_llm,
+                stream_client=redis_client,
+            )
+        finally:
+            await redis_client.aclose()
     finally:
-        await redis_client.aclose()
+        set_shared_pool(None)
+        await pool.close()
 
     if json_out:
         click.echo(result.model_dump_json(indent=2))

@@ -351,6 +351,73 @@ def _action_for(
     return PredictionAction.HOLD
 
 
+# ---------------------------------------------------------------------------
+# STAGE 1.6 — action-space reachability (startup assertion)
+# ---------------------------------------------------------------------------
+
+# Max class-probability scale factors from _stage_to_class_probs, per axis.
+# Keep in sync with the tuples above; the assertion below exists precisely
+# because a tuple change (OMEGA B1) once made EXIT unreachable and nothing
+# noticed until an audit did the arithmetic by hand.
+_MAX_P_BREAKOUT_SCALE = 0.80  # BREAKOUT tuple
+_MAX_P_DECLINE_SCALE = 0.85   # DECLINING / SATURATED tuples
+
+
+def action_reachability() -> list[dict[str, object]]:
+    """Per-action reachability given current thresholds and the confidence
+    ceiling. Pure arithmetic — no I/O, no model load."""
+    c = HEURISTIC_CONFIDENCE_CEILING
+    max_p_breakout = _MAX_P_BREAKOUT_SCALE * c
+    max_p_decline = _MAX_P_DECLINE_SCALE * c
+    return [
+        {
+            "action": "ENTER",
+            "threshold": f"p_breakout >= {ACTION_ENTER_PROBABILITY_FLOOR}"
+            " (stage EMERGING|BREAKOUT)",
+            "max_attainable": round(max_p_breakout, 4),
+            "reachable": max_p_breakout >= ACTION_ENTER_PROBABILITY_FLOOR,
+        },
+        {
+            "action": "EXIT",
+            "threshold": f"p_decline >= {ACTION_EXIT_PROBABILITY_CEILING}",
+            "max_attainable": round(max_p_decline, 4),
+            "reachable": max_p_decline >= ACTION_EXIT_PROBABILITY_CEILING,
+        },
+        {
+            "action": "OBSERVE",
+            "threshold": f"confidence < {ACTION_CONFIDENCE_FLOOR}",
+            "max_attainable": 1.0,
+            "reachable": ACTION_CONFIDENCE_FLOOR > 0.0,
+        },
+        {
+            "action": "AVOID",
+            "threshold": "stage == SATURATED (conf >= floor, p_decline < ceiling)",
+            "max_attainable": 1.0,
+            "reachable": True,
+        },
+        {
+            "action": "HOLD",
+            "threshold": "default",
+            "max_attainable": 1.0,
+            "reachable": True,
+        },
+    ]
+
+
+def assert_action_space_reachable() -> None:
+    """Raise if any probability-gated action can never fire under the current
+    constants. Called once at InferenceRunner startup."""
+    dead = [r for r in action_reachability() if not r["reachable"]]
+    if dead:
+        raise RuntimeError(
+            "unreachable prediction action(s) under current thresholds: "
+            + ", ".join(
+                f"{r['action']} (needs {r['threshold']}, max {r['max_attainable']})"
+                for r in dead
+            )
+        )
+
+
 def _percentile_band(
     *,
     mean_log: float,

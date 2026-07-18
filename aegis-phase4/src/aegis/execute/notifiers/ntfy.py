@@ -68,6 +68,20 @@ class NtfyNotifier(HttpNotifierMixin, Notifier):
             )
 
         alert = envelope.alert
+        # Recovery protocol 1.7: this channel carries EXACTLY one class of
+        # verdict message — P0 or ENTER. Surfacing every unvalidated verdict
+        # to a phone manufactures false trust, the most expensive failure
+        # mode this system has; the pipe is wired, the floodgate is not.
+        verdict = str(getattr(alert, "verdict", "")).upper()
+        if alert.priority != 0 and "ENTER" not in verdict:
+            return NotificationResult(
+                channel=self.name,
+                status=DeliveryStatus.SKIPPED,
+                http_status=None,
+                latency_ms=0.0,
+                error_code=None,
+                error_message="filtered: ntfy carries only P0/ENTER alerts",
+            )
         ntfy_priority = _NTFY_PRIORITY_MAP.get(alert.priority, "3")
         body = _format_body(alert)
         headers: dict[str, str] = {

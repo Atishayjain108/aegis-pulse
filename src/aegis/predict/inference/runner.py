@@ -99,6 +99,12 @@ class InferenceRunner:
     _temporal: Any = None
     _relational: Any = None
 
+    def __post_init__(self) -> None:
+        # STAGE 1.6: fail at startup if any action is arithmetically dead.
+        from aegis.predict.models.heuristic import assert_action_space_reachable
+
+        assert_action_space_reachable()
+
     def _ensure_predictors(self) -> tuple[Any, Any]:
         if self._temporal is None:
             self._temporal = load_model(self.config.temporal_model)

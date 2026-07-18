@@ -195,7 +195,15 @@ AUTO_ROLLBACK_PRECISION_DROP: float = 0.05
 ACTION_ENTER_PROBABILITY_FLOOR: float = 0.55
 
 # rationale: above this, EXIT regardless of velocity.
-ACTION_EXIT_PROBABILITY_CEILING: float = 0.65
+# STAGE 1.6 (2026-07-18): 0.65 → 0.60. The OMEGA B1 class-prob rescale capped
+# p_decline at 0.85 × HEURISTIC_CONFIDENCE_CEILING(0.75) = 0.6375, silently
+# making EXIT unreachable — dead code that documentation claimed was live,
+# discovered by arithmetic, not by any monitor. At 0.60, EXIT fires for
+# DECLINING/SATURATED trends at confidence ≥ ~0.706. This CHANGES the action
+# distribution: high-confidence declining/saturated trends that emitted
+# HOLD/AVOID can now emit EXIT (checked before AVOID in _action_for).
+# Reachability is asserted at startup — see heuristic.action_reachability().
+ACTION_EXIT_PROBABILITY_CEILING: float = 0.60
 
 # rationale: below this confidence we never recommend ENTER or EXIT.
 ACTION_CONFIDENCE_FLOOR: float = 0.45

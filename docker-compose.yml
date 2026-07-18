@@ -254,6 +254,10 @@ services:
       AEGIS_EXECUTE_API_HOST: "0.0.0.0"
       AEGIS_EXECUTE_API_PORT: "8200"
       AEGIS_EXECUTE_HMAC_KEY: "${AEGIS_EXECUTE_HMAC_KEY:-dev-hmac-key-not-for-prod}"
+      # Recovery protocol 1.7: one operator var (AEGIS_NTFY_TOPIC) powers both
+      # the scheduler ops alerts and this Phase 4 channel. The ntfy notifier
+      # itself filters to P0/ENTER only.
+      AEGIS_EXECUTE_NTFY_TOPIC: "${AEGIS_NTFY_TOPIC:-}"
       AEGIS_EXECUTE_KILLSWITCH_KEY: "aegis:execute:killswitch"
       AEGIS_PG_DSN: postgresql://${POSTGRES_USER:-aegis_app}:${POSTGRES_PASSWORD:-aegis_app_dev_pw}@postgres:5432/${POSTGRES_DB:-aegis}
       AEGIS_REDIS_URL: redis://redis:6379/0
@@ -296,6 +300,10 @@ services:
       # as the main aegis stack (from AEGIS_DEFAULT_TENANT_ID in .env).
       AEGIS_EXECUTE_TENANT_ID: ${AEGIS_DEFAULT_TENANT_ID:-00000000-0000-0000-0000-000000000001}
       AEGIS_EXECUTE_HMAC_KEY: "${AEGIS_EXECUTE_HMAC_KEY:-dev-hmac-key-not-for-prod}"
+      # Recovery protocol 1.7: one operator var (AEGIS_NTFY_TOPIC) powers both
+      # the scheduler ops alerts and this Phase 4 channel. The ntfy notifier
+      # itself filters to P0/ENTER only.
+      AEGIS_EXECUTE_NTFY_TOPIC: "${AEGIS_NTFY_TOPIC:-}"
       AEGIS_EXECUTE_KILLSWITCH_KEY: "aegis:execute:killswitch"
       AEGIS_PG_DSN: postgresql://${POSTGRES_USER:-aegis_app}:${POSTGRES_PASSWORD:-aegis_app_dev_pw}@postgres:5432/${POSTGRES_DB:-aegis}
       AEGIS_REDIS_URL: redis://redis:6379/0
@@ -371,6 +379,13 @@ services:
       # job_analyze hard-refusal ceiling. Production defaults 2h / 6h.
       AEGIS_INGEST_HEALTH_MAX_AGE_H: "${AEGIS_INGEST_HEALTH_MAX_AGE_H:-2}"
       AEGIS_ANALYZE_MAX_STALENESS_H: "${AEGIS_ANALYZE_MAX_STALENESS_H:-6}"
+      # Settlement label-validity gap ceiling (DEBT-5 disposition (c): tiered
+      # vs the 2h alarm — 12h tolerates nightly laptop sleep, still voids
+      # blackout-class gaps).
+      AEGIS_SETTLE_MAX_GAP_H: "${AEGIS_SETTLE_MAX_GAP_H:-12}"
+      # Recovery protocol 1.7: ops alerts to the operator phone (ntfy, no key).
+      AEGIS_NTFY_TOPIC: "${AEGIS_NTFY_TOPIC:-}"
+      AEGIS_NTFY_BASE_URL: "${AEGIS_NTFY_BASE_URL:-https://ntfy.sh}"
       # LLM chain enabled: local Ollama first, then Groq cloud fallback. Was
       # DISABLE_OLLAMA=1 with no cloud key → analysis ran heuristic-only.
       AEGIS_DISABLE_OLLAMA: "0"
